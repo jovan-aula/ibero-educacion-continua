@@ -283,7 +283,21 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         const r=await fetch(url,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
         const d=await r.json();
         const enriched=await Promise.all((d.opportunities||[]).map(async op=>{
-          try{const cr=await fetch("https://services.leadconnectorhq.com/contacts/"+op.contactId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});const cd=await cr.json();return{...cd.contact,opportunityStatus:op.status};}
+          try{
+            const cr=await fetch("https://services.leadconnectorhq.com/contacts/"+op.contactId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
+            const cd=await cr.json();
+            const contact={...cd.contact,opportunityStatus:op.status};
+            // Si el contacto tiene empresa asociada, obtener su nombre
+            if(cd.contact?.businessId){
+              try{
+                const br=await fetch("https://services.leadconnectorhq.com/businesses/"+cd.contact.businessId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
+                const bd=await br.json();
+                contact._empresaNombre=bd.business?.name||bd.name||"";
+                console.log("EMPRESA:", contact.name, "→", contact._empresaNombre);
+              }catch(e){console.log("Sin empresa para:", contact.name);}
+            }
+            return contact;
+          }
           catch(e){return{id:op.contactId,name:op.name,opportunityStatus:op.status};}
         }));
         setContacts(enriched);
@@ -299,7 +313,6 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     const existing = ests(prog);
     const existIds = new Set(existing.map(e=>e.id));
 
-    // Busca por id (formato real de GHL) o por fieldKey (formato legacy)
     const getCF = (customFields, id, fieldKey) => {
       const cf = (customFields||[]).find(f=>f.id===id||f.fieldKey===fieldKey||f.fieldKey==="contact."+fieldKey);
       const val = cf ? cf.value||cf.fieldValue||"" : "";
@@ -313,7 +326,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
         email:            c.email||"",
         telefono:         c.phone||"",
-        empresa:          c.company||c.company_name||"",
+        empresa:          c._empresaNombre||c.company||c.company_name||"",
         puesto:           getCF(cf,"Bh2QzKI7oWxAlK61XJLA","contact.puesto_que_desempeas"),
         carrera:          getCF(cf,"jvN3GJ9rxhrXdfcpI1zS","contact.cul_es_tu_carrera_profesional"),
         grado:            getCF(cf,"e7xQs2aAb5UpEwemgShB","contact.ltimo_grado_de_estudios"),
