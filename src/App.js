@@ -299,32 +299,29 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     const existing = ests(prog);
     const existIds = new Set(existing.map(e=>e.id));
 
-    const CAMPOS_FIJOS = [
-      {key:"contact.programa_de_intersz",           label:"Programa de interés"},
-      {key:"contact.puesto_que_desempeas",           label:"Puesto"},
-      {key:"contact.eres_egresada_o_egresado_ibero", label:"Egresado IBERO"},
-      {key:"contact.cul_es_tu_carrera_profesional",  label:"Carrera"},
-      {key:"contact.ltimo_grado_de_estudios",        label:"Grado de estudios"},
-      {key:"contact.company_name",                   label:"Empresa"},
-    ];
+    const getCF = (customFields, key) => {
+      const cf = (customFields||[]).find(f=>f.fieldKey===key||f.fieldKey==="contact."+key);
+      return cf ? cf.fieldValue||"" : "";
+    };
 
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
-      const campos_extra = {};
-
-      CAMPOS_FIJOS.forEach(fm=>{
-        const cf=(c.customFields||[]).find(f=>f.fieldKey===fm.key||f.fieldKey==="contact."+fm.key);
-        if(cf&&cf.fieldValue) campos_extra[fm.label]=cf.fieldValue;
-      });
-
-      (fieldMap||[]).forEach(fm=>{
-        const cf=(c.customFields||[]).find(f=>f.fieldKey===fm.id||f.fieldKey==="contact."+fm.id||f.id===fm.id);
-        if(cf&&cf.fieldValue) campos_extra[fm.label]=cf.fieldValue;
-      });
-
-      const empresa = campos_extra["Empresa"] || c.company || c.company_name || "";
-      delete campos_extra["Empresa"];
-
-      return {id:c.id,nombre:c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),email:c.email||"",telefono:c.phone||"",empresa,fuente:c.source||"",estatus:"activo",asistencia:{},campos_extra};
+      const cf = c.customFields||[];
+      return {
+        id:              c.id,
+        nombre:          c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
+        email:           c.email||"",
+        telefono:        c.phone||"",
+        empresa:         getCF(cf,"contact.company_name")||c.company||c.company_name||"",
+        puesto:          getCF(cf,"contact.puesto_que_desempeas"),
+        carrera:         getCF(cf,"contact.cul_es_tu_carrera_profesional"),
+        grado:           getCF(cf,"contact.ltimo_grado_de_estudios"),
+        egresado_ibero:  getCF(cf,"contact.eres_egresada_o_egresado_ibero"),
+        programa_interes:getCF(cf,"contact.programa_de_intersz"),
+        fuente:          c.source||"",
+        estatus:         "activo",
+        asistencia:      {},
+        campos_extra:    {},
+      };
     });
     onImport([...existing,...toAdd]);
     onClose();
@@ -922,9 +919,8 @@ export default function App() {
 
   const exportCSV = prog=>{
     const rows=ests(prog).map(e=>{
-      const base={Nombre:e.nombre||"",Correo:e.email||"",Teléfono:e.telefono||"",Empresa:e.empresa||"",Estatus:e.estatus||"activo"};
-      (fieldMap||[]).forEach(fm=>{base[fm.label]=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label]||"";});
-      Object.entries(e.campos_extra||{}).forEach(([k,v])=>{if(!base[k])base[k]=v||"";});
+      const base={Nombre:e.nombre||"",Correo:e.email||"",Teléfono:e.telefono||"",Empresa:e.empresa||"",Puesto:e.puesto||"",Carrera:e.carrera||"","Grado de estudios":e.grado||"","Programa de interés":e.programa_interes||"","Egresado IBERO":e.egresado_ibero||"",Estatus:e.estatus||"activo"};
+      (fieldMap||[]).forEach(fm=>{base[fm.label]=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label]||""});
       mods(prog).forEach(m=>{base["Asist."+m.numero]=((e.asistencia&&e.asistencia["mod_"+m.id])||0)+"/"+m.clases;});
       return base;
     });
@@ -934,7 +930,7 @@ export default function App() {
   };
 
   const exportDocente = prog=>{
-    const rows=ests(prog).map(e=>({Nombre:e.nombre||"",Empresa:e.empresa||"",Puesto:(e.campos_extra&&e.campos_extra["Puesto"])||e["Puesto"]||""}));
+    const rows=ests(prog).map(e=>({Nombre:e.nombre||"",Empresa:e.empresa||"",Puesto:e.puesto||e["Puesto"]||(e.campos_extra&&e.campos_extra["Puesto"])||""}));
     if(!rows.length)return;
     const hdr=["Nombre","Empresa","Puesto"],csv=[hdr.join(","),...rows.map(r=>hdr.map(h=>'"'+(r[h]||"").replace(/"/g,'""')+'"').join(","))].join("\n");
     const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));a.download="Lista_"+prog.nombre.replace(/\s+/g,"_")+".csv";a.click();notify("Lista para docente exportada.");
@@ -1195,13 +1191,17 @@ export default function App() {
                             <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
                               {e.email&&<span>{e.email}</span>}{e.telefono&&<span>{e.telefono}</span>}{e.empresa&&<span>{e.empresa}</span>}
                             </div>
-                            {Object.keys(e.campos_extra||{}).length>0&&(
+                            {(e.puesto||e.carrera||e.grado||e.egresado_ibero||e.programa_interes)&&(
                               <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>
-                                {Object.entries(e.campos_extra||{}).filter(([,v])=>v).map(([k,v])=>(
-                                  <span key={k} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{k+": "+v}</span>
-                                ))}
+                                {e.puesto&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Puesto: {e.puesto}</span>}
+                                {e.empresa&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Empresa: {e.empresa}</span>}
+                                {e.programa_interes&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Programa: {e.programa_interes}</span>}
+                                {e.carrera&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Carrera: {e.carrera}</span>}
+                                {e.grado&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Grado: {e.grado}</span>}
+                                {e.egresado_ibero&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>Egresado IBERO: {e.egresado_ibero}</span>}
                               </div>
                             )}
+                            {(fieldMap||[]).length>0&&<div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
                           </div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                             <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
