@@ -181,10 +181,19 @@ function LoginScreen({onLogin}) {
       const rows = IS_PROD
         ? await sb.get("usuarios","select=*")
         : lsGet("usuarios");
-      const u = rows.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pw);
+      console.log("Usuarios obtenidos:", rows);
+      console.log("Email ingresado:", email, "Password ingresado:", pw);
+      const u = rows.find(u=>{
+        console.log("Comparando:", u.email, "===", email, ":", u.email.toLowerCase()===email.toLowerCase());
+        console.log("Password:", u.password, "===", pw, ":", u.password===pw);
+        return u.email.toLowerCase()===email.toLowerCase()&&u.password===pw;
+      });
       if (u) { localStorage.setItem("ibero_session",JSON.stringify(u)); onLogin(u); }
       else setErr("Correo o contraseña incorrectos.");
-    } catch(e) { setErr("Error de conexión. Intenta de nuevo."); }
+    } catch(e) {
+      console.error("Error login:", e);
+      setErr("Error de conexión: "+e.message);
+    }
     setBusy(false);
   };
   return (
