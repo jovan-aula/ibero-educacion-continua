@@ -58,83 +58,6 @@ const INIT_DATA = [{
   ]
 }];
 
-// ─── FESTIVOS MÉXICO ──────────────────────────────────
-// Formato MM-DD para festivos de fecha fija
-const FESTIVOS_FIJOS = {
-  "01-01": "Año Nuevo",
-  "02-05": "Día de la Constitución",
-  "03-21": "Natalicio de Benito Juárez",
-  "05-01": "Día del Trabajo",
-  "09-16": "Día de la Independencia",
-  "11-02": "Día de Muertos",
-  "11-20": "Revolución Mexicana",
-  "12-12": "Día de la Virgen de Guadalupe",
-  "12-25": "Navidad",
-};
-
-// Calcula Semana Santa (Viernes Santo) para un año dado
-const calcularViernesSanto = anio => {
-  // Algoritmo de Butcher
-  const a=anio%19,b=Math.floor(anio/100),c=anio%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mes=Math.floor((h+l-7*m+114)/31),dia=((h+l-7*m+114)%31)+1;
-  // Domingo de Pascua → Viernes Santo es 2 días antes
-  const pascua=new Date(anio,mes-1,dia);
-  pascua.setDate(pascua.getDate()-2);
-  const mm=String(pascua.getMonth()+1).padStart(2,"0"),dd=String(pascua.getDate()).padStart(2,"0");
-  return anio+"-"+mm+"-"+dd;
-};
-const calcularJuevesSanto = anio => {
-  const vs=new Date(calcularViernesSanto(anio)+"T12:00:00");
-  vs.setDate(vs.getDate()-1);
-  const mm=String(vs.getMonth()+1).padStart(2,"0"),dd=String(vs.getDate()).padStart(2,"0");
-  return anio+"-"+mm+"-"+dd;
-};
-
-const isFestivo = fecha => {
-  if (!fecha) return null;
-  const [y,m,d] = fecha.split("-");
-  const clave = m+"-"+d;
-  if (FESTIVOS_FIJOS[clave]) return FESTIVOS_FIJOS[clave];
-  const vs=calcularViernesSanto(parseInt(y));
-  const js=calcularJuevesSanto(parseInt(y));
-  if (fecha===vs) return "Viernes Santo";
-  if (fecha===js) return "Jueves Santo";
-  return null;
-};
-
-// Genera las fechas de clase propuestas para un módulo
-// respetando días seleccionados, excluyendo festivos y excepciones
-const generarFechasClase = (fechaInicio, fechaFin, dias, clases, excepciones=[]) => {
-  if (!fechaInicio || !fechaFin || !dias || !dias.length) return [];
-  const ini=new Date(fechaInicio+"T12:00:00"), fin=new Date(fechaFin+"T12:00:00"), cur=new Date(ini);
-  const resultado=[];
-  while (cur<=fin && resultado.length<(clases||99)) {
-    const da=DIAS_S[(cur.getDay()+6)%7];
-    const yyyy=cur.getFullYear(),mm=String(cur.getMonth()+1).padStart(2,"0"),dd=String(cur.getDate()).padStart(2,"0");
-    const iso=yyyy+"-"+mm+"-"+dd;
-    if (dias.includes(da) && !isFestivo(iso) && !(excepciones||[]).includes(iso)) {
-      resultado.push(iso);
-    }
-    cur.setDate(cur.getDate()+1);
-  }
-  return resultado;
-};
-
-// calcPct compatible con fechasClase (array) o contador numérico (legado)
-const calcPctFechas = (est, modulos) => {
-  if (!est || !modulos || !modulos.length) return null;
-  let totalClases=0, totalAsist=0;
-  modulos.forEach(m=>{
-    const max = (m.fechasClase && m.fechasClase.length) ? m.fechasClase.length : (m.clases||0);
-    if (!max) return;
-    totalClases += max;
-    const v = est.asistencia && est.asistencia["mod_"+m.id];
-    if (Array.isArray(v)) totalAsist += v.length;
-    else totalAsist += (v||0);
-  });
-  if (!totalClases) return null;
-  return Math.round(totalAsist/totalClases*100);
-};
-
 // ─── HELPERS ──────────────────────────────────────────
 const fmtFecha = d => {
   if (!d) return "";
@@ -157,7 +80,16 @@ const progStatus = p => {
   return "activo";
 };
 
-const calcPct = calcPctFechas;
+const calcPct = (est, modulos) => {
+  if (!est || !modulos || !modulos.length) return null;
+  const total = modulos.reduce((a,m)=>a+(m.clases||0), 0);
+  if (!total) return null;
+  const asist = modulos.reduce((a,m)=>{
+    const v = est.asistencia && est.asistencia["mod_"+m.id];
+    return a + (v || 0);
+  }, 0);
+  return Math.round(asist/total*100);
+};
 
 const getAlertas = programas => {
   const alerts = [];
@@ -248,47 +180,17 @@ function ListaDocente({programas, onSave}) {
   const mod  = prog && mods(prog).find(m=>m.id===modId);
   if (!prog||!mod) return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Módulo no encontrado.</div>;
 
-  const hoy = today();
-
-  // Determina si hoy es día de clase
-  const fechasClase = mod.fechasClase && mod.fechasClase.length
-    ? mod.fechasClase
-    : generarFechasClase(mod.fechaInicio, mod.fechaFin, mod.dias, mod.clases);
-
-  const numClaseHoy = fechasClase.indexOf(hoy) + 1; // 0 si no es día de clase
-  const esHoyClase  = numClaseHoy > 0;
-  const festivo     = isFestivo(hoy);
-
   const [local,setLocal] = useState(()=>ests(prog).map(e=>({...e,asistencia:{...(e.asistencia||{})}})));
   const [saved,setSaved] = useState(false);
 
-  const toggleHoy = id => {
-    if (!esHoyClase) return;
+  const toggle = id => {
     setLocal(prev=>prev.map(e=>{
       if (e.id!==id) return e;
-      const k="mod_"+modId;
-      const cur = e.asistencia&&e.asistencia[k];
-      let fechas = Array.isArray(cur) ? [...cur] : [];
-      if (fechas.includes(hoy)) fechas=fechas.filter(f=>f!==hoy);
-      else fechas=[...fechas,hoy];
-      return {...e,asistencia:{...(e.asistencia||{}),[k]:fechas}};
+      const k="mod_"+modId, cur=(e.asistencia&&e.asistencia[k])||0, max=mod.clases||0;
+      return {...e,asistencia:{...(e.asistencia||{}),[k]:cur>=max?0:cur+1}};
     }));
     setSaved(false);
   };
-
-  const asistioHoy = e => {
-    const k="mod_"+modId, cur=e.asistencia&&e.asistencia[k];
-    if (Array.isArray(cur)) return cur.includes(hoy);
-    return false;
-  };
-
-  const totalAsist = e => {
-    const k="mod_"+modId, cur=e.asistencia&&e.asistencia[k];
-    if (Array.isArray(cur)) return cur.length;
-    return cur||0;
-  };
-
-  const maxClases = fechasClase.length || mod.clases || 0;
 
   return (
     <div style={{minHeight:"100vh",background:"#f2f2f2",fontFamily:"system-ui"}}>
@@ -297,106 +199,43 @@ function ListaDocente({programas, onSave}) {
         <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia</div>
       </div>
       <div style={{maxWidth:640,margin:"0 auto",padding:"28px 16px"}}>
-        {/* Info del módulo */}
-        <div style={{...S.card,padding:24,marginBottom:16}}>
+        <div style={{...S.card,padding:24,marginBottom:20}}>
           <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",marginBottom:4}}>{mod.nombre}</div>
           <div style={{fontSize:13,color:"#6b7280",display:"flex",gap:16,flexWrap:"wrap"}}>
             <span>{prog.nombre}</span>
             <span>Módulo {mod.numero}</span>
             {mod.horario&&<span>{mod.horario}</span>}
-            <span>{maxClases} clases</span>
+            <span>{mod.clases} clases</span>
           </div>
         </div>
-
-        {/* Estado del día */}
-        {festivo&&(
-          <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"14px 18px",marginBottom:16,display:"flex",gap:12,alignItems:"center"}}>
-            <span style={{fontSize:20}}>📅</span>
-            <div>
-              <div style={{fontWeight:700,fontSize:14,color:"#92400e"}}>Día festivo: {festivo}</div>
-              <div style={{fontSize:13,color:"#92400e",marginTop:2}}>Hoy no hay clase programada por ser día festivo.</div>
-            </div>
-          </div>
-        )}
-
-        {!esHoyClase&&!festivo&&(
-          <div style={{background:"#f3f4f6",border:"1px solid #e5e7eb",borderRadius:8,padding:"14px 18px",marginBottom:16,display:"flex",gap:12,alignItems:"center"}}>
-            <span style={{fontSize:20}}>📆</span>
-            <div>
-              <div style={{fontWeight:700,fontSize:14,color:"#374151"}}>Hoy no hay clase programada</div>
-              <div style={{fontSize:13,color:"#6b7280",marginTop:2}}>
-                {fechasClase.length>0
-                  ? "Próximas clases: "+fechasClase.filter(f=>f>=hoy).slice(0,3).map(f=>fmtFecha(f)).join(", ")
-                  : "No hay fechas de clase configuradas."}
+        <div style={{marginBottom:12,fontSize:13,color:"#6b7280"}}>Toca el contador para registrar asistencia por clase.</div>
+        <div style={{display:"grid",gap:10,marginBottom:20}}>
+          {local.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:40}}>Sin estudiantes en este módulo.</div>}
+          {local.map(e=>{
+            const k="mod_"+modId, asist=(e.asistencia&&e.asistencia[k])||0, max=mod.clases||0, pct=max?Math.round(asist/max*100):0;
+            return (
+              <div key={e.id} style={{...S.card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600,fontSize:15}}>{e.nombre}</div>
+                  {e.empresa&&<div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{e.empresa}</div>}
+                  <div style={{marginTop:6,width:120,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                  <button onClick={()=>toggle(e.id)} style={{width:64,height:40,border:"2px solid "+(asist>0?"#16a34a":"#e5e7eb"),borderRadius:8,background:asist>0?"#f0fdf4":"#f9f9f9",cursor:"pointer",fontWeight:800,fontSize:16,color:asist>0?"#16a34a":"#9ca3af",fontFamily:"system-ui"}}>
+                    {asist}/{max}
+                  </button>
+                  <span style={{fontSize:10,color:pct>=80?"#16a34a":"#dc2626",fontWeight:700}}>{pct}%</span>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {esHoyClase&&(
-          <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"14px 18px",marginBottom:16,display:"flex",gap:12,alignItems:"center"}}>
-            <span style={{fontSize:20}}>✅</span>
-            <div>
-              <div style={{fontWeight:700,fontSize:14,color:"#16a34a"}}>Clase {numClaseHoy} de {maxClases} · {fmtFecha(hoy)}</div>
-              <div style={{fontSize:13,color:"#16a34a",marginTop:2}}>Toca el nombre para marcar asistencia de hoy.</div>
-            </div>
-          </div>
-        )}
-
-        {/* Fechas del módulo */}
-        {fechasClase.length>0&&(
-          <div style={{...S.card,padding:"14px 18px",marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10}}>Calendario de clases</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {fechasClase.map((f,i)=>{
-                const pasada=f<hoy, esHoy=f===hoy;
-                return(
-                  <div key={f} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                    <div style={{width:36,height:36,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,fontFamily:"system-ui",background:esHoy?RED:pasada?"#f0fdf4":"#f3f4f6",color:esHoy?"#fff":pasada?"#16a34a":"#9ca3af",border:esHoy?"2px solid "+RED:pasada?"1px solid #bbf7d0":"1px solid #e5e7eb"}}>{i+1}</div>
-                    <div style={{fontSize:9,color:esHoy?RED:pasada?"#16a34a":"#9ca3af",fontFamily:"system-ui",textAlign:"center",lineHeight:1.2}}>{fmtFecha(f).split(" ").slice(0,2).join("\n")}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Lista de estudiantes */}
-        {esHoyClase&&(
-          <>
-            <div style={{marginBottom:8,fontSize:13,color:"#6b7280",fontWeight:600}}>
-              {local.filter(asistioHoy).length} / {local.length} presentes hoy
-            </div>
-            <div style={{display:"grid",gap:10,marginBottom:20}}>
-              {local.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:40}}>Sin estudiantes en este módulo.</div>}
-              {local.map(e=>{
-                const presente=asistioHoy(e), tot=totalAsist(e), pct=maxClases?Math.round(tot/maxClases*100):0;
-                return (
-                  <div key={e.id} onClick={()=>toggleHoy(e.id)} style={{...S.card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",border:"2px solid "+(presente?"#16a34a":"#e5e7eb"),background:presente?"#f0fdf4":"#fff",transition:"all 0.15s"}}>
-                    <div style={{width:36,height:36,borderRadius:"50%",background:presente?"#16a34a":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18}}>
-                      {presente?"✓":""}
-                    </div>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:15,color:presente?"#16a34a":"#1a1a1a"}}>{e.nombre}</div>
-                      {e.empresa&&<div style={{fontSize:12,color:"#9ca3af",marginTop:1}}>{e.empresa}</div>}
-                      <div style={{marginTop:6,display:"flex",alignItems:"center",gap:8}}>
-                        <div style={{width:100,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
-                          <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
-                        </div>
-                        <span style={{fontSize:11,color:pct>=80?"#16a34a":"#dc2626",fontWeight:700}}>{tot}/{maxClases} · {pct}%</span>
-                      </div>
-                    </div>
-                    <div style={{fontSize:12,fontWeight:700,color:presente?"#16a34a":"#9ca3af",flexShrink:0}}>{presente?"Presente":"Ausente"}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <button onClick={()=>{onSave(progId,modId,local);setSaved(true);}} style={{...S.btn(RED,"#fff"),width:"100%",padding:14,fontSize:15}}>
-              {saved?"Asistencia guardada":"Guardar asistencia"}
-            </button>
-            {saved&&<div style={{textAlign:"center",fontSize:13,color:"#16a34a",marginTop:12,fontWeight:600}}>Guardado correctamente.</div>}
-          </>
-        )}
+            );
+          })}
+        </div>
+        <button onClick={()=>{onSave(progId,modId,local);setSaved(true);}} style={{...S.btn(RED,"#fff"),width:"100%",padding:14,fontSize:15}}>
+          {saved?"Asistencia guardada":"Guardar asistencia"}
+        </button>
+        {saved&&<div style={{textAlign:"center",fontSize:13,color:"#16a34a",marginTop:12,fontWeight:600}}>Guardado correctamente.</div>}
       </div>
     </div>
   );
@@ -460,12 +299,12 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     const existing = ests(prog);
     const existIds = new Set(existing.map(e=>e.id));
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
-      const base={id:c.id,nombre:c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),email:c.email||"",telefono:c.phone||"",empresa:c.company||c.company_name||"",fuente:c.source||"",estatus:"activo",asistencia:{}};
+      const campos_extra = {};
       (fieldMap||[]).forEach(fm=>{
         const cf=(c.customFields||[]).find(f=>f.fieldKey===fm.id||f.fieldKey==="contact."+fm.id||f.id===fm.id);
-        if(cf) base[fm.label]=cf.fieldValue;
+        if(cf&&cf.fieldValue) campos_extra[fm.label]=cf.fieldValue;
       });
-      return base;
+      return {id:c.id,nombre:c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),email:c.email||"",telefono:c.phone||"",empresa:c.company||c.company_name||"",fuente:c.source||"",estatus:"activo",asistencia:{},campos_extra};
     });
     onImport([...existing,...toAdd]);
     onClose();
@@ -560,26 +399,12 @@ function CalendarioView({programas}) {
     const evs=[];
     progs.forEach(prog=>{
       mods(prog).forEach(mod=>{
-        // Si el módulo ya tiene fechasClase confirmadas, usarlas directamente
-        if (mod.fechasClase && mod.fechasClase.length) {
-          mod.fechasClase.forEach(f=>{
-            const d=new Date(f+"T12:00:00"),dm=d.getMonth(),dy=d.getFullYear(),dd=d.getDate();
-            if((fa==null||dy===fa)&&(fm==null||dm===fm)&&(fd==null||dd===fd))
-              evs.push({dia:dd,mes:dm,anio:dy,prog,mod,festivo:false});
-          });
-          return;
-        }
-        // Si no, calcular al vuelo excluyendo festivos
         if (!mod.fechaInicio||!mod.fechaFin) return;
         const ini=new Date(mod.fechaInicio+"T12:00:00"), fin=new Date(mod.fechaFin+"T12:00:00"), cur=new Date(ini);
         while(cur<=fin){
           const dm=cur.getMonth(),dy=cur.getFullYear(),dd=cur.getDate(),da=DIAS_S[(cur.getDay()+6)%7];
-          const mm=String(cur.getMonth()+1).padStart(2,"0"),ddS=String(cur.getDate()).padStart(2,"0");
-          const iso=dy+"-"+mm+"-"+ddS;
-          const fest=isFestivo(iso);
-          if(mod.dias&&mod.dias.includes(da)&&(fa==null||dy===fa)&&(fm==null||dm===fm)&&(fd==null||dd===fd)){
-            evs.push({dia:dd,mes:dm,anio:dy,prog,mod,festivo:!!fest,nombreFestivo:fest});
-          }
+          if(mod.dias&&mod.dias.includes(da)&&(fa==null||dy===fa)&&(fm==null||dm===fm)&&(fd==null||dd===fd))
+            evs.push({dia:dd,mes:dm,anio:dy,prog,mod});
           cur.setDate(cur.getDate()+1);
         }
       });
@@ -619,26 +444,19 @@ function CalendarioView({programas}) {
 
   const RenderDia = () => {
     const evs=getEvts(mes,anio,dia), isT=dia===TD&&mes===TM&&anio===TY;
-    const mm=String(mes+1).padStart(2,"0"),dd=String(dia).padStart(2,"0");
-    const isoHoy=anio+"-"+mm+"-"+dd;
-    const fest=isFestivo(isoHoy);
-    const evsFiltrados=evs.filter(e=>!e.festivo);
     return(
       <div style={{...S.card,padding:24}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-          <div style={{width:48,height:48,borderRadius:12,background:isT?RED:fest?"#fffbeb":"#f3f4f6",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",border:fest?"2px solid #fde68a":"none"}}>
-            <span style={{fontSize:20,fontWeight:800,color:isT?"#fff":fest?"#d97706":"#1a1a1a",fontFamily:"system-ui",lineHeight:1}}>{dia}</span>
-            <span style={{fontSize:9,color:isT?"rgba(255,255,255,0.8)":fest?"#d97706":"#9ca3af",fontFamily:"system-ui"}}>{DIAS_S[(new Date(anio,mes,dia).getDay()+6)%7]}</span>
+          <div style={{width:48,height:48,borderRadius:12,background:isT?RED:"#f3f4f6",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:20,fontWeight:800,color:isT?"#fff":"#1a1a1a",fontFamily:"system-ui",lineHeight:1}}>{dia}</span>
+            <span style={{fontSize:9,color:isT?"rgba(255,255,255,0.8)":"#9ca3af",fontFamily:"system-ui"}}>{DIAS_S[(new Date(anio,mes,dia).getDay()+6)%7]}</span>
           </div>
           <div>
             <div style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>{dia+" de "+MESES_L[mes]+" de "+anio}</div>
-            {fest
-              ? <div style={{fontSize:13,color:"#d97706",fontFamily:"system-ui",fontWeight:600}}>🎌 {fest}</div>
-              : <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>{evsFiltrados.length} clases</div>}
+            <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>{evs.length} clases</div>
           </div>
         </div>
-        {fest&&<div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#92400e",fontFamily:"system-ui"}}>Día festivo — {fest}. No hay clases programadas.</div>}
-        {evsFiltrados.length===0&&!fest?<div style={{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontFamily:"system-ui"}}>Sin clases este día.</div>:evsFiltrados.map((e,i)=><EvCard key={i} e={e}/>)}
+        {evs.length===0?<div style={{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontFamily:"system-ui"}}>Sin clases este día.</div>:evs.map((e,i)=><EvCard key={i} e={e}/>)}
       </div>
     );
   };
@@ -687,34 +505,21 @@ function CalendarioView({programas}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
             {Array.from({length:tot}).map((_,i)=>{
               const d=i-off+1,valid=d>=1&&d<=uD.getDate(),isT=valid&&d===TD&&mes===TM&&anio===TY,ev=valid?(byD[d]||[]):[],isSel=selDia===d;
-              const mmS=String(mes+1).padStart(2,"0"),ddS=String(d).padStart(2,"0");
-              const fest=valid?isFestivo(anio+"-"+mmS+"-"+ddS):null;
-              const evsFiltrados=ev.filter(e=>!e.festivo);
               return(
-                <div key={i} onClick={()=>valid&&setSelDia(isSel?null:d)} style={{minHeight:88,padding:"6px 8px",borderRight:(i+1)%7!==0?"1px solid #f3f4f6":"none",borderBottom:i<tot-7?"1px solid #f3f4f6":"none",background:isSel?"#fef2f2":isT?"#fffbeb":fest?"#fffde7":"#fff",cursor:valid?"pointer":"default"}}>
+                <div key={i} onClick={()=>valid&&setSelDia(isSel?null:d)} style={{minHeight:88,padding:"6px 8px",borderRight:(i+1)%7!==0?"1px solid #f3f4f6":"none",borderBottom:i<tot-7?"1px solid #f3f4f6":"none",background:isSel?"#fef2f2":isT?"#fffbeb":"#fff",cursor:valid?"pointer":"default"}}>
                   {valid&&<>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
-                      <div style={{width:24,height:24,borderRadius:"50%",background:isT?RED:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        <span style={{fontSize:12,fontWeight:isT?800:400,color:isT?"#fff":fest?"#d97706":"#374151",fontFamily:"system-ui"}}>{d}</span>
-                      </div>
-                      {fest&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,fontFamily:"system-ui"}}>🎌</span>}
+                    <div style={{width:24,height:24,borderRadius:"50%",background:isT?RED:"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:4}}>
+                      <span style={{fontSize:12,fontWeight:isT?800:400,color:isT?"#fff":"#374151",fontFamily:"system-ui"}}>{d}</span>
                     </div>
-                    {fest&&<div style={{fontSize:9,color:"#d97706",fontFamily:"system-ui",fontWeight:600,marginBottom:3,lineHeight:1.2}}>{fest}</div>}
-                    {evsFiltrados.slice(0,2).map((e,j)=><div key={j} style={{background:e.prog.color,color:"#fff",borderRadius:3,padding:"2px 5px",fontSize:10,fontFamily:"system-ui",fontWeight:600,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.mod.numero+" · "+e.mod.nombre.split(" ").slice(0,2).join(" ")}</div>)}
-                    {evsFiltrados.length>2&&<div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>+{evsFiltrados.length-2} más</div>}
+                    {ev.slice(0,3).map((e,j)=><div key={j} style={{background:e.prog.color,color:"#fff",borderRadius:3,padding:"2px 5px",fontSize:10,fontFamily:"system-ui",fontWeight:600,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.mod.numero+" · "+e.mod.nombre.split(" ").slice(0,2).join(" ")}</div>)}
+                    {ev.length>3&&<div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>+{ev.length-3} más</div>}
                   </>}
                 </div>
               );
             })}
           </div>
         </div>
-        {selDia&&byD[selDia]&&(
-          <div style={{...S.card,marginTop:16,padding:20}}>
-            <div style={{fontWeight:700,fontSize:15,marginBottom:12,fontFamily:"Georgia,serif"}}>{selDia+" de "+MESES_L[mes]+" de "+anio}</div>
-            {byD[selDia].filter(e=>e.festivo).length>0&&<div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"8px 12px",marginBottom:10,fontSize:13,color:"#92400e",fontFamily:"system-ui"}}>🎌 {byD[selDia].find(e=>e.festivo)?.nombreFestivo} — Día festivo, sin clases.</div>}
-            {byD[selDia].filter(e=>!e.festivo).map((e,i)=><EvCard key={i} e={e}/>)}
-          </div>
-        )}
+        {selDia&&byD[selDia]&&<div style={{...S.card,marginTop:16,padding:20}}><div style={{fontWeight:700,fontSize:15,marginBottom:12,fontFamily:"Georgia,serif"}}>{selDia+" de "+MESES_L[mes]+" de "+anio}</div>{byD[selDia].map((e,i)=><EvCard key={i} e={e}/>)}</div>}
       </div>
     );
   };
@@ -1060,17 +865,7 @@ export default function App() {
   const saveAsistDocente = (progId,modId,updated) => {
     save((programas||[]).map(p=>{
       if(p.id!==progId) return p;
-      return{...p,estudiantes:ests(p).map(e=>{
-        const u=updated.find(eu=>eu.id===e.id);
-        if (!u) return e;
-        const k="mod_"+modId;
-        const newAsist={...(e.asistencia||{})};
-        const uVal=u.asistencia&&u.asistencia[k];
-        // preservar formato: si viene array, guardarlo como array
-        if (Array.isArray(uVal)) newAsist[k]=uVal;
-        else if (typeof uVal==="number") newAsist[k]=uVal;
-        return{...e,asistencia:newAsist};
-      })};
+      return{...p,estudiantes:ests(p).map(e=>{const u=updated.find(eu=>eu.id===e.id);return u?{...e,asistencia:{...(e.asistencia||{}),...(u.asistencia||{})}}:e;})};
     }));
   };
 
@@ -1099,24 +894,8 @@ export default function App() {
       if(p.id!==progId)return p;
       return{...p,estudiantes:ests(p).map(e=>{
         if(e.id!==estId)return e;
-        const k="mod_"+modId;
-        const cur=e.asistencia&&e.asistencia[k];
-        const mod=(mods(p).find(m=>m.id===modId)||{});
-        // Si ya es array de fechas, ciclar de forma diferente (modo legado: ++)
-        if (Array.isArray(cur)) {
-          // en modo admin, convertir de vuelta a contador para simplicidad
-          const max=(mod.fechasClase&&mod.fechasClase.length)||mod.clases||0;
-          const cnt=cur.length>=max?0:cur.length+1;
-          // generar array sintético de fechas si hay fechasClase
-          if (mod.fechasClase&&mod.fechasClase.length) {
-            const newArr=mod.fechasClase.slice(0,cnt);
-            return{...e,asistencia:{...(e.asistencia||{}),[k]:newArr}};
-          }
-          return{...e,asistencia:{...(e.asistencia||{}),[k]:cnt}};
-        }
-        const max=(mod.fechasClase&&mod.fechasClase.length)||mod.clases||0;
-        const n=(cur||0)>=max?0:(cur||0)+1;
-        return{...e,asistencia:{...(e.asistencia||{}),[k]:n}};
+        const k="mod_"+modId,cur=(e.asistencia&&e.asistencia[k])||0,max=(mods(p).find(m=>m.id===modId)||{}).clases||0;
+        return{...e,asistencia:{...(e.asistencia||{}),[k]:cur>=max?0:cur+1}};
       })};
     }));
   };
@@ -1124,13 +903,8 @@ export default function App() {
   const exportCSV = prog=>{
     const rows=ests(prog).map(e=>{
       const base={Nombre:e.nombre||"",Correo:e.email||"",Teléfono:e.telefono||"",Empresa:e.empresa||"",Estatus:e.estatus||"activo"};
-      (fieldMap||[]).forEach(fm=>{base[fm.label]=e[fm.label]||"";});
-      mods(prog).forEach(m=>{
-        const raw=e.asistencia&&e.asistencia["mod_"+m.id];
-        const asist=Array.isArray(raw)?raw.length:(raw||0);
-        const max=(m.fechasClase&&m.fechasClase.length)||m.clases||0;
-        base["Asist."+m.numero]=asist+"/"+max;
-      });
+      (fieldMap||[]).forEach(fm=>{base[fm.label]=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label]||"";});
+      mods(prog).forEach(m=>{base["Asist."+m.numero]=((e.asistencia&&e.asistencia["mod_"+m.id])||0)+"/"+m.clases;});
       return base;
     });
     if(!rows.length)return;
@@ -1139,7 +913,7 @@ export default function App() {
   };
 
   const exportDocente = prog=>{
-    const rows=ests(prog).map(e=>({Nombre:e.nombre||"",Empresa:e.empresa||"",Puesto:e["Puesto"]||""}));
+    const rows=ests(prog).map(e=>({Nombre:e.nombre||"",Empresa:e.empresa||"",Puesto:(e.campos_extra&&e.campos_extra["Puesto"])||e["Puesto"]||""}));
     if(!rows.length)return;
     const hdr=["Nombre","Empresa","Puesto"],csv=[hdr.join(","),...rows.map(r=>hdr.map(h=>'"'+(r[h]||"").replace(/"/g,'""')+'"').join(","))].join("\n");
     const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));a.download="Lista_"+prog.nombre.replace(/\s+/g,"_")+".csv";a.click();notify("Lista para docente exportada.");
@@ -1400,7 +1174,7 @@ export default function App() {
                             <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
                               {e.email&&<span>{e.email}</span>}{e.telefono&&<span>{e.telefono}</span>}{e.empresa&&<span>{e.empresa}</span>}
                             </div>
-                            {(fieldMap||[]).length>0&&<div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>e[fm.label]&&<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+e[fm.label]}</span>)}</div>}
+                            {(fieldMap||[]).length>0&&<div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
                           </div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                             <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
@@ -1447,9 +1221,7 @@ export default function App() {
                                 {e.empresa&&<div style={{fontSize:11,color:"#9ca3af",fontWeight:400}}>{e.empresa}</div>}
                               </td>
                               {mods(prog).map(m=>{
-                                const k="mod_"+m.id, raw=e.asistencia&&e.asistencia[k];
-                                const asist=Array.isArray(raw)?raw.length:(raw||0);
-                                const max=(m.fechasClase&&m.fechasClase.length)||m.clases||0, pm=max?Math.round(asist/max*100):0;
+                                const k="mod_"+m.id, asist=(e.asistencia&&e.asistencia[k])||0, max=m.clases||0, pm=max?Math.round(asist/max*100):0;
                                 return(
                                   <td key={m.id} style={{padding:"10px 12px",textAlign:"center"}}>
                                     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
@@ -1658,53 +1430,6 @@ export default function App() {
                   {DIAS.map(d=><button key={d} onClick={()=>setModForm({...modForm,dias:(modForm.dias||[]).includes(d)?(modForm.dias||[]).filter(x=>x!==d):[...(modForm.dias||[]),d]})} style={{border:"none",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui",background:(modForm.dias||[]).includes(d)?RED:"#f3f4f6",color:(modForm.dias||[]).includes(d)?"#fff":"#6b7280"}}>{d}</button>)}
                 </div>
               </div>
-
-              {/* FECHAS DE CLASE PROPUESTAS */}
-              {modForm.fechaInicio&&modForm.fechaFin&&(modForm.dias||[]).length>0&&(()=>{
-                const propuesta = generarFechasClase(modForm.fechaInicio, modForm.fechaFin, modForm.dias, modForm.clases);
-                const fechasActuales = modForm.fechasClase && modForm.fechasClase.length ? modForm.fechasClase : null;
-                const fechasMostrar = fechasActuales || propuesta;
-                const hayDiff = !fechasActuales || JSON.stringify(fechasActuales)!==JSON.stringify(propuesta);
-                return(
-                  <div style={{marginBottom:13,background:"#f9f9f9",borderRadius:8,padding:"14px 16px",border:"1px solid #e5e7eb"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                      <label style={{...S.lbl,margin:0}}>Fechas de clase ({fechasMostrar.length})</label>
-                      <div style={{display:"flex",gap:6}}>
-                        {hayDiff&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={{...S.btn("#fffbeb","#d97706",{padding:"3px 10px",fontSize:11,border:"1px solid #fde68a"})}}>Usar propuesta</button>}
-                        {fechasActuales&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={{...S.btn("#f3f4f6","#374151",{padding:"3px 10px",fontSize:11})}}>Recalcular</button>}
-                      </div>
-                    </div>
-                    {!fechasActuales&&<div style={{fontSize:12,color:"#d97706",marginBottom:8,fontFamily:"system-ui"}}>⚠️ Propuesta automática — revisa y confirma las fechas</div>}
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {fechasMostrar.map((f,i)=>{
-                        const fest=isFestivo(f);
-                        return(
-                          <div key={f} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                            <div style={{position:"relative"}}>
-                              <div style={{width:42,height:42,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:fest?"#fffbeb":"#fff",border:fest?"2px solid #fde68a":"1px solid #e5e7eb",padding:2}}>
-                                <span style={{fontSize:11,fontWeight:700,fontFamily:"system-ui",color:fest?"#d97706":"#374151"}}>{i+1}</span>
-                                <span style={{fontSize:9,color:fest?"#d97706":"#9ca3af",fontFamily:"system-ui"}}>{fmtFecha(f).split(" ").slice(0,2).join(" ")}</span>
-                              </div>
-                              <button onClick={()=>setModForm({...modForm,fechasClase:fechasMostrar.filter((_,j)=>j!==i)})} style={{position:"absolute",top:-6,right:-6,width:16,height:16,borderRadius:"50%",background:"#dc2626",border:"none",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,lineHeight:1}}>×</button>
-                            </div>
-                            {fest&&<span style={{fontSize:8,color:"#d97706",fontFamily:"system-ui",fontWeight:700}}>festivo</span>}
-                          </div>
-                        );
-                      })}
-                      {/* Botón agregar fecha manual */}
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                        <label style={{width:42,height:42,borderRadius:8,border:"2px dashed #e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden"}}>
-                          <span style={{fontSize:20,color:"#d1d5db",fontWeight:300}}>+</span>
-                          <input type="date" style={{position:"absolute",opacity:0,width:"100%",height:"100%",cursor:"pointer"}} min={modForm.fechaInicio} max={modForm.fechaFin}
-                            onChange={e=>{const v=e.target.value;if(v&&!fechasMostrar.includes(v)){const nuevo=[...fechasMostrar,v].sort();setModForm({...modForm,fechasClase:nuevo});}e.target.value="";}}/>
-                        </label>
-                        <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>agregar</span>
-                      </div>
-                    </div>
-                    {!fechasActuales&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={{...S.btn(RED,"#fff",{marginTop:12,width:"100%",fontSize:12})}}>Confirmar estas fechas</button>}
-                  </div>
-                );
-              })()}
               <div style={{marginBottom:22}}>
                 <label style={S.lbl}>Estatus del docente</label>
                 <div style={{display:"flex",gap:8}}>
