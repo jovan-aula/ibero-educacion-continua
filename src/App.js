@@ -298,13 +298,47 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
   const doImport = () => {
     const existing = ests(prog);
     const existIds = new Set(existing.map(e=>e.id));
+
+    // Campos fijos de GHL que siempre intentamos mapear
+    const CAMPOS_FIJOS = [
+      {key:"contact.programa_de_intersz",  label:"Programa de interés"},
+      {key:"contact.puesto_que_desempeas", label:"Puesto"},
+      {key:"contact.eres_egresada_o_egresado_ibero", label:"Egresado IBERO"},
+      {key:"contact.cul_es_tu_carrera_profesional",  label:"Carrera"},
+      {key:"contact.ltimo_grado_de_estudios",        label:"Grado de estudios"},
+      {key:"contact.company_name",                    label:"Empresa"},
+    ];
+
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const campos_extra = {};
+
+      // Mapear campos fijos
+      CAMPOS_FIJOS.forEach(fm=>{
+        const cf=(c.customFields||[]).find(f=>f.fieldKey===fm.key||f.fieldKey==="contact."+fm.key);
+        if(cf&&cf.fieldValue) campos_extra[fm.label]=cf.fieldValue;
+      });
+
+      // Mapear campos adicionales configurados en ⚙️
       (fieldMap||[]).forEach(fm=>{
         const cf=(c.customFields||[]).find(f=>f.fieldKey===fm.id||f.fieldKey==="contact."+fm.id||f.id===fm.id);
         if(cf&&cf.fieldValue) campos_extra[fm.label]=cf.fieldValue;
       });
-      return {id:c.id,nombre:c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),email:c.email||"",telefono:c.phone||"",empresa:c.company||c.company_name||"",fuente:c.source||"",estatus:"activo",asistencia:{},campos_extra};
+
+      // Empresa: priorizar company_name del custom, luego company estándar
+      const empresa = campos_extra["Empresa"] || c.company || c.company_name || "";
+      delete campos_extra["Empresa"]; // va en campo dedicado, no en campos_extra
+
+      return {
+        id:c.id,
+        nombre:c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
+        email:c.email||"",
+        telefono:c.phone||"",
+        empresa,
+        fuente:c.source||"",
+        estatus:"activo",
+        asistencia:{},
+        campos_extra
+      };
     });
     onImport([...existing,...toAdd]);
     onClose();
@@ -904,6 +938,12 @@ export default function App() {
     const rows=ests(prog).map(e=>{
       const base={Nombre:e.nombre||"",Correo:e.email||"",Teléfono:e.telefono||"",Empresa:e.empresa||"",Estatus:e.estatus||"activo"};
       (fieldMap||[]).forEach(fm=>{base[fm.label]=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label]||"";});
+      // Campos fijos siempre en el CSV
+      base["Programa de interés"]=(e.campos_extra&&e.campos_extra["Programa de interés"])||"";
+      base["Puesto"]=(e.campos_extra&&e.campos_extra["Puesto"])||e["Puesto"]||"";
+      base["Egresado IBERO"]=(e.campos_extra&&e.campos_extra["Egresado IBERO"])||"";
+      base["Carrera"]=(e.campos_extra&&e.campos_extra["Carrera"])||"";
+      base["Grado de estudios"]=(e.campos_extra&&e.campos_extra["Grado de estudios"])||"";
       mods(prog).forEach(m=>{base["Asist."+m.numero]=((e.asistencia&&e.asistencia["mod_"+m.id])||0)+"/"+m.clases;});
       return base;
     });
@@ -1174,7 +1214,8 @@ export default function App() {
                             <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
                               {e.email&&<span>{e.email}</span>}{e.telefono&&<span>{e.telefono}</span>}{e.empresa&&<span>{e.empresa}</span>}
                             </div>
-                            {(fieldMap||[]).length>0&&<div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
+                            {Object.keys(e.campos_extra||{}).length>0&&<div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>{Object.entries(e.campos_extra||{}).map(([k,v])=>v?<span key={k} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{k+": "+v}</span>:null)}</div>}
+                            {(fieldMap||[]).length>0&&<div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
                           </div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                             <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
