@@ -1235,6 +1235,12 @@ function DocentesView({docentes,saveDocentes,programas}) {
                       </div>
                     </div>
                   )}
+                  {doc.semblanza&&(
+                    <div style={{marginTop:10,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:4}}>SEMBLANZA</div>
+                      <p style={{fontSize:13,color:"#374151",fontFamily:"system-ui",lineHeight:1.6,margin:0}}>{doc.semblanza}</p>
+                    </div>
+                  )}
                   {hist.length>0&&(
                     <div style={{marginTop:10}}>
                       <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>HISTORIAL · {horas}H IMPARTIDAS</div>
@@ -1577,6 +1583,7 @@ export default function App() {
   const [showModM,setShowModM]   = useState(false);
   const [editMod,setEditMod]     = useState(null);
   const [showProgM,setShowProgM] = useState(false);
+  const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
   const [pagoModal,setPagoModal] = useState(null); // {est, prog}
@@ -1589,10 +1596,14 @@ export default function App() {
   const [newUser,setNewUser]     = useState({nombre:"",email:"",password:"",permisos:{...VIEWER_P}});
   const [showUP,setShowUP]       = useState(false);
   const [newFM,setNewFM]         = useState({id:"",label:""});
-  const [repExp,setRepExp]       = useState(null);
-  const [linkCopiado,setLinkCop] = useState("");
+  const [repExp,setRepExp]           = useState(null);
+  const [linkCopiado,setLinkCop]     = useState("");
   const [repVistaFin,setRepVistaFin] = useState("global");
   const [repMesFin,setRepMesFin]     = useState(today().substring(0,7));
+  const [busqGlobal,setBusqGlobal]   = useState("");
+  const [busqPagos,setBusqPagos]     = useState("");
+  const [progPagos,setProgPagos]     = useState("");
+  const [filtroPagos,setFiltroPagos] = useState("");
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -1903,11 +1914,17 @@ export default function App() {
     setShowModM(false);notify(editMod?"Módulo actualizado":"Módulo agregado");
   };
   const delMod  = id=>{save((programas||[]).map(p=>p.id===selProg?{...p,modulos:mods(p).filter(m=>m.id!==id)}:p));notify("Módulo eliminado","warning");};
-  const openNewProg=()=>{setProgForm({...eProg,id:newId()});setShowProgM(true);};
+  const openNewProg=()=>{setProgForm({...eProg,id:newId()});setEditProgId(null);setShowProgM(true);};
+  const openEditProg=p=>{setProgForm({...p});setEditProgId(p.id);setShowProgM(true);};
   const saveProg=()=>{
     if(!progForm.nombre){notify("Ingresa el nombre","error");return;}
     const tipo=progForm.tipo==="Otro"?(progForm.tipoCustom||"Otro"):progForm.tipo;
-    save([...(programas||[]),{...progForm,tipo}]);setShowProgM(false);notify("Programa agregado");
+    if(editProgId){
+      save((programas||[]).map(p=>p.id===editProgId?{...progForm,tipo}:p));
+      setShowProgM(false);notify("Programa actualizado");
+    } else {
+      save([...(programas||[]),{...progForm,tipo}]);setShowProgM(false);notify("Programa agregado");
+    }
   };
   const delProg = id=>{save((programas||[]).filter(p=>p.id!==id));notify("Programa eliminado","warning");};
 
@@ -1922,7 +1939,7 @@ export default function App() {
         <div style={{color:"rgba(255,255,255,0.9)",fontSize:13,fontFamily:"system-ui"}}>Educación Continua</div>
         <div style={{flex:1}}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-          {[["lista","Programas"],["hoy","Hoy"],["calendario","Calendario"],["asistencia","Asistencia"],["docentes","Docentes"]].map(([v,l])=>(
+          {[["lista","Programas"],["hoy","Hoy"],["pagos_global","Pagos"],["asistencia","Asistencia"],["busqueda","Búsqueda"],["calendario","Calendario"],["docentes","Docentes"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view===v?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>{l}</button>
           ))}
           {can(session,"verReportes")&&<button onClick={()=>setView("reportes")} style={{background:view==="reportes"?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view==="reportes"?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>Reportes</button>}
@@ -2117,6 +2134,7 @@ export default function App() {
                     </div>
                     <div style={{display:"flex",gap:8,flexShrink:0}}>
                       <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff")}>Ver</button>
+                      {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>Editar</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
                     </div>
                   </div>
@@ -2247,7 +2265,10 @@ export default function App() {
                                 {e.grado&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Grado: {e.grado}</span>}
                                 {e.egresado_ibero&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>Egresado IBERO: {e.egresado_ibero}</span>}
                                 {e.requiere_factura&&<span style={{fontSize:11,background:e.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:4,padding:"2px 8px",color:e.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>Factura: {e.requiere_factura}</span>}
-                                {e.csf_url&&<a href={e.csf_url} target="_blank" rel="noreferrer" onClick={ev=>ev.stopPropagation()} style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>}
+                                {e.csf_url
+                                  ? <a href={e.csf_url} target="_blank" rel="noreferrer" onClick={ev=>ev.stopPropagation()} style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                                  : <button onClick={ev=>{ev.stopPropagation();const url=prompt("Pega la URL del CSF:");if(url&&url.trim())save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,csf_url:url.trim()}:es)}:p));}} style={{fontSize:11,background:"#fffbeb",borderRadius:4,padding:"2px 8px",color:"#d97706",fontFamily:"system-ui",fontWeight:600,border:"1px solid #fde68a",cursor:"pointer"}}>+ Agregar CSF</button>
+                                }
                               </div>
                             )}
                             {(fieldMap||[]).length>0&&<div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
@@ -2431,6 +2452,199 @@ export default function App() {
             })()}
           </div>
         )}
+
+        {/* BÚSQUEDA GLOBAL */}
+        {view==="busqueda"&&(()=>{
+          const [q,setQ] = [busqGlobal,setBusqGlobal];
+          const resultados=[];
+          if(q.length>=2){
+            const ql=q.toLowerCase();
+            (programas||[]).forEach(prog=>{
+              ests(prog).forEach(est=>{
+                if(est.nombre?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.telefono?.includes(q)){
+                  resultados.push({est,prog});
+                }
+              });
+            });
+          }
+          return(
+            <div>
+              <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 16px",letterSpacing:"-0.5px"}}>Búsqueda global</h1>
+              <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por nombre, correo, empresa, teléfono..." style={{...S.inp,fontSize:15,marginBottom:20}}/>
+              {q.length>0&&q.length<2&&<p style={{color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Escribe al menos 2 caracteres.</p>}
+              {q.length>=2&&resultados.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados para "{q}".</div>}
+              <div style={{display:"grid",gap:10}}>
+                {resultados.map(({est,prog},i)=>{
+                  const p=est.pago||{};
+                  const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+                  const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
+                  const total=(p.parcialidades||[]).length;
+                  return(
+                    <div key={i} style={{...S.card,padding:"16px 20px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:700,fontSize:15}}>{est.nombre}</span>
+                          <span style={{fontSize:11,background:est.estatus==="baja"?"#fef2f2":est.estatus==="egresado"?"#f0fdf4":"#eff6ff",color:est.estatus==="baja"?"#dc2626":est.estatus==="egresado"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",fontWeight:700}}>{est.estatus==="baja"?"Baja":est.estatus==="egresado"?"Egresado":"Activo"}</span>
+                        </div>
+                        <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
+                          {est.email&&<span>{est.email}</span>}
+                          {est.telefono&&<span>{est.telefono}</span>}
+                          {est.empresa&&<span>{est.empresa}</span>}
+                        </div>
+                        <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                          <span style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui",fontWeight:600,border:"1px solid #fca5a5"}}>{prog.nombre}</span>
+                          {mf>0&&<span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600}}>{fmtMXN(mf)}{p.tipo==="parcialidades"?` · ${pagadas}/${total} pagadas`:""}</span>}
+                          {est.requiere_factura==="Sí"&&<span style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui",fontWeight:600}}>Factura</span>}
+                          {est.csf_url
+                            ?<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                            :<span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Sin CSF</span>}
+                        </div>
+                      </div>
+                      <button onClick={()=>setPagoModal({est,prog})} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12,flexShrink:0})}>Ver pago</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* PAGOS GLOBAL */}
+        {view==="pagos_global"&&(()=>{
+          const [busqP,setBusqP] = [busqPagos,setBusqPagos];
+          const [progSelP,setProgSelP] = [progPagos,setProgPagos];
+          const [filtroEstado,setFiltroEstado] = [filtroPagos,setFiltroPagos];
+
+          // Construir lista de todos los estudiantes con su pago
+          const todos=[];
+          (programas||[]).forEach(prog=>{
+            ests(prog).forEach(est=>{
+              if(est.estatus==="baja")return;
+              const ep=calcEstadoPagos(est);
+              const p=est.pago||{};
+              const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+              const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
+              const total=(p.parcialidades||[]).length;
+              const cobrado=p.tipo==="unico"?(pagadas>0?mf:0):(total?mf/total*pagadas:0);
+              const pendiente=mf-cobrado;
+              let estado="ok";
+              if(ep&&ep.conRecargo.length>=2)estado="critico";
+              else if(ep&&ep.conRecargo.length>=1)estado="vencido";
+              else if(pendiente>0)estado="pendiente";
+              else if(mf===0)estado="sinconfig";
+              todos.push({est,prog,mf,cobrado,pendiente,pagadas,total,estado,ep});
+            });
+          });
+
+          const filtrados=todos.filter(({est,prog,estado})=>{
+            const ql=(busqP||"").toLowerCase();
+            const matchQ=!busqP||est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql);
+            const matchP=!progSelP||prog.id===progSelP;
+            const matchE=!filtroEstado||estado===filtroEstado;
+            return matchQ&&matchP&&matchE;
+          });
+
+          const totalEsperado=filtrados.reduce((a,{mf})=>a+mf,0);
+          const totalCobrado=filtrados.reduce((a,{cobrado})=>a+cobrado,0);
+          const totalPendiente=filtrados.reduce((a,{pendiente})=>a+pendiente,0);
+          const criticos=filtrados.filter(x=>x.estado==="critico").length;
+          const vencidos=filtrados.filter(x=>x.estado==="vencido").length;
+
+          const estadoStyle={
+            ok:      {bg:"#f0fdf4",color:"#16a34a",label:"Al corriente"},
+            pendiente:{bg:"#eff6ff",color:"#2563eb",label:"Pendiente"},
+            vencido: {bg:"#fffbeb",color:"#d97706",label:"Vencido"},
+            critico: {bg:"#fef2f2",color:"#dc2626",label:"Crítico"},
+            sinconfig:{bg:"#f3f4f6",color:"#9ca3af",label:"Sin configurar"},
+          };
+
+          return(
+            <div>
+              <div style={{marginBottom:20}}>
+                <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Control de Pagos</h1>
+                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Todos los estudiantes activos</p>
+              </div>
+
+              {/* Resumen */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}}>
+                {[["Esperado",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalPendiente,"#d97706"],["Vencidos",vencidos,"#d97706"],["Críticos",criticos,"#dc2626"]].map(([l,v,c])=>(
+                  <div key={l} style={{...S.card,padding:"14px 16px",textAlign:"center"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                    <div style={{fontSize:typeof v==="number"&&v>999?18:20,fontWeight:800,color:c,fontFamily:"system-ui"}}>{typeof v==="number"&&l!=="Vencidos"&&l!=="Críticos"?fmtMXN(v):v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filtros */}
+              <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                <input value={busqP} onChange={e=>setBusqP(e.target.value)} placeholder="Buscar estudiante..." style={{...S.inp,flex:1,minWidth:180}}/>
+                <select value={progSelP} onChange={e=>setProgSelP(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                  <option value="">Todos los programas</option>
+                  {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+                <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                  <option value="">Todos los estados</option>
+                  {Object.entries(estadoStyle).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                </select>
+                {(busqP||progSelP||filtroEstado)&&<button onClick={()=>{setBusqP("");setProgSelP("");setFiltroEstado("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
+              </div>
+
+              {/* Tabla */}
+              <div style={{...S.card,overflow:"hidden"}}>
+                {filtrados.length===0&&<div style={{padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados.</div>}
+                {filtrados.map(({est,prog,mf,cobrado,pendiente,pagadas,total,estado,ep},i)=>{
+                  const st=estadoStyle[estado];
+                  const recargo=ep&&ep.conRecargo.length>0?(mf/(total||1))*ep.conRecargo.length*(RECARGO_PCT/100):0;
+                  return(
+                    <div key={est.id} style={{padding:"14px 18px",borderBottom:i<filtrados.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",background:estado==="critico"?"#fff8f8":estado==="vencido"?"#fffef8":"#fff"}}>
+                      <div style={{flex:1,minWidth:180}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:700,fontSize:14}}>{est.nombre}</span>
+                          <span style={{fontSize:10,background:st.bg,color:st.color,borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>{st.label}</span>
+                        </div>
+                        <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
+                          <span style={{color:prog.color,fontWeight:600}}>{prog.nombre}</span>
+                          {est.empresa&&<span>{est.empresa}</span>}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,fontFamily:"system-ui",flexShrink:0}}>
+                        {mf>0&&(
+                          <>
+                            <div style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>ACORDADO</div>
+                              <div style={{fontWeight:700}}>{fmtMXN(mf)}</div>
+                            </div>
+                            <div style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>COBRADO</div>
+                              <div style={{fontWeight:700,color:"#16a34a"}}>{fmtMXN(cobrado)}</div>
+                            </div>
+                            <div style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PENDIENTE</div>
+                              <div style={{fontWeight:700,color:pendiente>0?"#d97706":"#16a34a"}}>{fmtMXN(pendiente)}</div>
+                            </div>
+                            {est.pago?.tipo==="parcialidades"&&(
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PARCIALIDADES</div>
+                                <div style={{fontWeight:700}}>{pagadas}/{total}</div>
+                              </div>
+                            )}
+                            {recargo>0&&(
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#dc2626",fontWeight:700}}>RECARGO 6%</div>
+                                <div style={{fontWeight:700,color:"#dc2626"}}>{fmtMXN(recargo)}</div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <button onClick={()=>setPagoModal({est,prog})} style={S.btn(estado==="critico"?RED:estado==="vencido"?"#d97706":"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"6px 12px",fontSize:12,flexShrink:0})}>{mf===0?"Configurar":"Editar pago"}</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* REPORTES */}
         {view==="reportes"&&can(session,"verReportes")&&(
@@ -3056,7 +3270,7 @@ export default function App() {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
           <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
             <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>Nuevo programa</span>
+              <span style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>{editProgId?"Editar programa":"Nuevo programa"}</span>
               <button onClick={()=>setShowProgM(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
             </div>
             <div style={{padding:"20px 24px"}}>
@@ -3146,7 +3360,7 @@ export default function App() {
 
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                 <button onClick={()=>setShowProgM(false)} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
-                <button onClick={saveProg} style={S.btn(RED,"#fff")}>Crear programa</button>
+                <button onClick={saveProg} style={S.btn(RED,"#fff")}>{editProgId?"Guardar cambios":"Crear programa"}</button>
               </div>
             </div>
           </div>
