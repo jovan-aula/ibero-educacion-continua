@@ -1326,65 +1326,237 @@ function DocentesView({docentes,saveDocentes,programas}) {
 }
 
 // ─── ASISTENCIA GLOBAL ────────────────────────────────
-function AsistenciaGlobal({programas, generarLink, linkCopiado}) {
-  const [busq,setBusq]         = useState("");
-  const [filtroProg,setFiltro] = useState("");
+function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) {
+  const [selProgId, setSelProgId] = useState(null);
+  const [selModId,  setSelModId]  = useState(null);
+  const hoy = today();
 
-  const todos = [];
-  (programas||[]).forEach(prog=>mods(prog).forEach(mod=>todos.push({prog,mod})));
+  const prog = selProgId ? (programas||[]).find(p=>p.id===selProgId) : null;
 
-  const filtrados = todos.filter(({prog,mod})=>{
-    const q=busq.toLowerCase();
-    const matchQ=!busq||prog.nombre.toLowerCase().includes(q)||mod.nombre.toLowerCase().includes(q)||(mod.docente&&mod.docente.toLowerCase().includes(q));
-    return matchQ&&(!filtroProg||prog.id===filtroProg);
-  });
-
-  return(
+  // ── Lista de programas ──────────────────────────────
+  if (!selProgId) return (
     <div>
-      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
-        <div><h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Listas de Asistencia</h1><p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Todos los módulos · genera enlace para que el docente tome lista</p></div>
+      <div style={{marginBottom:20}}>
+        <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Asistencia</h1>
+        <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Selecciona un programa para tomar lista</p>
       </div>
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        <input placeholder="Buscar módulo, docente o programa..." value={busq} onChange={e=>setBusq(e.target.value)} style={{...S.inp,flex:1,minWidth:220}}/>
-        <select value={filtroProg} onChange={e=>setFiltro(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",outline:"none",background:"#fff"}}>
-          <option value="">Todos los programas</option>
-          {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
-        </select>
-        {(busq||filtroProg)&&<button onClick={()=>{setBusq("");setFiltro("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
-      </div>
-      <div style={{display:"grid",gap:12}}>
-        {filtrados.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>Sin resultados.</div>}
-        {filtrados.map(({prog,mod})=>{
-          const est=ests(prog), kl=prog.id+"_"+mod.id;
-          const total=est.reduce((a,e)=>a+((e.asistencia&&e.asistencia["mod_"+mod.id])||0),0);
-          const maxT=(mod.clases||0)*est.length;
-          const pctG=maxT?Math.round(total/maxT*100):null;
-          const enR=est.filter(e=>{const a=(e.asistencia&&e.asistencia["mod_"+mod.id])||0;return mod.clases&&Math.round(a/mod.clases*100)<80;}).length;
+      <div style={{display:"grid",gap:10}}>
+        {(programas||[]).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>Sin programas registrados.</div>}
+        {(programas||[]).map(p=>{
+          const totalEst=ests(p).length;
+          const modsActivos=mods(p).filter(m=>m.fechaInicio&&m.fechaFin);
+          const modHoy=modsActivos.find(m=>{
+            const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+            return fechas.includes(hoy);
+          });
           return(
-            <div key={kl} style={{...S.card,borderLeft:"3px solid "+(mod.estatus==="confirmado"?"#16a34a":"#d97706"),padding:"16px 20px"}}>
-              <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:200}}>
-                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
-                    <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:800,fontFamily:"system-ui"}}>{mod.numero}</span>
-                    <span style={{fontWeight:700,fontSize:15}}>{mod.nombre}</span>
-                  </div>
-                  <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
-                    <span>{prog.nombre}</span>
-                    {mod.docente&&<span>{mod.docente}</span>}
-                    {mod.horario&&<span>{mod.horario}</span>}
-                    <span>{est.length} estudiantes</span>
-                    {pctG!==null&&<span style={{fontWeight:700,color:pctG>=80?"#16a34a":"#dc2626"}}>{pctG}% grupal</span>}
-                    {enR>0&&<span style={{fontWeight:700,color:"#dc2626"}}>{enR} en riesgo</span>}
-                  </div>
+            <div key={p.id} onClick={()=>setSelProgId(p.id)}
+              style={{...S.card,padding:"18px 22px",cursor:"pointer",borderLeft:"4px solid "+p.color,display:"flex",alignItems:"center",gap:14}}>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700,fontSize:16}}>{p.nombre}</span>
+                  <span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#6b7280",fontFamily:"system-ui"}}>{p.tipo}</span>
+                  {p.modalidad&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{p.modalidad}</span>}
+                  {modHoy&&<span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>Clase hoy</span>}
                 </div>
-                <button onClick={()=>generarLink(prog.id,mod.id)} style={{...S.btn(linkCopiado===kl?"#f0fdf4":"#f3f4f6",linkCopiado===kl?"#16a34a":"#374151",{border:"1px solid "+(linkCopiado===kl?"#bbf7d0":"#e5e7eb"),padding:"7px 14px",fontSize:12,flexShrink:0,whiteSpace:"nowrap"})}}>
-                  {linkCopiado===kl?"Enlace copiado":"Copiar enlace para docente"}
-                </button>
+                <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:14,flexWrap:"wrap"}}>
+                  <span>{mods(p).length} módulos</span>
+                  <span>{totalEst} estudiantes</span>
+                  {p.generacion&&<span>{p.generacion} generación</span>}
+                </div>
               </div>
+              <span style={{fontSize:20,color:"#d1d5db"}}>›</span>
             </div>
           );
         })}
       </div>
+    </div>
+  );
+
+  // ── Detalle del programa: todos los módulos y sesiones ──
+  const modulos = mods(prog);
+  const estudiantes = ests(prog);
+
+  const getFechas = mod => mod.fechasClase&&mod.fechasClase.length
+    ? mod.fechasClase
+    : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+
+  const presenteEnFecha = (est, modId, fecha) => {
+    const v = est.asistencia&&est.asistencia["mod_"+modId];
+    return Array.isArray(v) ? v.includes(fecha) : false;
+  };
+
+  const pctEst = (est, mod) => {
+    const fechas = getFechas(mod);
+    const total = fechas.length||mod.clases||0;
+    if (!total) return null;
+    const v = est.asistencia&&est.asistencia["mod_"+mod.id];
+    const asist = Array.isArray(v) ? v.length : (v||0);
+    return Math.round(asist/total*100);
+  };
+
+  const modActivo = selModId ? modulos.find(m=>m.id===selModId) : null;
+
+  return(
+    <div>
+      {/* Header con breadcrumb */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        <button onClick={()=>{setSelProgId(null);setSelModId(null);}} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",padding:0}}>← Programas</button>
+        {selModId&&<><span style={{color:"#d1d5db"}}>›</span><button onClick={()=>setSelModId(null)} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",padding:0}}>{prog.nombre}</button></>}
+        {!selModId&&<><span style={{color:"#d1d5db"}}>›</span><span style={{fontSize:13,color:"#374151",fontFamily:"system-ui",fontWeight:700}}>{prog.nombre}</span></>}
+        {selModId&&<><span style={{color:"#d1d5db"}}>›</span><span style={{fontSize:13,color:"#374151",fontFamily:"system-ui",fontWeight:700}}>{modActivo?.nombre}</span></>}
+      </div>
+
+      {/* Vista de módulos del programa */}
+      {!selModId&&(
+        <div>
+          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+            <div>
+              <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 2px"}}>{prog.nombre}</h2>
+              <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{modulos.length} módulos · {estudiantes.length} estudiantes</p>
+            </div>
+          </div>
+          <div style={{display:"grid",gap:10}}>
+            {modulos.map(mod=>{
+              const fechas = getFechas(mod);
+              const sesionHoy = fechas.includes(hoy);
+              const numHoy = fechas.indexOf(hoy)+1;
+              const presHoy = sesionHoy ? estudiantes.filter(e=>presenteEnFecha(e,mod.id,hoy)).length : null;
+              const progGrupal = fechas.length>0
+                ? Math.round(estudiantes.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+mod.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/(fechas.length*estudiantes.length||1)*100)
+                : null;
+              return(
+                <div key={mod.id} style={{...S.card,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+(sesionHoy?"#16a34a":mod.estatus==="confirmado"?"#2563eb":"#e5e7eb")}}
+                  onClick={()=>setSelModId(mod.id)}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 9px",fontSize:12,fontWeight:800,fontFamily:"system-ui",flexShrink:0}}>{mod.numero}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:14,marginBottom:3}}>{mod.nombre}</div>
+                      <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
+                        {mod.docente&&<span>{mod.docente}</span>}
+                        {mod.horario&&<span>{mod.horario}</span>}
+                        <span>{fechas.length} sesiones</span>
+                        {progGrupal!==null&&estudiantes.length>0&&<span style={{fontWeight:700,color:progGrupal>=80?"#16a34a":"#dc2626"}}>{progGrupal}% grupal</span>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+                      {sesionHoy&&<span style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",borderRadius:4,padding:"3px 10px",fontSize:12,fontFamily:"system-ui",fontWeight:700}}>Sesión {numHoy} hoy · {presHoy}/{estudiantes.length}</span>}
+                      <button onClick={e=>{e.stopPropagation();generarLink(prog.id,mod.id);}} style={S.btn(linkCopiado===prog.id+"_"+mod.id?"#f0fdf4":"#f3f4f6",linkCopiado===prog.id+"_"+mod.id?"#16a34a":"#374151",{fontSize:11,padding:"5px 10px",border:"1px solid "+(linkCopiado===prog.id+"_"+mod.id?"#bbf7d0":"#e5e7eb"),whiteSpace:"nowrap"})}>
+                        {linkCopiado===prog.id+"_"+mod.id?"Copiado":"Enlace docente"}
+                      </button>
+                      <span style={{fontSize:18,color:"#d1d5db"}}>›</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Vista de sesiones de un módulo */}
+      {selModId&&modActivo&&(()=>{
+        const fechas = getFechas(modActivo);
+        const activos = estudiantes.filter(e=>e.estatus!=="baja");
+        return(
+          <div>
+            <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4}}>
+                  <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 9px",fontSize:12,fontWeight:800,fontFamily:"system-ui"}}>{modActivo.numero}</span>
+                  <span style={{fontWeight:700,fontSize:16}}>{modActivo.nombre}</span>
+                </div>
+                <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
+                  {modActivo.docente&&<span>{modActivo.docente}</span>}
+                  {modActivo.horario&&<span>{modActivo.horario}</span>}
+                  <span>{fechas.length} sesiones · {activos.length} estudiantes activos</span>
+                </div>
+              </div>
+              <button onClick={()=>generarLink(prog.id,modActivo.id)} style={S.btn(linkCopiado===prog.id+"_"+modActivo.id?"#f0fdf4":"#f3f4f6",linkCopiado===prog.id+"_"+modActivo.id?"#16a34a":"#374151",{fontSize:12,padding:"6px 14px",border:"1px solid "+(linkCopiado===prog.id+"_"+modActivo.id?"#bbf7d0":"#e5e7eb")})}>
+                {linkCopiado===prog.id+"_"+modActivo.id?"Enlace copiado":"Copiar enlace docente"}
+              </button>
+            </div>
+
+            {fechas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin sesiones programadas. Configura las fechas de clase en el módulo.</div>}
+
+            {fechas.length>0&&(
+              <div style={{...S.card,overflow:"hidden"}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                    <thead>
+                      <tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
+                        <th style={{textAlign:"left",padding:"10px 16px",fontSize:12,fontWeight:700,color:"#6b7280",minWidth:160,position:"sticky",left:0,background:"#f9f9f9",zIndex:1}}>Estudiante</th>
+                        {fechas.map((f,i)=>{
+                          const esHoy=f===hoy;
+                          const fest=isFestivo(f);
+                          return(
+                            <th key={f} style={{textAlign:"center",padding:"8px 6px",fontSize:11,fontWeight:700,color:esHoy?"#16a34a":"#6b7280",background:esHoy?"#f0fdf4":fest?"#fffbeb":"#f9f9f9",minWidth:64,whiteSpace:"nowrap"}}>
+                              <div style={{fontWeight:800}}>S{i+1}</div>
+                              <div style={{fontSize:10,fontWeight:400,color:esHoy?"#16a34a":fest?"#d97706":"#9ca3af"}}>{f.slice(5).replace("-","/")}</div>
+                              {esHoy&&<div style={{fontSize:9,color:"#16a34a",fontWeight:700}}>HOY</div>}
+                            </th>
+                          );
+                        })}
+                        <th style={{textAlign:"center",padding:"10px 12px",fontSize:11,fontWeight:700,color:"#6b7280",minWidth:80}}>%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activos.map((e,ri)=>{
+                        const pct = pctEst(e,modActivo);
+                        return(
+                          <tr key={e.id} style={{borderBottom:"1px solid #f3f4f6",background:ri%2===0?"#fff":"#fafafa"}}>
+                            <td style={{padding:"10px 16px",fontWeight:600,fontSize:13,position:"sticky",left:0,background:ri%2===0?"#fff":"#fafafa",zIndex:1}}>
+                              <div>{e.nombre}</div>
+                              {e.empresa&&<div style={{fontSize:11,color:"#9ca3af",fontWeight:400}}>{e.empresa}</div>}
+                            </td>
+                            {fechas.map(f=>{
+                              const pres=presenteEnFecha(e,modActivo.id,f);
+                              const esFutura=f>hoy;
+                              const fest=isFestivo(f);
+                              return(
+                                <td key={f} style={{textAlign:"center",padding:"6px",background:fest?"#fffbeb":undefined}}>
+                                  <button
+                                    onClick={()=>!fest&&onToggleAsist(prog.id,modActivo.id,e.id,f)}
+                                    disabled={!!fest}
+                                    style={{width:32,height:32,borderRadius:6,border:"none",cursor:fest?"default":"pointer",
+                                      background:pres?"#16a34a":esFutura?"#f9f9f9":"#fee2e2",
+                                      color:pres?"#fff":esFutura?"#d1d5db":"#fca5a5",
+                                      fontWeight:700,fontSize:14,display:"inline-flex",alignItems:"center",justifyContent:"center",
+                                      opacity:fest?0.4:1}}>
+                                    {pres?"✓":esFutura?"·":"✗"}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                            <td style={{textAlign:"center",padding:"6px 12px"}}>
+                              <span style={{fontWeight:700,fontSize:13,color:pct===null?"#9ca3af":pct>=80?"#16a34a":"#dc2626"}}>{pct===null?"—":pct+"%"}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Fila de totales por sesión */}
+                      <tr style={{borderTop:"2px solid #e5e7eb",background:"#f9f9f9",fontWeight:700}}>
+                        <td style={{padding:"8px 16px",fontSize:12,color:"#6b7280",position:"sticky",left:0,background:"#f9f9f9"}}>TOTAL</td>
+                        {fechas.map(f=>{
+                          const pres=activos.filter(e=>presenteEnFecha(e,modActivo.id,f)).length;
+                          const pct=activos.length?Math.round(pres/activos.length*100):0;
+                          return(
+                            <td key={f} style={{textAlign:"center",padding:"8px 6px"}}>
+                              <div style={{fontSize:12,fontWeight:700,color:pct>=80?"#16a34a":"#dc2626"}}>{pres}/{activos.length}</div>
+                              <div style={{fontSize:10,color:"#9ca3af"}}>{pct}%</div>
+                            </td>
+                          );
+                        })}
+                        <td/>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1508,6 +1680,22 @@ export default function App() {
         if(e.id!==estId)return e;
         const k="mod_"+modId,cur=(e.asistencia&&e.asistencia[k])||0,max=(mods(p).find(m=>m.id===modId)||{}).clases||0;
         return{...e,asistencia:{...(e.asistencia||{}),[k]:cur>=max?0:cur+1}};
+      })};
+    }));
+  };
+
+  // Toggle asistencia por fecha específica (nueva vista admin)
+  const toggleAsistFecha = (progId,modId,estId,fecha)=>{
+    save((programas||[]).map(p=>{
+      if(p.id!==progId)return p;
+      return{...p,estudiantes:ests(p).map(e=>{
+        if(e.id!==estId)return e;
+        const k="mod_"+modId;
+        const cur=e.asistencia&&e.asistencia[k];
+        let fechas=Array.isArray(cur)?[...cur]:[];
+        if(fechas.includes(fecha))fechas=fechas.filter(f=>f!==fecha);
+        else fechas=[...fechas,fecha];
+        return{...e,asistencia:{...(e.asistencia||{}),[k]:fechas}};
       })};
     }));
   };
@@ -1774,7 +1962,7 @@ export default function App() {
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
         {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas}/>}
-        {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado}/>}
+        {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado} onToggleAsist={toggleAsistFecha}/>}
 
         {/* VISTA HOY */}
         {view==="hoy"&&(()=>{
@@ -1792,20 +1980,7 @@ export default function App() {
             });
           });
 
-          const toggleHoy = (progId,modId,estId) => {
-            save((programas||[]).map(p=>{
-              if(p.id!==progId)return p;
-              return{...p,estudiantes:ests(p).map(e=>{
-                if(e.id!==estId)return e;
-                const k="mod_"+modId;
-                const cur=e.asistencia&&e.asistencia[k];
-                let fechas=Array.isArray(cur)?[...cur]:[];
-                if(fechas.includes(hoy))fechas=fechas.filter(f=>f!==hoy);
-                else fechas=[...fechas,hoy];
-                return{...e,asistencia:{...(e.asistencia||{}),[k]:fechas}};
-              })};
-            }));
-          };
+          const toggleHoy = (progId,modId,estId) => toggleAsistFecha(progId,modId,estId,hoy);
 
           const presenteHoy = (e,modId) => {
             const v=e.asistencia&&e.asistencia["mod_"+modId];
