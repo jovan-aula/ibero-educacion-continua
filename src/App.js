@@ -1698,8 +1698,9 @@ export default function App() {
   });
 
   const egresados = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="egresado").map(e=>({...e,programa:p.nombre})));
-  const activos   = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus!=="egresado"&&e.estatus!=="baja"&&progStatus(p)==="activo"));
+  const activos   = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus!=="egresado"&&e.estatus!=="baja"&&e.estatus!=="inactivo"&&progStatus(p)==="activo"));
   const bajas     = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="baja"));
+  const inactivos = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="inactivo").map(e=>({...e,programa:p.nombre})));
   const porConf   = (programas||[]).reduce((a,p)=>a+mods(p).filter(m=>m.estatus==="propuesta"&&m.docente).length,0);
   // Egresados IBERO: activos en programa vigente con egresado_ibero="Sí"
   const egresadosIberoActivos  = (programas||[]).flatMap(p=>ests(p).filter(e=>e.egresado_ibero==="Sí"&&progStatus(p)==="activo").map(e=>({...e,programa:p.nombre,estatus_prog:"activo"})));
@@ -2328,7 +2329,7 @@ export default function App() {
                             <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 10px",fontSize:12})}>Pago</button>
                             <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
-                              <option value="activo">Activo</option><option value="egresado">Egresado</option><option value="baja">Baja</option>
+                              <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado</option><option value="baja">Baja</option>
                             </select>
                             <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
                           </div>
@@ -2550,42 +2551,6 @@ export default function App() {
           const progSelP=progPagos, setProgSelP=setProgPagos;
           const filtroEstado=filtroPagos, setFiltroEstado=setFiltroPagos;
 
-          const todos=[];
-          (programas||[]).forEach(prog=>{
-            ests(prog).forEach(est=>{
-              if(est.estatus==="baja")return;
-              const ep=calcEstadoPagos(est);
-              const p=est.pago||{};
-              const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
-              const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
-              const total=(p.parcialidades||[]).length;
-              const cobrado=p.tipo==="unico"?(pagadas>0?mf:0):(total?mf/total*pagadas:0);
-              const pendiente=mf-cobrado;
-              let estado="ok";
-              if(ep&&ep.conRecargo.length>=2)estado="critico";
-              else if(ep&&ep.conRecargo.length>=1)estado="vencido";
-              else if(pendiente>0)estado="pendiente";
-              else if(mf===0)estado="sinconfig";
-              // Asistencia global del estudiante
-              const pctAsist=calcPct(est,mods(prog));
-              todos.push({est,prog,mf,cobrado,pendiente,pagadas,total,estado,ep,pctAsist});
-            });
-          });
-
-          const filtrados=todos.filter(({est,prog,estado})=>{
-            const ql=(busqP||"").toLowerCase();
-            const matchQ=!busqP||est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql);
-            const matchP=!progSelP||prog.id===progSelP;
-            const matchE=!filtroEstado||estado===filtroEstado;
-            return matchQ&&matchP&&matchE;
-          });
-
-          const totalEsperado=filtrados.reduce((a,{mf})=>a+mf,0);
-          const totalCobrado=filtrados.reduce((a,{cobrado})=>a+cobrado,0);
-          const totalPendiente=filtrados.reduce((a,{pendiente})=>a+pendiente,0);
-          const criticos=filtrados.filter(x=>x.estado==="critico").length;
-          const vencidos=filtrados.filter(x=>x.estado==="vencido").length;
-
           const estadoStyle={
             ok:       {bg:"#f0fdf4",color:"#16a34a",label:"Al corriente"},
             pendiente:{bg:"#eff6ff",color:"#2563eb",label:"Pendiente"},
@@ -2594,148 +2559,309 @@ export default function App() {
             sinconfig:{bg:"#f3f4f6",color:"#9ca3af",label:"Sin configurar"},
           };
 
-          // Modal de edición rápida de datos del estudiante
+          const calcInfoEst=(est,prog)=>{
+            const ep=calcEstadoPagos(est);
+            const p=est.pago||{};
+            const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+            const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
+            const total=(p.parcialidades||[]).length;
+            const cobrado=p.tipo==="unico"?(pagadas>0?mf:0):(total?mf/total*pagadas:0);
+            const pendiente=mf-cobrado;
+            let estado="ok";
+            if(ep&&ep.conRecargo.length>=2)estado="critico";
+            else if(ep&&ep.conRecargo.length>=1)estado="vencido";
+            else if(pendiente>0)estado="pendiente";
+            else if(mf===0)estado="sinconfig";
+            const pctAsist=calcPct(est,mods(prog));
+            return{ep,p,mf,pagadas,total,cobrado,pendiente,estado,pctAsist};
+          };
+
+          // Programas que pasan el filtro de programa
+          const progsFiltrados=(programas||[]).filter(prog=>{
+            if(progSelP&&prog.id!==progSelP)return false;
+            // Si hay búsqueda de texto, solo mostrar programas que tengan algún estudiante que coincida
+            if(busqP){
+              const ql=busqP.toLowerCase();
+              return ests(prog).some(e=>
+                (e.estatus!=="baja")&&(
+                  e.nombre?.toLowerCase().includes(ql)||
+                  e.empresa?.toLowerCase().includes(ql)||
+                  e.email?.toLowerCase().includes(ql)
+                )
+              );
+            }
+            // Por default: solo programas activos
+            return progStatus(prog)==="activo";
+          });
+
+          // Si hay filtro de estado de pago, filtrar programas que tengan al menos un est con ese estado
+          const progsVisibles=filtroEstado
+            ? progsFiltrados.filter(prog=>
+                ests(prog).some(e=>{
+                  if(e.estatus==="baja"||e.estatus==="inactivo")return filtroEstado==="inactivo"?e.estatus==="inactivo":false;
+                  const {estado}=calcInfoEst(e,prog);
+                  return estado===filtroEstado;
+                })
+              )
+            : progsFiltrados;
+
+          // Totales sobre todos los estudiantes visibles (aplicando todos los filtros)
+          let totalEsperado=0,totalCobrado=0,totalPendiente=0,cntVencidos=0,cntCriticos=0,cntInactivos=0;
+          progsVisibles.forEach(prog=>{
+            ests(prog).forEach(est=>{
+              if(est.estatus==="baja")return;
+              if(est.estatus==="inactivo"){cntInactivos++;return;}
+              const ql=(busqP||"").toLowerCase();
+              if(busqP&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return;
+              const {mf,cobrado,pendiente,estado}=calcInfoEst(est,prog);
+              totalEsperado+=mf; totalCobrado+=cobrado; totalPendiente+=pendiente;
+              if(estado==="vencido")cntVencidos++;
+              if(estado==="critico")cntCriticos++;
+            });
+          });
+
+          const marcarInactivo=(progId,estId,nuevoEstatus)=>{
+            save((programas||[]).map(p=>p.id!==progId?p:{...p,estudiantes:ests(p).map(e=>e.id!==estId?e:{...e,estatus:nuevoEstatus})}));
+            notify(nuevoEstatus==="inactivo"?"Estudiante marcado como inactivo.":"Estudiante reactivado.");
+          };
+
           return(
             <div>
               <div style={{marginBottom:20}}>
                 <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Control de Pagos</h1>
-                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Haz clic en un estudiante para ver su historial completo</p>
+                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+                  {busqP||progSelP||filtroEstado?"Resultados filtrados":"Programas activos por default — usa filtros para ver más"}
+                </p>
               </div>
 
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}}>
-                {[["Esperado",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalPendiente,"#d97706"],["Vencidos",vencidos,"#d97706"],["Críticos",criticos,"#dc2626"]].map(([l,v,c])=>(
-                  <div key={l} style={{...S.card,padding:"14px 16px",textAlign:"center"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
-                    <div style={{fontSize:typeof v==="number"&&v>999?18:20,fontWeight:800,color:c,fontFamily:"system-ui"}}>{typeof v==="number"&&l!=="Vencidos"&&l!=="Críticos"?fmtMXN(v):v}</div>
+              {/* Resumen */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:16}}>
+                {[["Esperado",totalEsperado,"#1a1a1a",false],["Cobrado",totalCobrado,"#16a34a",false],["Pendiente",totalPendiente,"#d97706",false],["Vencidos",cntVencidos,"#d97706",true],["Críticos",cntCriticos,"#dc2626",true],["Inactivos",cntInactivos,"#9ca3af",true]].map(([l,v,c,esNum])=>(
+                  <div key={l} style={{...S.card,padding:"12px 14px",textAlign:"center"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{l.toUpperCase()}</div>
+                    <div style={{fontSize:esNum?22:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{esNum?v:fmtMXN(v)}</div>
                   </div>
                 ))}
               </div>
 
+              {/* Filtros */}
               <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-                <input value={busqP} onChange={e=>setBusqP(e.target.value)} placeholder="Buscar estudiante..." style={{...S.inp,flex:1,minWidth:180}}/>
+                <input value={busqP} onChange={e=>setBusqP(e.target.value)} placeholder="Buscar estudiante, empresa o correo..." style={{...S.inp,flex:1,minWidth:180}}/>
                 <select value={progSelP} onChange={e=>setProgSelP(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
-                  <option value="">Todos los programas</option>
+                  <option value="">Programas activos</option>
                   {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
                 <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                   <option value="">Todos los estados</option>
                   {Object.entries(estadoStyle).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                  <option value="inactivo">Inactivos</option>
                 </select>
                 {(busqP||progSelP||filtroEstado)&&<button onClick={()=>{setBusqP("");setProgSelP("");setFiltroEstado("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
               </div>
 
-              <div style={{display:"grid",gap:8}}>
-                {filtrados.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados.</div>}
-                {filtrados.map(({est,prog,mf,cobrado,pendiente,pagadas,total,estado,ep,pctAsist},i)=>{
-                  const st=estadoStyle[estado];
-                  const recargo=ep&&ep.conRecargo.length>0?(mf/(total||1))*ep.conRecargo.length*(RECARGO_PCT/100):0;
-                  const abierto=expandido===est.id;
-                  const p=est.pago||{};
+              {/* LISTA POR PROGRAMA */}
+              <div style={{display:"grid",gap:12}}>
+                {progsVisibles.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados. Prueba ajustando los filtros.</div>}
+
+                {progsVisibles.map(prog=>{
+                  const progAbierto=expandido===prog.id;
+                  // Filtrar estudiantes de este programa
+                  const estsFiltrados=ests(prog).filter(est=>{
+                    if(est.estatus==="baja")return false;
+                    const ql=(busqP||"").toLowerCase();
+                    if(busqP&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return false;
+                    if(filtroEstado==="inactivo")return est.estatus==="inactivo";
+                    if(est.estatus==="inactivo"&&filtroEstado!=="inactivo")return false;
+                    if(filtroEstado){const {estado}=calcInfoEst(est,prog);return estado===filtroEstado;}
+                    return true;
+                  });
+                  if(estsFiltrados.length===0)return null;
+                  const totalProgEsp=estsFiltrados.reduce((a,e)=>{const {mf}=calcInfoEst(e,prog);return a+mf;},0);
+                  const totalProgCob=estsFiltrados.reduce((a,e)=>{const {cobrado}=calcInfoEst(e,prog);return a+cobrado;},0);
+                  const pct=totalProgEsp>0?Math.round(totalProgCob/totalProgEsp*100):0;
+
                   return(
-                    <div key={est.id} style={{...S.card,overflow:"hidden",border:"1px solid "+(estado==="critico"?"#fca5a5":estado==="vencido"?"#fde68a":"#e5e7eb")}}>
-                      {/* FILA PRINCIPAL — clic para desplegar */}
-                      <div onClick={()=>setExpandido(abierto?null:est.id)} style={{padding:"14px 18px",display:"flex",gap:12,alignItems:"center",cursor:"pointer",background:estado==="critico"?"#fff8f8":estado==="vencido"?"#fffef8":"#fff"}}>
-                        <div style={{flex:1,minWidth:160}}>
-                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
-                            <span style={{fontWeight:700,fontSize:14}}>{est.nombre}</span>
-                            <span style={{fontSize:10,background:st.bg,color:st.color,borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>{st.label}</span>
-                            {pctAsist!==null&&pctAsist<80&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Asist. {pctAsist}%</span>}
+                    <div key={prog.id} style={{...S.card,overflow:"hidden",borderLeft:"4px solid "+prog.color}}>
+                      {/* CABECERA DEL PROGRAMA */}
+                      <div onClick={()=>setExpandido(progAbierto?null:prog.id)} style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",background:"#fff"}}>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                            <span style={{fontWeight:700,fontSize:15}}>{prog.nombre}</span>
+                            <span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#6b7280",fontFamily:"system-ui"}}>{prog.tipo}</span>
+                            <StatusBadge p={prog}/>
                           </div>
-                          <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
-                            <span style={{color:prog.color,fontWeight:600}}>{prog.nombre}</span>
-                            {est.empresa&&<span>{est.empresa}</span>}
-                            {est.email&&<span>{est.email}</span>}
+                          <div style={{display:"flex",gap:12,fontSize:12,color:"#9ca3af",fontFamily:"system-ui",flexWrap:"wrap",alignItems:"center"}}>
+                            <span>{estsFiltrados.length} estudiante{estsFiltrados.length!==1?"s":""}</span>
+                            <span style={{color:"#1a1a1a",fontWeight:600}}>{fmtMXN(totalProgEsp)}</span>
+                            <span style={{color:"#16a34a"}}>Cobrado: {fmtMXN(totalProgCob)}</span>
+                            {/* Barra de progreso */}
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{width:64,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#d97706",borderRadius:4}}/></div>
+                              <span style={{fontWeight:700,color:pct>=80?"#16a34a":"#d97706"}}>{pct}%</span>
+                            </div>
                           </div>
                         </div>
-                        <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:13,fontFamily:"system-ui",flexShrink:0,alignItems:"center"}}>
-                          {mf>0&&<>
-                            <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>ACORDADO</div><div style={{fontWeight:700}}>{fmtMXN(mf)}</div></div>
-                            <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>COBRADO</div><div style={{fontWeight:700,color:"#16a34a"}}>{fmtMXN(cobrado)}</div></div>
-                            <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PENDIENTE</div><div style={{fontWeight:700,color:pendiente>0?"#d97706":"#16a34a"}}>{fmtMXN(pendiente)}</div></div>
-                            {p.tipo==="parcialidades"&&<div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PARCIALIDADES</div><div style={{fontWeight:700}}>{pagadas}/{total}</div></div>}
-                            {recargo>0&&<div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#dc2626",fontWeight:700}}>RECARGO</div><div style={{fontWeight:700,color:"#dc2626"}}>{fmtMXN(recargo)}</div></div>}
-                          </>}
-                        </div>
-                        <span style={{color:"#9ca3af",fontSize:18,flexShrink:0}}>{abierto?"▲":"▼"}</span>
+                        <span style={{color:"#9ca3af",fontSize:18,flexShrink:0}}>{progAbierto?"▲":"▼"}</span>
                       </div>
 
-                      {/* PANEL DESPLEGABLE */}
-                      {abierto&&(
-                        <div style={{borderTop:"1px solid #e5e7eb",background:"#fafafa"}}>
-                          {/* Header con acciones */}
-                          <div style={{padding:"12px 18px",display:"flex",gap:8,justifyContent:"flex-end",borderBottom:"1px solid #f3f4f6"}}>
-                            <button onClick={()=>setEditEstModal({est,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar datos</button>
-                            <button onClick={()=>setPagoModal({est,prog})} style={S.btn(estado==="critico"||estado==="vencido"?RED:"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"5px 12px",fontSize:12})}>{mf===0?"Configurar pago":"Editar pago"}</button>
-                          </div>
+                      {/* LISTA DE ESTUDIANTES DEL PROGRAMA */}
+                      {progAbierto&&(
+                        <div style={{borderTop:"1px solid #e5e7eb"}}>
+                          {estsFiltrados.map((est,estIdx)=>{
+                            const {ep,p,mf,pagadas,total,cobrado,pendiente,estado,pctAsist}=calcInfoEst(est,prog);
+                            const st=estadoStyle[estado]||estadoStyle.sinconfig;
+                            const recargo=ep&&ep.conRecargo.length>0?(mf/(total||1))*ep.conRecargo.length*(RECARGO_PCT/100):0;
+                            const estKey=prog.id+"_"+est.id;
+                            const estAbierto=expandido===estKey;
+                            const esInactivo=est.estatus==="inactivo";
 
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
-                            {/* COL IZQUIERDA: Datos del estudiante */}
-                            <div style={{padding:"16px 18px",borderRight:"1px solid #f3f4f6"}}>
-                              <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:10}}>DATOS DEL ESTUDIANTE</div>
-                              <div style={{display:"grid",gap:6,fontFamily:"system-ui",fontSize:13}}>
-                                {est.telefono&&<div><span style={{color:"#9ca3af"}}>Tel: </span>{est.telefono}</div>}
-                                {est.puesto&&<div><span style={{color:"#9ca3af"}}>Puesto: </span>{est.puesto}</div>}
-                                {est.carrera&&<div><span style={{color:"#9ca3af"}}>Carrera: </span>{est.carrera}</div>}
-                                {est.grado&&<div><span style={{color:"#9ca3af"}}>Grado: </span>{est.grado}</div>}
-                                {est.egresado_ibero&&<div><span style={{color:"#9ca3af"}}>Egresado IBERO: </span><span style={{color:"#2563eb",fontWeight:600}}>{est.egresado_ibero}</span></div>}
-                              </div>
-                              {/* Factura y CSF */}
-                              <div style={{marginTop:12,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                                <span style={{fontSize:11,background:est.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:4,padding:"3px 10px",color:est.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:700,border:"1px solid "+(est.requiere_factura==="Sí"?"#fca5a5":"#e5e7eb")}}>
-                                  {est.requiere_factura==="Sí"?"Requiere factura":"Sin factura"}
-                                </span>
-                                {est.csf_url
-                                  ?<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"3px 10px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
-                                  :<span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Sin CSF — edita para agregar</span>
-                                }
-                              </div>
-                              {/* Asistencia */}
-                              {pctAsist!==null&&(
-                                <div style={{marginTop:12}}>
-                                  <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>ASISTENCIA</div>
-                                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                                    <div style={{flex:1,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pctAsist+"%",height:"100%",background:pctAsist>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
-                                    <span style={{fontWeight:800,fontSize:15,color:pctAsist>=80?"#16a34a":"#dc2626",fontFamily:"system-ui"}}>{pctAsist}%</span>
-                                  </div>
-                                  <div style={{fontSize:11,color:pctAsist<80?"#dc2626":"#6b7280",fontFamily:"system-ui",marginTop:4}}>{pctAsist<80?"En riesgo — por debajo del 80% requerido":"Asistencia en regla"}</div>
-                                </div>
-                              )}
-                            </div>
+                            // Asistencia por módulo
+                            const asistPorMod=mods(prog).map(mod=>{
+                              const k="mod_"+mod.id;
+                              const v=est.asistencia&&est.asistencia[k];
+                              const asist=Array.isArray(v)?v.length:(v||0);
+                              const fechas=mod.fechasClase&&mod.fechasClase.length?mod.fechasClase:generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+                              const totalSes=fechas.length||mod.clases||0;
+                              return{mod,asist,totalSes};
+                            }).filter(x=>x.totalSes>0);
+                            const totalSesiones=asistPorMod.reduce((a,x)=>a+x.totalSes,0);
+                            const totalAsistidas=asistPorMod.reduce((a,x)=>a+x.asist,0);
 
-                            {/* COL DERECHA: Parcialidades */}
-                            <div style={{padding:"16px 18px"}}>
-                              <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:10}}>
-                                {p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}
-                                {mf>0&&<span style={{marginLeft:8,color:"#374151",fontWeight:400}}>· {fmtMXN(mf)} total{p.descuento_pct>0?` (desc. ${p.descuento_pct}%)`:""}</span>}
-                              </div>
-                              {!mf&&<div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>Sin configurar — haz clic en "Configurar pago"</div>}
-                              {p.tipo==="unico"&&mf>0&&(
-                                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                                  <div style={{width:20,height:20,borderRadius:"50%",background:(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#f3f4f6",border:"2px solid "+(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#d1d5db",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:10,fontWeight:700}}>{(p.parcialidades||[]).some(x=>x.pagado)?"✓":""}</span></div>
-                                  <span style={{fontFamily:"system-ui",fontSize:13,fontWeight:600,color:(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#d97706"}}>{(p.parcialidades||[]).some(x=>x.pagado)?"Pagado — "+fmtMXN(mf):"Pendiente — "+fmtMXN(mf)}</span>
-                                </div>
-                              )}
-                              {p.tipo==="parcialidades"&&(p.parcialidades||[]).map((parc,j)=>{
-                                const vencido=!parc.pagado&&parc.fecha_vencimiento&&parc.fecha_vencimiento<today();
-                                return(
-                                  <div key={parc.id} style={{display:"flex",gap:8,alignItems:"center",padding:"5px 0",borderBottom:j<(p.parcialidades||[]).length-1?"1px solid #f3f4f6":"none"}}>
-                                    <div style={{width:18,height:18,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#f3f4f6",border:"2px solid "+(parc.pagado?"#16a34a":vencido?"#dc2626":"#d1d5db"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:9,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
-                                    <span style={{fontFamily:"system-ui",fontSize:12,flex:1,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>Parcialidad {parc.numero} · {fmtMXN(total?mf/total:0)}</span>
-                                    <span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>
-                                      {parc.pagado?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?"Vence "+fmtFecha(parc.fecha_vencimiento):""}
-                                    </span>
-                                    <span style={{fontSize:10,fontWeight:700,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#9ca3af",fontFamily:"system-ui",minWidth:52,textAlign:"right"}}>{parc.pagado?"Pagado":vencido?"Vencido":"Pendiente"}</span>
+                            return(
+                              <div key={est.id} style={{borderBottom:estIdx<estsFiltrados.length-1?"1px solid #f3f4f6":"none",background:esInactivo?"#fafafa":"#fff"}}>
+                                {/* FILA DEL ESTUDIANTE */}
+                                <div onClick={()=>setExpandido(estAbierto?null:estKey)} style={{padding:"12px 20px 12px 28px",display:"flex",gap:10,alignItems:"center",cursor:"pointer",opacity:esInactivo?0.65:1}}>
+                                  <div style={{flex:1,minWidth:160}}>
+                                    <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2,flexWrap:"wrap"}}>
+                                      <span style={{fontWeight:600,fontSize:13}}>{est.nombre}</span>
+                                      {esInactivo
+                                        ?<span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Inactivo</span>
+                                        :<span style={{fontSize:10,background:st.bg,color:st.color,borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>{st.label}</span>
+                                      }
+                                      {pctAsist!==null&&pctAsist<80&&!esInactivo&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Asist. {pctAsist}%</span>}
+                                    </div>
+                                    <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:8,flexWrap:"wrap"}}>
+                                      {est.empresa&&<span>{est.empresa}</span>}
+                                      {est.email&&<span>{est.email}</span>}
+                                    </div>
                                   </div>
-                                );
-                              })}
-                              {recargo>0&&(
-                                <div style={{marginTop:8,padding:"8px 10px",background:"#fef2f2",borderRadius:6,fontFamily:"system-ui",fontSize:12,color:"#dc2626",display:"flex",justifyContent:"space-between"}}>
-                                  <span>Recargo acumulado (6%)</span>
-                                  <strong>{fmtMXN(recargo)}</strong>
+                                  {/* Asistencia rápida */}
+                                  {totalSesiones>0&&(
+                                    <div style={{textAlign:"center",flexShrink:0}}>
+                                      <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>SESIONES</div>
+                                      <div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",color:pctAsist>=80?"#16a34a":"#dc2626"}}>{totalAsistidas}/{totalSesiones}</div>
+                                    </div>
+                                  )}
+                                  {/* Pago rápido */}
+                                  {mf>0&&!esInactivo&&<>
+                                    <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>ACORDADO</div><div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div></div>
+                                    <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>COBRADO</div><div style={{fontWeight:700,fontSize:13,color:"#16a34a",fontFamily:"system-ui"}}>{fmtMXN(cobrado)}</div></div>
+                                    <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PENDIENTE</div><div style={{fontWeight:700,fontSize:13,color:pendiente>0?"#d97706":"#16a34a",fontFamily:"system-ui"}}>{fmtMXN(pendiente)}</div></div>
+                                    {p.tipo==="parcialidades"&&<div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PARC.</div><div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>{pagadas}/{total}</div></div>}
+                                  </>}
+                                  <span style={{color:"#d1d5db",fontSize:16,flexShrink:0}}>{estAbierto?"▲":"▼"}</span>
                                 </div>
-                              )}
-                            </div>
-                          </div>
+
+                                {/* PANEL DETALLE DEL ESTUDIANTE */}
+                                {estAbierto&&(
+                                  <div style={{background:"#f9f9f9",borderTop:"1px solid #f3f4f6"}}>
+                                    {/* Acciones */}
+                                    <div style={{padding:"10px 28px",display:"flex",gap:8,flexWrap:"wrap",borderBottom:"1px solid #f3f4f6",alignItems:"center"}}>
+                                      <button onClick={e=>{e.stopPropagation();setEditEstModal({est,prog});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar datos</button>
+                                      {!esInactivo&&<button onClick={e=>{e.stopPropagation();setPagoModal({est,prog});}} style={S.btn(estado==="critico"||estado==="vencido"?RED:"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"5px 12px",fontSize:12})}>{mf===0?"Configurar pago":"Editar pago"}</button>}
+                                      {/* Botón Activo / Inactivo */}
+                                      {esInactivo
+                                        ?<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"activo");}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
+                                        :<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"inactivo");}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
+                                      }
+                                      {esInactivo&&<span style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",fontStyle:"italic"}}>Cuenta como deserción en Reportes</span>}
+                                      {estado==="critico"&&!esInactivo&&<span style={{fontSize:11,color:"#dc2626",fontFamily:"system-ui",fontStyle:"italic"}}>2+ pagos vencidos — considera marcar inactivo</span>}
+                                    </div>
+
+                                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                                      {/* COL IZQ: Datos personales + Asistencia */}
+                                      <div style={{padding:"14px 20px 14px 28px",borderRight:"1px solid #f3f4f6"}}>
+                                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>DATOS</div>
+                                        <div style={{display:"grid",gap:5,fontFamily:"system-ui",fontSize:12,marginBottom:10}}>
+                                          {est.telefono&&<div><span style={{color:"#9ca3af"}}>Tel: </span>{est.telefono}</div>}
+                                          {est.puesto&&<div><span style={{color:"#9ca3af"}}>Puesto: </span>{est.puesto}</div>}
+                                          {est.carrera&&<div><span style={{color:"#9ca3af"}}>Carrera: </span>{est.carrera}</div>}
+                                          {est.grado&&<div><span style={{color:"#9ca3af"}}>Grado: </span>{est.grado}</div>}
+                                          {est.egresado_ibero&&<div><span style={{color:"#9ca3af"}}>Eg. IBERO: </span><span style={{color:"#2563eb",fontWeight:600}}>{est.egresado_ibero}</span></div>}
+                                        </div>
+                                        {/* Factura / CSF */}
+                                        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+                                          <span style={{fontSize:11,background:est.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:4,padding:"2px 9px",color:est.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:700,border:"1px solid "+(est.requiere_factura==="Sí"?"#fca5a5":"#e5e7eb")}}>
+                                            {est.requiere_factura==="Sí"?"Requiere factura":"Sin factura"}
+                                          </span>
+                                          {est.csf_url
+                                            ?<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 9px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                                            :<span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Sin CSF</span>
+                                          }
+                                        </div>
+                                        {/* Asistencia por módulo + global */}
+                                        {asistPorMod.length>0&&(
+                                          <div>
+                                            <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>ASISTENCIA</div>
+                                            {/* Global */}
+                                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                                              <div style={{flex:1,height:5,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:(pctAsist||0)+"%",height:"100%",background:pctAsist>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
+                                              <span style={{fontWeight:800,fontSize:14,color:pctAsist>=80?"#16a34a":"#dc2626",fontFamily:"system-ui",minWidth:36}}>{pctAsist??0}%</span>
+                                              <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{totalAsistidas}/{totalSesiones} sesiones</span>
+                                            </div>
+                                            {/* Por módulo */}
+                                            {asistPorMod.map(({mod,asist,totalSes})=>{
+                                              const pm=totalSes?Math.round(asist/totalSes*100):0;
+                                              return(
+                                                <div key={mod.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                                                  <span style={{fontSize:10,background:prog.color,color:"#fff",borderRadius:3,padding:"1px 5px",fontWeight:700,fontFamily:"system-ui",flexShrink:0}}>{mod.numero}</span>
+                                                  <div style={{flex:1,height:3,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pm+"%",height:"100%",background:pm>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
+                                                  <span style={{fontSize:11,fontFamily:"system-ui",color:pm>=80?"#16a34a":"#dc2626",fontWeight:600,minWidth:32}}>{asist}/{totalSes}</span>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* COL DER: Parcialidades */}
+                                      <div style={{padding:"14px 20px"}}>
+                                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>
+                                          {p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}
+                                          {mf>0&&<span style={{marginLeft:6,color:"#374151",fontWeight:400}}>· {fmtMXN(mf)}{p.descuento_pct>0?` (−${p.descuento_pct}%)`:""}</span>}
+                                        </div>
+                                        {!mf&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>Sin configurar</div>}
+                                        {p.tipo==="unico"&&mf>0&&(
+                                          <div style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0"}}>
+                                            <div style={{width:18,height:18,borderRadius:"50%",background:(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:9,fontWeight:700}}>{(p.parcialidades||[]).some(x=>x.pagado)?"✓":""}</span></div>
+                                            <span style={{fontFamily:"system-ui",fontSize:12,fontWeight:600,color:(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#d97706"}}>{(p.parcialidades||[]).some(x=>x.pagado)?"Cubierto — "+fmtMXN(mf):"Pendiente — "+fmtMXN(mf)}</span>
+                                          </div>
+                                        )}
+                                        {p.tipo==="parcialidades"&&(p.parcialidades||[]).map((parc,j)=>{
+                                          const vencido=!parc.pagado&&parc.fecha_vencimiento&&parc.fecha_vencimiento<today();
+                                          return(
+                                            <div key={parc.id} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:j<(p.parcialidades||[]).length-1?"1px solid #f3f4f6":"none"}}>
+                                              <div style={{width:16,height:16,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:8,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
+                                              <span style={{fontFamily:"system-ui",fontSize:11,flex:1,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
+                                              <span style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</span>
+                                              <span style={{fontSize:9,fontWeight:700,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#9ca3af",fontFamily:"system-ui",minWidth:44,textAlign:"right"}}>{parc.pagado?"Pagado":vencido?"Vencido":"Pendiente"}</span>
+                                            </div>
+                                          );
+                                        })}
+                                        {recargo>0&&(
+                                          <div style={{marginTop:6,padding:"6px 10px",background:"#fef2f2",borderRadius:6,fontFamily:"system-ui",fontSize:11,color:"#dc2626",display:"flex",justifyContent:"space-between"}}>
+                                            <span>Recargo acumulado (6%)</span>
+                                            <strong>{fmtMXN(recargo)}</strong>
+                                          </div>
+                                        )}
+                                        {p.notas&&<div style={{marginTop:8,fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic"}}>{p.notas}</div>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -2751,7 +2877,7 @@ export default function App() {
           <div>
             <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 24px",letterSpacing:"-0.5px"}}>Reportes y estadísticas</h1>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
-              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados",egresados.length],["Bajas",bajas.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Eg. IBERO cursando",egresadosIberoActivos.length],["Eg. IBERO concluyeron",egresadosIberoConcluyeron.length]].map(([l,v])=>(
+              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Eg. IBERO cursando",egresadosIberoActivos.length],["Eg. IBERO concluyeron",egresadosIberoConcluyeron.length]].map(([l,v])=>(
                 <div key={l} style={{...S.card,padding:"20px 22px"}}>
                   <div style={{fontSize:28,fontWeight:800,color:RED,fontFamily:"system-ui"}}>{v}</div>
                   <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
@@ -2823,6 +2949,40 @@ export default function App() {
                 </div>
               )}
             </div>
+            {/* TASA DE DESERCIÓN */}
+            {inactivos.length>0&&(
+              <div style={{...S.card,marginBottom:16,border:"1px solid #fde68a"}}>
+                <button onClick={()=>setRepExp(repExp==="desercion"?null:"desercion")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                  <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                    <span style={{fontWeight:700,fontSize:14}}>Tasa de deserción</span>
+                    <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>
+                      {inactivos.length} inactivo{inactivos.length!==1?"s":""}
+                    </span>
+                    {(()=>{
+                      const totalEst=(programas||[]).reduce((a,p)=>a+ests(p).filter(e=>e.estatus!=="baja").length,0);
+                      const pctDeserc=totalEst>0?Math.round(inactivos.length/totalEst*100):0;
+                      return<span style={{background:pctDeserc>=20?"#fef2f2":"#fffbeb",color:pctDeserc>=20?"#dc2626":"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>{pctDeserc}% de deserción</span>;
+                    })()}
+                  </div>
+                  <span style={{color:"#9ca3af"}}>{repExp==="desercion"?"▲":"▼"}</span>
+                </button>
+                {repExp==="desercion"&&(
+                  <div style={{borderTop:"1px solid #fde68a",padding:"0 20px 16px"}}>
+                    <div style={{fontSize:12,color:"#92400e",fontFamily:"system-ui",padding:"10px 0 8px",fontStyle:"italic"}}>Estudiantes marcados como inactivos por falta de pago. Se recomienda seguimiento antes de dar de baja definitiva.</div>
+                    {inactivos.map((e,i)=>(
+                      <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #fef3c7",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
+                        <div style={{flex:1}}>
+                          <span style={{fontWeight:600}}>{e.nombre}</span>
+                          {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                        </div>
+                        <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                        <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Inactivo</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{...S.card,padding:24}}>
               <div style={{fontWeight:700,fontSize:12,marginBottom:16,color:RED,fontFamily:"system-ui",letterSpacing:"0.5px"}}>DETALLE POR PROGRAMA</div>
               <div style={{overflowX:"auto"}}>
