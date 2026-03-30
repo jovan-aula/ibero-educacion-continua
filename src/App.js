@@ -518,6 +518,33 @@ function ListaDocente({programas, onSave}) {
 
 // ─── IMPORT MODAL ─────────────────────────────────────
 // ─── MODAL DE PAGO POR ESTUDIANTE ─────────────────────
+function EditEstModal({est,prog,onSave,onClose}) {
+  const [form,setForm] = useState({...est});
+  const guardar = () => { onSave(form); onClose(); };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+        <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>Editar estudiante</span>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
+        </div>
+        <div style={{padding:"20px 24px"}}>
+          {[["Nombre","nombre"],["Correo","email"],["Teléfono","telefono"],["Empresa","empresa"],["Puesto","puesto"],["Carrera","carrera"]].map(([l,k])=>(<div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})} style={S.inp}/></div>))}
+          <div style={{marginBottom:13}}>
+            <label style={S.lbl}>Requiere factura</label>
+            <div style={{display:"flex",gap:8}}>{["Sí","No"].map(v=>(<button key={v} onClick={()=>setForm({...form,requiere_factura:v})} style={{border:"2px solid "+(form.requiere_factura===v?RED:"#e5e7eb"),borderRadius:6,padding:"7px 18px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.requiere_factura===v?"#fef2f2":"#fff",color:form.requiere_factura===v?RED:"#9ca3af"}}>{v}</button>))}</div>
+          </div>
+          <div style={{marginBottom:20}}>
+            <label style={S.lbl}>URL del CSF</label>
+            <input value={form.csf_url||""} onChange={e=>setForm({...form,csf_url:e.target.value})} placeholder="https://..." style={S.inp}/>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button onClick={onClose} style={S.btn("#f3f4f6","#374151")}>Cancelar</button><button onClick={guardar} style={S.btn(RED,"#fff")}>Guardar</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PagoModal({est,prog,onSave,onClose}) {
   const pago0 = est.pago||{tipo:"unico",monto_acordado:est.monto_ghl||0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
   const [pago,setPago] = useState(pago0);
@@ -1604,6 +1631,8 @@ export default function App() {
   const [busqPagos,setBusqPagos]     = useState("");
   const [progPagos,setProgPagos]     = useState("");
   const [filtroPagos,setFiltroPagos] = useState("");
+  const [expandido,setExpandido]     = useState(null);
+  const [editEstModal,setEditEstModal] = useState(null);
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -1682,6 +1711,11 @@ export default function App() {
   const savePago = (progId,estId,pago)=>{
     save((programas||[]).map(p=>p.id!==progId?p:{...p,estudiantes:ests(p).map(e=>e.id!==estId?e:{...e,pago})}));
     notify("Pago actualizado.");
+  };
+
+  const saveEstudiante = (progId,estId,datos)=>{
+    save((programas||[]).map(p=>p.id!==progId?p:{...p,estudiantes:ests(p).map(e=>e.id!==estId?e:{...e,...datos})}));
+    notify("Datos actualizados.");
   };
 
   const toggleAsist = (progId,modId,estId)=>{
@@ -2512,11 +2546,9 @@ export default function App() {
 
         {/* PAGOS GLOBAL */}
         {view==="pagos_global"&&(()=>{
-          const [busqP,setBusqP] = [busqPagos,setBusqPagos];
-          const [progSelP,setProgSelP] = [progPagos,setProgPagos];
-          const [filtroEstado,setFiltroEstado] = [filtroPagos,setFiltroPagos];
-          const [expandido,setExpandido] = useState(null); // id del estudiante expandido
-          const [editEstModal,setEditEstModal] = useState(null); // {est, prog}
+          const busqP=busqPagos, setBusqP=setBusqPagos;
+          const progSelP=progPagos, setProgSelP=setProgPagos;
+          const filtroEstado=filtroPagos, setFiltroEstado=setFiltroPagos;
 
           const todos=[];
           (programas||[]).forEach(prog=>{
@@ -2563,33 +2595,8 @@ export default function App() {
           };
 
           // Modal de edición rápida de datos del estudiante
-          const EditEstModal=({est,prog,onClose})=>{
-            const [form,setForm]=useState({...est});
-            const guardar=()=>{save((programas||[]).map(p=>p.id!==prog.id?p:{...p,estudiantes:ests(p).map(e=>e.id!==est.id?e:form)}));notify("Datos actualizados.");onClose();};
-            return(
-              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
-                <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
-                  <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>Editar estudiante</span><button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button></div>
-                  <div style={{padding:"20px 24px"}}>
-                    {[["Nombre","nombre"],["Correo","email"],["Teléfono","telefono"],["Empresa","empresa"],["Puesto","puesto"],["Carrera","carrera"]].map(([l,k])=>(<div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})} style={S.inp}/></div>))}
-                    <div style={{marginBottom:13}}>
-                      <label style={S.lbl}>Requiere factura</label>
-                      <div style={{display:"flex",gap:8}}>{["Sí","No"].map(v=>(<button key={v} onClick={()=>setForm({...form,requiere_factura:v})} style={{border:"2px solid "+(form.requiere_factura===v?RED:"#e5e7eb"),borderRadius:6,padding:"7px 18px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.requiere_factura===v?"#fef2f2":"#fff",color:form.requiere_factura===v?RED:"#9ca3af"}}>{v}</button>))}</div>
-                    </div>
-                    <div style={{marginBottom:20}}>
-                      <label style={S.lbl}>URL del CSF</label>
-                      <input value={form.csf_url||""} onChange={e=>setForm({...form,csf_url:e.target.value})} placeholder="https://..." style={S.inp}/>
-                    </div>
-                    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button onClick={onClose} style={S.btn("#f3f4f6","#374151")}>Cancelar</button><button onClick={guardar} style={S.btn(RED,"#fff")}>Guardar</button></div>
-                  </div>
-                </div>
-              </div>
-            );
-          };
-
           return(
             <div>
-              {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onClose={()=>setEditEstModal(null)}/>}
               <div style={{marginBottom:20}}>
                 <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Control de Pagos</h1>
                 <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Haz clic en un estudiante para ver su historial completo</p>
@@ -3226,6 +3233,7 @@ export default function App() {
       {/* MODALES */}
       {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)}/>}
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
+      {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
       {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
