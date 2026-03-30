@@ -279,90 +279,136 @@ function ListaDocente({programas, onSave}) {
   const hoy = today();
   const fmtHoy = () => { const d=new Date(); return d.getDate()+" de "+MESES_L[d.getMonth()]+" de "+d.getFullYear(); };
 
+  // Calcular si hoy es día de clase
+  const fechasClase = mod.fechasClase&&mod.fechasClase.length
+    ? mod.fechasClase
+    : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+  const esHoyClase = fechasClase.includes(hoy);
+  const festivo = isFestivo(hoy);
+  const numClaseHoy = fechasClase.indexOf(hoy)+1;
+  const maxClases = fechasClase.length||mod.clases||0;
+
   const [local,setLocal] = useState(()=>ests(prog).map(e=>({...e,asistencia:{...(e.asistencia||{})}})));
   const [saved,setSaved] = useState(false);
 
+  // Presente/ausente por fecha — asistencia guardada como array de fechas
+  const presenteHoy = e => {
+    const v = e.asistencia&&e.asistencia["mod_"+modId];
+    return Array.isArray(v) ? v.includes(hoy) : false;
+  };
+
+  const totalAsist = e => {
+    const v = e.asistencia&&e.asistencia["mod_"+modId];
+    return Array.isArray(v) ? v.length : (v||0);
+  };
+
   const toggle = id => {
+    if (!esHoyClase) return;
     setLocal(prev=>prev.map(e=>{
       if (e.id!==id) return e;
-      const k="mod_"+modId, cur=(e.asistencia&&e.asistencia[k])||0, max=mod.clases||0;
-      return {...e,asistencia:{...(e.asistencia||{}),[k]:cur>=max?0:cur+1}};
+      const k="mod_"+modId;
+      const cur = e.asistencia&&e.asistencia[k];
+      let fechas = Array.isArray(cur) ? [...cur] : [];
+      if (fechas.includes(hoy)) fechas=fechas.filter(f=>f!==hoy);
+      else fechas=[...fechas,hoy];
+      return {...e,asistencia:{...(e.asistencia||{}),[k]:fechas}};
     }));
     setSaved(false);
   };
 
+  const presentes = local.filter(presenteHoy).length;
+
   return (
     <div style={{minHeight:"100vh",background:"#f2f2f2",fontFamily:"system-ui"}}>
-      {/* Header */}
       <div style={{background:RED,padding:"16px 24px",display:"flex",alignItems:"center",gap:16}}>
         <IberoLogo h={40}/>
         <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia · Coordinación de Educación Continua</div>
       </div>
 
       <div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
-
-        {/* Info del módulo y docente */}
+        {/* Info del módulo */}
         <div style={{...S.card,padding:24,marginBottom:16}}>
-          <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:11,fontWeight:700,color:RED,letterSpacing:"1px",marginBottom:4}}>PROGRAMA</div>
-              <div style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",marginBottom:2}}>{prog.nombre}</div>
-              <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Módulo {mod.numero} · {mod.nombre}</div>
-              <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#374151"}}>
-                {mod.docente&&<div><span style={{color:"#9ca3af"}}>Docente: </span><strong>{mod.docente}</strong></div>}
-                {mod.fechaInicio&&<div><span style={{color:"#9ca3af"}}>Fechas: </span><strong>{fmtFecha(mod.fechaInicio)} — {fmtFecha(mod.fechaFin)}</strong></div>}
-                {mod.horario&&<div><span style={{color:"#9ca3af"}}>Horario: </span><strong>{mod.horario}</strong></div>}
-                {mod.dias&&mod.dias.length>0&&<div><span style={{color:"#9ca3af"}}>Días: </span><strong>{mod.dias.join(", ")}</strong></div>}
-              </div>
+          <div style={{fontSize:11,fontWeight:700,color:RED,letterSpacing:"1px",marginBottom:4}}>PROGRAMA</div>
+          <div style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",marginBottom:2}}>{prog.nombre}</div>
+          <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Módulo {mod.numero} · {mod.nombre}</div>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#374151"}}>
+            {mod.docente&&<div><span style={{color:"#9ca3af"}}>Docente: </span><strong>{mod.docente}</strong></div>}
+            {mod.fechaInicio&&<div><span style={{color:"#9ca3af"}}>Período: </span><strong>{fmtFecha(mod.fechaInicio)} — {fmtFecha(mod.fechaFin)}</strong></div>}
+            {mod.horario&&<div><span style={{color:"#9ca3af"}}>Horario: </span><strong>{mod.horario}</strong></div>}
+          </div>
+        </div>
+
+        {/* Estado del día */}
+        {festivo&&(
+          <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"14px 18px",marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:14,color:"#92400e"}}>Día festivo: {festivo}</div>
+            <div style={{fontSize:13,color:"#92400e",marginTop:2}}>No hay clase programada hoy.</div>
+          </div>
+        )}
+        {!esHoyClase&&!festivo&&(
+          <div style={{background:"#f3f4f6",border:"1px solid #e5e7eb",borderRadius:8,padding:"14px 18px",marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:14,color:"#374151"}}>Hoy no hay clase programada</div>
+            <div style={{fontSize:13,color:"#6b7280",marginTop:2}}>
+              {fechasClase.filter(f=>f>hoy).length>0
+                ? "Próxima clase: "+fmtFecha(fechasClase.filter(f=>f>hoy)[0])
+                : "No hay más clases programadas."}
             </div>
           </div>
-        </div>
-
-        {/* Sesión en curso */}
-        <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"12px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:10,height:10,borderRadius:"50%",background:RED,flexShrink:0}}/>
-          <div>
-            <div style={{fontWeight:700,fontSize:14,color:RED}}>Sesión en curso</div>
-            <div style={{fontSize:13,color:"#374151",marginTop:2}}>{fmtHoy()} · {local.filter(e=>(e.asistencia&&e.asistencia["mod_"+modId]||0)>0).length} de {local.length} presentes</div>
+        )}
+        {esHoyClase&&(
+          <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,color:"#16a34a"}}>Clase {numClaseHoy} de {maxClases} · {fmtHoy()}</div>
+              <div style={{fontSize:13,color:"#16a34a",marginTop:2}}>{presentes} de {local.length} presentes</div>
+            </div>
+            <div style={{fontSize:22,fontWeight:800,color:"#16a34a"}}>{local.length>0?Math.round(presentes/local.length*100):0}%</div>
           </div>
-        </div>
+        )}
 
-        {/* Instrucción */}
-        <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Toca el nombre o el contador para registrar asistencia.</div>
-
-        {/* Lista de estudiantes */}
-        <div style={{display:"grid",gap:10,marginBottom:20}}>
-          {local.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:40}}>Sin estudiantes en este módulo.</div>}
-          {local.map(e=>{
-            const k="mod_"+modId, asist=(e.asistencia&&e.asistencia[k])||0, max=mod.clases||0, pct=max?Math.round(asist/max*100):0;
-            return (
-              <div key={e.id} style={{...S.card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}} onClick={()=>toggle(e.id)}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:15,color:"#1a1a1a"}}>{e.nombre}</div>
-                  <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,color:"#6b7280",marginTop:3}}>
-                    {e.puesto&&<span>{e.puesto}</span>}
-                    {e.empresa&&<span>{e.empresa}</span>}
-                    {e.email&&<span>{e.email}</span>}
+        {/* Lista estudiantes — solo si hay clase hoy */}
+        {esHoyClase&&(
+          <>
+            <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Toca el nombre para marcar presente o ausente.</div>
+            <div style={{display:"grid",gap:8,marginBottom:20}}>
+              {local.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:40}}>Sin estudiantes en este módulo.</div>}
+              {local.map(e=>{
+                const presente=presenteHoy(e);
+                const tot=totalAsist(e);
+                const pct=maxClases?Math.round(tot/maxClases*100):0;
+                return(
+                  <div key={e.id} onClick={()=>toggle(e.id)}
+                    style={{...S.card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",border:"2px solid "+(presente?"#16a34a":"#e5e7eb"),background:presente?"#f0fdf4":"#fff",transition:"all 0.12s"}}>
+                    <div style={{width:32,height:32,borderRadius:"50%",background:presente?"#16a34a":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:800,fontSize:15,color:presente?"#fff":"#9ca3af"}}>
+                      {presente?"✓":""}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:15,color:presente?"#16a34a":"#1a1a1a"}}>{e.nombre}</div>
+                      <div style={{fontSize:12,color:"#6b7280",marginTop:2,display:"flex",gap:10,flexWrap:"wrap"}}>
+                        {e.puesto&&<span>{e.puesto}</span>}
+                        {e.empresa&&<span>{e.empresa}</span>}
+                        {e.email&&<span>{e.email}</span>}
+                      </div>
+                      <div style={{marginTop:6,display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{width:80,height:3,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                          <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
+                        </div>
+                        <span style={{fontSize:11,color:pct>=80?"#16a34a":"#dc2626",fontWeight:700}}>{tot}/{maxClases} · {pct}%</span>
+                      </div>
+                    </div>
+                    <div style={{fontWeight:700,fontSize:13,color:presente?"#16a34a":"#9ca3af",flexShrink:0}}>
+                      {presente?"Presente":"Ausente"}
+                    </div>
                   </div>
-                  <div style={{marginTop:8,width:"100%",maxWidth:160,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
-                    <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
-                  </div>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={e=>{e.stopPropagation();toggle(e.id);}}>
-                  <button style={{width:64,height:40,border:"2px solid "+(asist>0?"#16a34a":"#e5e7eb"),borderRadius:8,background:asist>0?"#f0fdf4":"#f9f9f9",cursor:"pointer",fontWeight:800,fontSize:16,color:asist>0?"#16a34a":"#9ca3af",fontFamily:"system-ui"}}>
-                    {asist}/{max}
-                  </button>
-                  <span style={{fontSize:10,color:pct>=80?"#16a34a":"#dc2626",fontWeight:700}}>{pct}%</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <button onClick={()=>{onSave(progId,modId,local);setSaved(true);}} style={{...S.btn(RED,"#fff"),width:"100%",padding:14,fontSize:15}}>
-          {saved?"Asistencia guardada":"Guardar asistencia"}
-        </button>
-        {saved&&<div style={{textAlign:"center",fontSize:13,color:"#16a34a",marginTop:12,fontWeight:600}}>Guardado correctamente.</div>}
+                );
+              })}
+            </div>
+            <button onClick={()=>{onSave(progId,modId,local);setSaved(true);}}
+              style={{...S.btn(RED,"#fff"),width:"100%",padding:14,fontSize:15}}>
+              {saved?"Asistencia guardada":"Guardar asistencia"}
+            </button>
+            {saved&&<div style={{textAlign:"center",fontSize:13,color:"#16a34a",marginTop:12,fontWeight:600}}>Guardado correctamente.</div>}
+          </>
+        )}
       </div>
     </div>
   );
@@ -1292,7 +1338,7 @@ export default function App() {
         <div style={{color:"rgba(255,255,255,0.9)",fontSize:13,fontFamily:"system-ui"}}>Educación Continua</div>
         <div style={{flex:1}}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-          {[["lista","Programas"],["calendario","Calendario"],["asistencia","Asistencia"],["docentes","Docentes"]].map(([v,l])=>(
+          {[["lista","Programas"],["hoy","Hoy"],["calendario","Calendario"],["asistencia","Asistencia"],["docentes","Docentes"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view===v?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>{l}</button>
           ))}
           {can(session,"verReportes")&&<button onClick={()=>setView("reportes")} style={{background:view==="reportes"?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view==="reportes"?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>Reportes</button>}
@@ -1331,6 +1377,123 @@ export default function App() {
         {view==="calendario"&&<CalendarioView programas={programas}/>}
         {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas}/>}
         {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado}/>}
+
+        {/* VISTA HOY */}
+        {view==="hoy"&&(()=>{
+          const hoy = today();
+          const fmtHoyLargo = () => { const d=new Date(); return d.getDate()+" de "+MESES_L[d.getMonth()]+" de "+d.getFullYear(); };
+
+          // Módulos con clase hoy
+          const modulosHoy = [];
+          (programas||[]).forEach(prog=>{
+            mods(prog).forEach(mod=>{
+              const fechas = mod.fechasClase&&mod.fechasClase.length
+                ? mod.fechasClase
+                : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+              if(fechas.includes(hoy)) modulosHoy.push({prog,mod,fechas});
+            });
+          });
+
+          const toggleHoy = (progId,modId,estId) => {
+            save((programas||[]).map(p=>{
+              if(p.id!==progId)return p;
+              return{...p,estudiantes:ests(p).map(e=>{
+                if(e.id!==estId)return e;
+                const k="mod_"+modId;
+                const cur=e.asistencia&&e.asistencia[k];
+                let fechas=Array.isArray(cur)?[...cur]:[];
+                if(fechas.includes(hoy))fechas=fechas.filter(f=>f!==hoy);
+                else fechas=[...fechas,hoy];
+                return{...e,asistencia:{...(e.asistencia||{}),[k]:fechas}};
+              })};
+            }));
+          };
+
+          const presenteHoy = (e,modId) => {
+            const v=e.asistencia&&e.asistencia["mod_"+modId];
+            return Array.isArray(v)?v.includes(hoy):false;
+          };
+
+          return(
+            <div>
+              <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
+                <div>
+                  <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Lista de hoy</h1>
+                  <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{fmtHoyLargo()} · {modulosHoy.length} {modulosHoy.length===1?"módulo":"módulos"} con clase</p>
+                </div>
+              </div>
+
+              {modulosHoy.length===0&&(
+                <div style={{...S.card,padding:48,textAlign:"center"}}>
+                  <div style={{fontSize:16,fontWeight:600,color:"#374151",marginBottom:8}}>No hay clases programadas hoy</div>
+                  <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>
+                    {isFestivo(hoy)?`Hoy es ${isFestivo(hoy)}. Disfruta el descanso.`:"Consulta el Calendario para ver los próximos días con clase."}
+                  </div>
+                </div>
+              )}
+
+              <div style={{display:"grid",gap:24}}>
+                {modulosHoy.map(({prog,mod,fechas})=>{
+                  const numClase=fechas.indexOf(hoy)+1;
+                  const maxClases=fechas.length||mod.clases||0;
+                  const estudiantes=ests(prog);
+                  const presentes=estudiantes.filter(e=>presenteHoy(e,mod.id)).length;
+                  return(
+                    <div key={prog.id+"_"+mod.id} style={{...S.card,overflow:"hidden"}}>
+                      {/* Header del módulo */}
+                      <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:prog.color,flexShrink:0}}/>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:15}}>{mod.nombre}</div>
+                          <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",marginTop:2,display:"flex",gap:12,flexWrap:"wrap"}}>
+                            <span>{prog.nombre}</span>
+                            {mod.docente&&<span>{mod.docente}</span>}
+                            {mod.horario&&<span>{mod.horario}</span>}
+                          </div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontWeight:800,fontSize:18,color:RED}}>{presentes}/{estudiantes.length}</div>
+                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Clase {numClase} de {maxClases}</div>
+                        </div>
+                      </div>
+
+                      {/* Lista de estudiantes */}
+                      {estudiantes.length===0&&(
+                        <div style={{padding:"24px",textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Sin estudiantes importados.</div>
+                      )}
+                      <div style={{display:"grid",gap:0}}>
+                        {estudiantes.map((e,i)=>{
+                          const presente=presenteHoy(e,mod.id);
+                          const tot=Array.isArray(e.asistencia&&e.asistencia["mod_"+mod.id])?(e.asistencia["mod_"+mod.id]).length:((e.asistencia&&e.asistencia["mod_"+mod.id])||0);
+                          const pct=maxClases?Math.round(tot/maxClases*100):0;
+                          return(
+                            <div key={e.id} onClick={()=>toggleHoy(prog.id,mod.id,e.id)}
+                              style={{padding:"12px 20px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",borderBottom:i<estudiantes.length-1?"1px solid #f3f4f6":"none",background:presente?"#f0fdf4":"#fff",transition:"background 0.1s"}}>
+                              <div style={{width:28,height:28,borderRadius:"50%",background:presente?"#16a34a":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700,fontSize:13,color:presente?"#fff":"#9ca3af"}}>
+                                {presente?"✓":""}
+                              </div>
+                              <div style={{flex:1}}>
+                                <div style={{fontWeight:600,fontSize:14,color:presente?"#16a34a":"#1a1a1a"}}>{e.nombre}</div>
+                                {(e.puesto||e.empresa)&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginTop:1}}>{[e.puesto,e.empresa].filter(Boolean).join(" · ")}</div>}
+                              </div>
+                              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                                <div style={{width:48,height:3,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                  <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
+                                </div>
+                                <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",minWidth:36}}>{tot}/{maxClases}</span>
+                                <span style={{fontWeight:700,fontSize:13,color:presente?"#16a34a":"#9ca3af",minWidth:56,textAlign:"right"}}>{presente?"Presente":"Ausente"}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* LISTA DE PROGRAMAS */}
         {view==="lista"&&(
