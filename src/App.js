@@ -113,6 +113,7 @@ const fmtFecha = d => {
   const [y,m,day] = d.split("-");
   return parseInt(day)+" "+MESES_C[parseInt(m)-1]+" "+y;
 };
+const fmtMXN = n => n!=null ? "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
 const newId  = () => Math.random().toString(36).slice(2,9);
 const can    = (s,p) => !!(s && s.permisos && s.permisos[p]);
 const today  = () => new Date().toISOString().split("T")[0];
@@ -415,6 +416,208 @@ function ListaDocente({programas, onSave}) {
 }
 
 // ─── IMPORT MODAL ─────────────────────────────────────
+// ─── MODAL DE PAGO POR ESTUDIANTE ─────────────────────
+function PagoModal({est,prog,onSave,onClose}) {
+  const pago0 = est.pago||{tipo:"unico",monto_acordado:est.monto_ghl||0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
+  const [pago,setPago] = useState(pago0);
+  const [newPromo,setNewPromo] = useState({nombre:"",descuento:0});
+
+  const precioLista = prog.precioLista||0;
+  const parcDefault = prog.parcialidadesDefault||5;
+  const promociones = prog.promociones||[];
+
+  const montoFinal = pago.monto_acordado * (1 - (pago.descuento_pct||0)/100);
+  const montoParcialidad = pago.tipo==="parcialidades" && pago.parcialidades.length>0
+    ? montoFinal / pago.parcialidades.length : 0;
+
+  const aplicarPromocion = id => {
+    const pr = promociones.find(p=>p.id===id);
+    setPago({...pago,promocion_id:id,descuento_pct:pr?pr.descuento:0});
+  };
+
+  // Calcula fecha de vencimiento mensual a partir del mes siguiente al inicio del programa
+  const calcFechasVencimiento = (n, fechaInicioProg) => {
+    const base = fechaInicioProg ? new Date(fechaInicioProg+"T12:00:00") : new Date();
+    // Primera parcialidad ya está pagada (pago al inscribirse)
+    // Las siguientes caen el día 1 del mes siguiente, mes a mes
+    return Array.from({length:n},(_,i)=>{
+      const d = new Date(base.getFullYear(), base.getMonth()+i+1, 1);
+      return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-01";
+    });
+  };
+
+  const fechaInicioProg = mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"";
+
+  const generarParcialidades = n => {
+    const fechas = calcFechasVencimiento(n, fechaInicioProg);
+    const parcs = Array.from({length:n},(_,i)=>({
+      id:newId(),
+      numero:i+1,
+      pagado:i===0, // primera ya pagada
+      fecha_pago:i===0?today():"",       // fecha real de pago
+      fecha_vencimiento:fechas[i],        // fecha programada de vencimiento
+    }));
+    setPago({...pago,parcialidades:parcs});
+  };
+
+  const toggleParcialidad = (id,fecha) => {
+    setPago({...pago,parcialidades:pago.parcialidades.map(p=>
+      p.id===id?{...p,pagado:!p.pagado,fecha_pago:!p.pagado?fecha||today():""}:p
+    )});
+  };
+
+  const pagosPagados = (pago.parcialidades||[]).filter(p=>p.pagado).length;
+  const totalParcialidades = (pago.parcialidades||[]).length;
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1500,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:540,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+        <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>Configurar pago</div>
+            <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{est.nombre}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
+        </div>
+        <div style={{padding:"20px 24px"}}>
+
+          {/* Referencia GHL */}
+          {est.monto_ghl>0&&(
+            <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",marginBottom:8,fontFamily:"system-ui",fontSize:13}}>
+              <span style={{color:"#92400e"}}>Monto GHL (referencia): </span>
+              <strong style={{color:"#92400e"}}>{fmtMXN(est.monto_ghl)}</strong>
+            </div>
+          )}
+          {(est.requiere_factura||est.csf_url)&&(
+            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+              {est.requiere_factura&&<span style={{fontSize:12,background:est.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:6,padding:"4px 12px",color:est.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:600,border:"1px solid "+(est.requiere_factura==="Sí"?"#fca5a5":"#e5e7eb")}}>Factura: {est.requiere_factura}</span>}
+              {est.csf_url&&<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:12,background:"#f0fdf4",borderRadius:6,padding:"4px 12px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Descargar CSF</a>}
+            </div>
+          )}
+
+          {/* Precio lista y monto acordado */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div>
+              <label style={S.lbl}>Precio lista del programa</label>
+              <div style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontFamily:"system-ui",fontSize:14,color:"#6b7280",background:"#f9f9f9"}}>{precioLista>0?fmtMXN(precioLista):"Sin definir"}</div>
+            </div>
+            <div>
+              <label style={S.lbl}>Precio acordado (MXN)</label>
+              <input type="number" min="0" value={pago.monto_acordado||""} onChange={e=>setPago({...pago,monto_acordado:parseFloat(e.target.value)||0})} placeholder="0" style={S.inp}/>
+            </div>
+          </div>
+
+          {/* Promoción */}
+          <div style={{marginBottom:14}}>
+            <label style={S.lbl}>Promoción aplicada</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+              <button onClick={()=>setPago({...pago,promocion_id:"",descuento_pct:0})} style={{border:"2px solid "+(pago.promocion_id===""?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:pago.promocion_id===""?"#fef2f2":"#fff",color:pago.promocion_id===""?RED:"#6b7280",fontWeight:600}}>Sin promoción</button>
+              {promociones.map(pr=>(
+                <button key={pr.id} onClick={()=>aplicarPromocion(pr.id)} style={{border:"2px solid "+(pago.promocion_id===pr.id?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:pago.promocion_id===pr.id?"#fef2f2":"#fff",color:pago.promocion_id===pr.id?RED:"#6b7280",fontWeight:600}}>{pr.nombre} {pr.descuento}%</button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <label style={{...S.lbl,margin:0,minWidth:80}}>Descuento %</label>
+              <input type="number" min="0" max="100" value={pago.descuento_pct||0} onChange={e=>setPago({...pago,descuento_pct:parseFloat(e.target.value)||0,promocion_id:""})} style={{...S.inp,width:80,textAlign:"center"}}/>
+              {pago.descuento_pct>0&&<span style={{fontFamily:"system-ui",fontSize:13,color:"#16a34a",fontWeight:700}}>Ahorro: {fmtMXN(pago.monto_acordado*(pago.descuento_pct/100))}</span>}
+            </div>
+          </div>
+
+          {/* Monto final */}
+          <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"12px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontFamily:"system-ui",fontSize:13,color:"#16a34a",fontWeight:600}}>Monto final a cobrar</span>
+            <span style={{fontFamily:"system-ui",fontSize:20,fontWeight:800,color:"#16a34a"}}>{fmtMXN(montoFinal)}</span>
+          </div>
+
+          {/* Tipo de pago */}
+          <div style={{marginBottom:14}}>
+            <label style={S.lbl}>Tipo de pago</label>
+            <div style={{display:"flex",gap:8}}>
+              {[["unico","Pago único"],["parcialidades","Parcialidades"]].map(([v,l])=>(
+                <button key={v} onClick={()=>{
+                  if(v==="parcialidades"&&pago.parcialidades.length===0) generarParcialidades(parcDefault);
+                  else setPago({...pago,tipo:v});
+                }} style={{flex:1,border:"2px solid "+(pago.tipo===v?RED:"#e5e7eb"),borderRadius:8,padding:"10px",cursor:"pointer",fontFamily:"system-ui",fontWeight:700,fontSize:13,background:pago.tipo===v?"#fef2f2":"#fff",color:pago.tipo===v?RED:"#6b7280"}}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Parcialidades */}
+          {pago.tipo==="parcialidades"&&(
+            <div style={{marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <label style={S.lbl}>Parcialidades ({pagosPagados}/{totalParcialidades} pagadas)</label>
+                <div style={{display:"flex",gap:6}}>
+                  {[3,5,6,10,12].map(n=>(
+                    <button key={n} onClick={()=>generarParcialidades(n)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:totalParcialidades===n?"#fef2f2":"#fff",color:totalParcialidades===n?RED:"#6b7280",fontWeight:totalParcialidades===n?700:400}}>{n}</button>
+                  ))}
+                </div>
+              </div>
+              {totalParcialidades>0&&(
+                <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:8,display:"flex",gap:16}}>
+                  <span>{fmtMXN(montoFinal/totalParcialidades)} por parcialidad</span>
+                  <span style={{color:"#16a34a"}}>1ª parcialidad marcada como pagada automáticamente</span>
+                </div>
+              )}
+              <div style={{display:"grid",gap:6}}>
+                {(pago.parcialidades||[]).map((p,i)=>{
+                  const vencido = !p.pagado && p.fecha_vencimiento && p.fecha_vencimiento < today();
+                  const hoy15 = today().substring(0,8)+"15";
+                  const proxima = !p.pagado && p.fecha_vencimiento && p.fecha_vencimiento >= today() && p.fecha_vencimiento <= hoy15;
+                  return(
+                    <div key={p.id} style={{padding:"10px 12px",background:p.pagado?"#f0fdf4":vencido?"#fef2f2":"#f9f9f9",borderRadius:6,border:"1px solid "+(p.pagado?"#bbf7d0":vencido?"#fca5a5":"#e5e7eb")}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <button onClick={()=>toggleParcialidad(p.id)} style={{width:24,height:24,borderRadius:"50%",border:"2px solid "+(p.pagado?"#16a34a":vencido?"#dc2626":"#d1d5db"),background:p.pagado?"#16a34a":"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:12,color:"#fff",fontWeight:700}}>{p.pagado?"✓":""}</button>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"system-ui",fontSize:13,fontWeight:600}}>
+                            Parcialidad {p.numero} — {fmtMXN(totalParcialidades?montoFinal/totalParcialidades:0)}
+                            {p.numero===1&&<span style={{fontSize:11,color:"#16a34a",marginLeft:6,fontWeight:400}}>(primer pago al inscribirse)</span>}
+                          </div>
+                          {p.fecha_vencimiento&&(
+                            <div style={{fontSize:11,color:vencido?"#dc2626":proxima?"#d97706":"#9ca3af",fontFamily:"system-ui",marginTop:2}}>
+                              Vencimiento: {fmtFecha(p.fecha_vencimiento)}
+                              {vencido&&" — Vencido"}
+                              {proxima&&" — Próximo a vencer"}
+                            </div>
+                          )}
+                        </div>
+                        {/* Editar fecha de vencimiento */}
+                        <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                          {!p.pagado&&(
+                            <input type="date" value={p.fecha_vencimiento||""} onChange={e=>{const parcs=[...(pago.parcialidades||[])];parcs[i]={...parcs[i],fecha_vencimiento:e.target.value};setPago({...pago,parcialidades:parcs});}} style={{border:"1px solid #e5e7eb",borderRadius:4,padding:"3px 8px",fontSize:11,fontFamily:"system-ui",background:"#fff",color:"#6b7280"}} title="Fecha de vencimiento"/>
+                          )}
+                          {p.pagado&&(
+                            <div style={{display:"flex",flexDirection:"column",gap:2,alignItems:"flex-end"}}>
+                              <span style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>Fecha de pago:</span>
+                              <input type="date" value={p.fecha_pago||""} onChange={e=>{const parcs=[...(pago.parcialidades||[])];parcs[i]={...parcs[i],fecha_pago:e.target.value};setPago({...pago,parcialidades:parcs});}} style={{border:"1px solid #bbf7d0",borderRadius:4,padding:"3px 8px",fontSize:11,fontFamily:"system-ui",background:"#fff"}}/>
+                            </div>
+                          )}
+                        </div>
+                        <span style={{fontSize:12,fontWeight:700,color:p.pagado?"#16a34a":vencido?"#dc2626":"#9ca3af",fontFamily:"system-ui",minWidth:56,textAlign:"right"}}>{p.pagado?"Pagado":vencido?"Vencido":"Pendiente"}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Notas */}
+          <div style={{marginBottom:20}}>
+            <label style={S.lbl}>Notas de pago</label>
+            <textarea value={pago.notas||""} onChange={e=>setPago({...pago,notas:e.target.value})} placeholder="Convenios, condiciones especiales..." rows={2} style={{...S.inp,resize:"vertical"}}/>
+          </div>
+
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick={onClose} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
+            <button onClick={()=>{onSave(pago);onClose();}} style={S.btn(RED,"#fff")}>Guardar pago</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
   const [pipelines,setPipelines] = useState([]);
   const [stages,setStages]       = useState([]);
@@ -459,19 +662,18 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
           try{
             const cr=await fetch("https://services.leadconnectorhq.com/contacts/"+op.contactId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
             const cd=await cr.json();
-            const contact={...cd.contact,opportunityStatus:op.status};
-            // Si el contacto tiene empresa asociada, obtener su nombre
+            // Pasamos monetaryValue desde la oportunidad al contacto
+            const contact={...cd.contact,opportunityStatus:op.status,monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0};
             if(cd.contact?.businessId){
               try{
                 const br=await fetch("https://services.leadconnectorhq.com/businesses/"+cd.contact.businessId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
                 const bd=await br.json();
                 contact._empresaNombre=bd.business?.name||bd.name||"";
-                console.log("EMPRESA:", contact.name, "→", contact._empresaNombre);
-              }catch(e){console.log("Sin empresa para:", contact.name);}
+              }catch(e){}
             }
             return contact;
           }
-          catch(e){return{id:op.contactId,name:op.name,opportunityStatus:op.status};}
+          catch(e){return{id:op.contactId,name:op.name,opportunityStatus:op.status,monetaryValue:op.monetaryValue||0};}
         }));
         setContacts(enriched);
       } else {
@@ -492,6 +694,17 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       return typeof val === "string" ? val.trim() : "";
     };
 
+    // Extrae la URL del campo CSF (es un objeto anidado con url)
+    const getCSFUrl = (customFields) => {
+      const cf = (customFields||[]).find(f=>f.id==="aPGkrDmlbph34lrEyDmc");
+      if (!cf||!cf.value) return "";
+      if (typeof cf.value === "string") return cf.value;
+      // El valor es un objeto con UUIDs como keys, cada uno tiene {url, documentId}
+      const entries = Object.values(cf.value||{});
+      if (entries.length>0) return entries[0].url||"";
+      return "";
+    };
+
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const cf = c.customFields||[];
       return {
@@ -506,9 +719,13 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         egresado_ibero:   getCF(cf,"6yYRPsode1sse8Vir7tK","contact.eres_egresada_o_egresado_ibero"),
         programa_interes: getCF(cf,"rWoFzI5aT07JEzAuUhTe","contact.programa_de_intersz"),
         fuente:           getCF(cf,"zGLvQcNfeatO2c4GyxCi","source")||c.source||"",
+        requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura"),
+        csf_url:          getCSFUrl(cf),
         estatus:          "activo",
         asistencia:       {},
         campos_extra:     {},
+        monto_ghl:        c.monetaryValue||c.opportunityValue||0,
+        pago:             {tipo:"unico",monto_acordado:c.monetaryValue||0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""},
       };
     });
     onImport([...existing,...toAdd]);
@@ -1019,6 +1236,7 @@ export default function App() {
   const [showProgM,setShowProgM] = useState(false);
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
+  const [pagoModal,setPagoModal] = useState(null); // {est, prog}
   const [notif,setNotif]         = useState(null);
   const [confirmSimple,setCS]    = useState(null); // {titulo,mensaje,onConfirm}
   const [confirmEscrita,setCE]   = useState(null); // {titulo,subtitulo,mensaje,onConfirm}
@@ -1038,7 +1256,7 @@ export default function App() {
   const alertRef = useRef(null);
 
   const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:6,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera"};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,promociones:[]};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -1104,6 +1322,11 @@ export default function App() {
   const egresadosIberoConcluyeron = (programas||[]).flatMap(p=>ests(p).filter(e=>e.egresado_ibero==="Sí"&&(e.estatus==="egresado"||progStatus(p)==="finalizado")).map(e=>({...e,programa:p.nombre,estatus_prog:"finalizado"})));
 
   const updateEst = (progId,est)=>{save((programas||[]).map(p=>p.id===progId?{...p,estudiantes:est}:p));notify("Estudiantes importados.");};
+
+  const savePago = (progId,estId,pago)=>{
+    save((programas||[]).map(p=>p.id!==progId?p:{...p,estudiantes:ests(p).map(e=>e.id!==estId?e:{...e,pago})}));
+    notify("Pago actualizado.");
+  };
 
   const toggleAsist = (progId,modId,estId)=>{
     save((programas||[]).map(p=>{
@@ -1584,7 +1807,7 @@ export default function App() {
 
             {/* TABS */}
             <div style={{display:"flex",marginBottom:20,...S.card,overflow:"hidden"}}>
-              {[["modulos","Módulos",mods(prog).length],["estudiantes","Estudiantes",ests(prog).length],["asistencia","Asistencia",ests(prog).length]].map(([t,l,cnt])=>(
+              {[["modulos","Módulos",mods(prog).length],["estudiantes","Estudiantes",ests(prog).length],["asistencia","Asistencia",ests(prog).length],["pagos","Pagos",ests(prog).length]].map(([t,l,cnt])=>(
                 <button key={t} onClick={()=>setProgTab(t)} style={{flex:1,padding:"12px 16px",border:"none",borderBottom:progTab===t?"3px solid "+RED:"3px solid transparent",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui",background:"#fff",color:progTab===t?RED:"#6b7280"}}>
                   {l+" ("+cnt+")"}
                 </button>
@@ -1673,11 +1896,30 @@ export default function App() {
                                 {e.carrera&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Carrera: {e.carrera}</span>}
                                 {e.grado&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Grado: {e.grado}</span>}
                                 {e.egresado_ibero&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>Egresado IBERO: {e.egresado_ibero}</span>}
+                                {e.requiere_factura&&<span style={{fontSize:11,background:e.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:4,padding:"2px 8px",color:e.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>Factura: {e.requiere_factura}</span>}
+                                {e.csf_url&&<a href={e.csf_url} target="_blank" rel="noreferrer" onClick={ev=>ev.stopPropagation()} style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>}
                               </div>
                             )}
                             {(fieldMap||[]).length>0&&<div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
+                            {/* Resumen de pago */}
+                            {e.pago&&(e.pago.monto_acordado>0)&&(()=>{
+                              const p=e.pago;
+                              const montoFinal=p.monto_acordado*(1-(p.descuento_pct||0)/100);
+                              const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
+                              const total=(p.parcialidades||[]).length;
+                              const cobrado=p.tipo==="unico"?(pagadas>0?montoFinal:0):pagadas*(total?montoFinal/total:0);
+                              return(
+                                <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                                  <span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>{fmtMXN(montoFinal)}</span>
+                                  {p.tipo==="parcialidades"&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{pagadas}/{total} pagadas</span>}
+                                  {p.tipo==="unico"&&<span style={{fontSize:11,background:cobrado>0?"#f0fdf4":"#fff7ed",borderRadius:4,padding:"2px 8px",color:cobrado>0?"#16a34a":"#d97706",fontFamily:"system-ui",fontWeight:600}}>{cobrado>0?"Pagado":"Pendiente"}</span>}
+                                  {p.descuento_pct>0&&<span style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui"}}>Desc. {p.descuento_pct}%</span>}
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                            <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 10px",fontSize:12})}>Pago</button>
                             <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
                               <option value="activo">Activo</option><option value="egresado">Egresado</option><option value="baja">Baja</option>
@@ -1745,6 +1987,98 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* PAGOS */}
+            {progTab==="pagos"&&(()=>{
+              const estudiantes=ests(prog);
+              const totalEsperado=estudiantes.reduce((a,e)=>{
+                const p=e.pago;if(!p||!p.monto_acordado)return a;
+                return a+p.monto_acordado*(1-(p.descuento_pct||0)/100);
+              },0);
+              const totalCobrado=estudiantes.reduce((a,e)=>{
+                const p=e.pago;if(!p)return a;
+                if(p.tipo==="unico"){const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(pagadas>0?p.monto_acordado*(1-(p.descuento_pct||0)/100):0);}
+                const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
+                const tot=(p.parcialidades||[]).length;
+                const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;
+                return a+(tot?mf/tot*pag:0);
+              },0);
+              const totalDescuentos=estudiantes.reduce((a,e)=>{
+                const p=e.pago;if(!p||!p.monto_acordado||!p.descuento_pct)return a;
+                return a+p.monto_acordado*(p.descuento_pct/100);
+              },0);
+              const pendiente=totalEsperado-totalCobrado;
+              return(
+                <div>
+                  {/* Resumen financiero */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
+                    {[[`Total esperado`,totalEsperado,"#1a1a1a"],[`Cobrado`,totalCobrado,"#16a34a"],[`Pendiente`,pendiente,"#d97706"],[`Descuentos`,totalDescuentos,RED]].map(([l,v,c])=>(
+                      <div key={l} style={{...S.card,padding:"16px 18px"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                        <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Barra de progreso */}
+                  {totalEsperado>0&&(
+                    <div style={{...S.card,padding:"14px 18px",marginBottom:20}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontFamily:"system-ui",marginBottom:8}}>
+                        <span style={{color:"#6b7280"}}>Progreso de cobranza</span>
+                        <span style={{fontWeight:700,color:"#16a34a"}}>{Math.round(totalCobrado/totalEsperado*100)}%</span>
+                      </div>
+                      <div style={{height:8,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                        <div style={{width:Math.round(totalCobrado/totalEsperado*100)+"%",height:"100%",background:"#16a34a",borderRadius:4,transition:"width 0.3s"}}/>
+                      </div>
+                    </div>
+                  )}
+                  {/* Tabla por estudiante */}
+                  <div style={{...S.card,overflow:"hidden"}}>
+                    <div style={{padding:"14px 18px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Desglose por estudiante</div>
+                    {estudiantes.length===0&&<div style={{padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Importa estudiantes primero.</div>}
+                    {estudiantes.map((e,i)=>{
+                      const p=e.pago||{};
+                      const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+                      const tot=(p.parcialidades||[]).length;
+                      const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;
+                      const cobrado=p.tipo==="unico"?(pag>0?mf:0):(tot?mf/tot*pag:0);
+                      const pendienteEst=mf-cobrado;
+                      const sinConfig=!p.monto_acordado;
+                      return(
+                        <div key={e.id} style={{padding:"14px 18px",borderBottom:i<estudiantes.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                          <div style={{flex:1,minWidth:160}}>
+                            <div style={{fontWeight:600,fontSize:14}}>{e.nombre}</div>
+                            {e.empresa&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{e.empresa}</div>}
+                            {sinConfig&&<div style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",marginTop:2}}>Sin configurar</div>}
+                          </div>
+                          {!sinConfig&&(
+                            <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,fontFamily:"system-ui"}}>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>ACORDADO</div>
+                                <div style={{fontWeight:700}}>{fmtMXN(mf)}</div>
+                                {p.descuento_pct>0&&<div style={{fontSize:10,color:RED}}>-{p.descuento_pct}%</div>}
+                              </div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>TIPO</div>
+                                <div style={{fontWeight:600,fontSize:12}}>{p.tipo==="unico"?"Único":`${tot} parcialidades`}</div>
+                              </div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>COBRADO</div>
+                                <div style={{fontWeight:700,color:"#16a34a"}}>{fmtMXN(cobrado)}</div>
+                              </div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PENDIENTE</div>
+                                <div style={{fontWeight:700,color:pendienteEst>0?"#d97706":"#16a34a"}}>{fmtMXN(pendienteEst)}</div>
+                              </div>
+                            </div>
+                          )}
+                          <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12,flexShrink:0})}>{sinConfig?"Configurar":"Editar"}</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1847,6 +2181,61 @@ export default function App() {
                 </table>
               </div>
             </div>
+
+            {/* REPORTE FINANCIERO */}
+            {(()=>{
+              const calcFinProg = p => {
+                const es=ests(p);
+                const esperado=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado)return a;return a+pg.monto_acordado*(1-(pg.descuento_pct||0)/100);},0);
+                const cobrado=es.reduce((a,e)=>{const pg=e.pago;if(!pg)return a;if(pg.tipo==="unico"){const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(pag>0?pg.monto_acordado*(1-(pg.descuento_pct||0)/100):0);}const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);const tot=(pg.parcialidades||[]).length;const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
+                const descuentos=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado||!pg.descuento_pct)return a;return a+pg.monto_acordado*(pg.descuento_pct/100);},0);
+                return{esperado,cobrado,pendiente:esperado-cobrado,descuentos};
+              };
+              const totalEsperado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).esperado,0);
+              const totalCobrado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).cobrado,0);
+              const totalPendiente=(programas||[]).reduce((a,p)=>a+calcFinProg(p).pendiente,0);
+              const totalDescuentos=(programas||[]).reduce((a,p)=>a+calcFinProg(p).descuentos,0);
+              return(
+                <div style={{...S.card,marginTop:16}}>
+                  <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Reporte Financiero</div>
+                  <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
+                    {[["Total esperado",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalPendiente,"#d97706"],["Descuentos",totalDescuentos,RED]].map(([l,v,c])=>(
+                      <div key={l} style={{textAlign:"center"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                        <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                      <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>{["Programa","Estudiantes","Esperado","Cobrado","Pendiente","Descuentos","Avance"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {(programas||[]).map(p=>{
+                          const {esperado,cobrado,pendiente,descuentos}=calcFinProg(p);
+                          const pct=esperado?Math.round(cobrado/esperado*100):0;
+                          return(<tr key={p.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                            <td style={{padding:"10px 12px",fontWeight:600}}>{p.nombre}</td>
+                            <td style={{padding:"10px 12px",color:"#6b7280"}}>{ests(p).length}</td>
+                            <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(esperado)}</td>
+                            <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(cobrado)}</td>
+                            <td style={{padding:"10px 12px",color:pendiente>0?"#d97706":"#16a34a",fontWeight:600}}>{fmtMXN(pendiente)}</td>
+                            <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(descuentos)}</td>
+                            <td style={{padding:"10px 12px"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                <div style={{width:60,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                  <div style={{width:pct+"%",height:"100%",background:pct>=100?"#16a34a":pct>=50?"#d97706":RED,borderRadius:4}}/>
+                                </div>
+                                <span style={{fontSize:12,fontWeight:700,color:pct>=100?"#16a34a":pct>=50?"#d97706":RED}}>{pct}%</span>
+                              </div>
+                            </td>
+                          </tr>);
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1945,6 +2334,7 @@ export default function App() {
       {/* MODALES */}
       {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)}/>}
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
+      {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
       {showModM&&(
@@ -2127,6 +2517,36 @@ export default function App() {
                   {COLORES.map(c=><button key={c} onClick={()=>setProgForm({...progForm,color:c})} style={{width:30,height:30,borderRadius:"50%",background:c,border:progForm.color===c?"3px solid #1a1a1a":"3px solid transparent",cursor:"pointer"}}/>)}
                 </div>
               </div>
+
+              {/* SECCIÓN FINANCIERA */}
+              <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:11,color:RED,letterSpacing:"1px",fontFamily:"system-ui",marginBottom:14}}>INFORMACIÓN FINANCIERA</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                  <div>
+                    <label style={S.lbl}>Precio lista (MXN)</label>
+                    <input type="number" min="0" value={progForm.precioLista||""} onChange={e=>setProgForm({...progForm,precioLista:parseFloat(e.target.value)||0})} placeholder="0" style={S.inp}/>
+                  </div>
+                  <div>
+                    <label style={S.lbl}>Parcialidades default</label>
+                    <input type="number" min="1" max="24" value={progForm.parcialidadesDefault||5} onChange={e=>setProgForm({...progForm,parcialidadesDefault:parseInt(e.target.value)||5})} style={S.inp}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={S.lbl}>Promociones / descuentos disponibles</label>
+                  {(progForm.promociones||[]).map((pr,i)=>(
+                    <div key={i} style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+                      <input value={pr.nombre} onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],nombre:e.target.value};setProgForm({...progForm,promociones:p});}} placeholder="Ej: Pronto pago" style={{...S.inp,flex:2}}/>
+                      <div style={{display:"flex",alignItems:"center",gap:4,flex:1}}>
+                        <input type="number" min="0" max="100" value={pr.descuento} onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],descuento:parseFloat(e.target.value)||0};setProgForm({...progForm,promociones:p});}} style={{...S.inp,textAlign:"center"}}/>
+                        <span style={{fontFamily:"system-ui",fontSize:13,color:"#6b7280",flexShrink:0}}>%</span>
+                      </div>
+                      <button onClick={()=>setProgForm({...progForm,promociones:(progForm.promociones||[]).filter((_,j)=>j!==i)})} style={{background:"#fef2f2",border:"none",borderRadius:6,padding:"8px 10px",cursor:"pointer",color:"#dc2626",fontWeight:700,flexShrink:0}}>×</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>setProgForm({...progForm,promociones:[...(progForm.promociones||[]),{id:newId(),nombre:"",descuento:0}]})} style={{...S.btn("#f3f4f6","#374151",{fontSize:12,marginTop:4})}}>+ Agregar promoción</button>
+                </div>
+              </div>
+
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                 <button onClick={()=>setShowProgM(false)} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
                 <button onClick={saveProg} style={S.btn(RED,"#fff")}>Crear programa</button>
