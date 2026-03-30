@@ -214,19 +214,15 @@ const calcEstadoPagos = (est) => {
   const p = est.pago;
   if (!p||p.tipo!=="parcialidades"||!(p.parcialidades||[]).length) return null;
   const hoy = today();
-  const dia = parseInt(hoy.split("-")[2]);
+  // Vencida: fecha de vencimiento ya pasó y no está pagada
   const vencidas = (p.parcialidades||[]).filter(parc=>
     !parc.pagado && parc.fecha_vencimiento && parc.fecha_vencimiento < hoy
   );
-  // Vencidas después del día 15 del mes de vencimiento
+  // Con recargo: no pagada y ya pasó la fecha de vencimiento (día 15)
+  // A partir del día 16 aplica recargo
   const conRecargo = (p.parcialidades||[]).filter(parc=>{
     if (parc.pagado||!parc.fecha_vencimiento) return false;
-    const [vy,vm] = parc.fecha_vencimiento.split("-");
-    const mesVence = vy+"-"+vm;
-    const mesHoy = hoy.substring(0,7);
-    if (mesVence < mesHoy) return true; // mes anterior = vencida con recargo
-    if (mesVence === mesHoy && dia >= 16) return true; // mismo mes, ya pasó el 15
-    return false;
+    return parc.fecha_vencimiento < hoy; // si hoy > día 15 del mes → vencida con recargo
   });
   return {vencidas, conRecargo, total:(p.parcialidades||[]).length, pagadas:(p.parcialidades||[]).filter(x=>x.pagado).length};
 };
@@ -544,10 +540,10 @@ function PagoModal({est,prog,onSave,onClose}) {
   const calcFechasVencimiento = (n, fechaInicioProg) => {
     const base = fechaInicioProg ? new Date(fechaInicioProg+"T12:00:00") : new Date();
     // Primera parcialidad ya está pagada (pago al inscribirse)
-    // Las siguientes caen el día 1 del mes siguiente, mes a mes
+    // Vencen el día 15 del mes siguiente, mes a mes
     return Array.from({length:n},(_,i)=>{
       const d = new Date(base.getFullYear(), base.getMonth()+i+1, 1);
-      return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-01";
+      return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15";
     });
   };
 
@@ -661,7 +657,7 @@ function PagoModal({est,prog,onSave,onClose}) {
               {totalParcialidades>0&&(
                 <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:8,display:"flex",gap:16}}>
                   <span>{fmtMXN(montoFinal/totalParcialidades)} por parcialidad</span>
-                  <span style={{color:"#16a34a"}}>1ª parcialidad marcada como pagada automáticamente</span>
+                  <span style={{color:"#16a34a"}}>1ª parcialidad cubierta al inscribirse · Las siguientes vencen el día 15 de cada mes</span>
                 </div>
               )}
               <div style={{display:"grid",gap:6}}>
@@ -810,8 +806,57 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       return "";
     };
 
+    // Fecha de inicio del primer módulo del programa
+    const fechaInicioPrograma = (prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"";
+
+    // Genera fechas de vencimiento mensuales a partir del mes siguiente al inicio
+    const calcVencimientosImport = (n, fechaBase) => {
+      const base = fechaBase ? new Date(fechaBase+"T12:00:00") : new Date();
+      return Array.from({length:n},(_,i)=>{
+        const d = new Date(base.getFullYear(), base.getMonth()+i+1, 1);
+        return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15";
+      });
+    };
+
+    // Detecta tipo de pago según monto y genera parcialidades
+    const buildPago = (monto, parcDefault) => {
+      const n = parcDefault||5;
+      if (!monto||monto===0) {
+        return {tipo:"parcialidades",monto_acordado:0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
+      }
+      if (monto > 10000) {
+        // Pago único — ya cubierto
+        return {
+          tipo:"unico",
+          monto_acordado:monto,
+          descuento_pct:0,
+          promocion_id:"",
+          parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}],
+          notas:"Pago único — cubierto al inscribirse",
+        };
+      }
+      // Parcialidades (monto < 5000 o entre 5000-10000)
+      const fechas = calcVencimientosImport(n, fechaInicioPrograma);
+      const parcialidades = Array.from({length:n},(_,i)=>({
+        id:newId(),
+        numero:i+1,
+        pagado:i===0,               // primera ya pagada
+        fecha_pago:i===0?today():"",
+        fecha_vencimiento:fechas[i],
+      }));
+      return {
+        tipo:"parcialidades",
+        monto_acordado:monto,
+        descuento_pct:0,
+        promocion_id:"",
+        parcialidades,
+        notas:monto<5000?"Parcialidades — primer pago cubierto al inscribirse":"",
+      };
+    };
+
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const cf = c.customFields||[];
+      const monto = c.monetaryValue||c.opportunityValue||0;
       return {
         id:               c.id,
         nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
@@ -829,8 +874,8 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         estatus:          "activo",
         asistencia:       {},
         campos_extra:     {},
-        monto_ghl:        c.monetaryValue||c.opportunityValue||0,
-        pago:             {tipo:"unico",monto_acordado:c.monetaryValue||0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""},
+        monto_ghl:        monto,
+        pago:             buildPago(monto, prog.parcialidadesDefault),
       };
     });
     onImport([...existing,...toAdd]);
@@ -896,6 +941,13 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
                     </div>
                   );
                 })}
+              </div>
+              <div style={{marginBottom:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",fontFamily:"system-ui",fontSize:12,color:"#92400e"}}>
+                <strong>Pago asignado automáticamente:</strong><br/>
+                Menor de $5,000 → Parcialidades ({prog.parcialidadesDefault||5}, primera cubierta) · Mayor de $10,000 → Pago único cubierto · Entre ambos → Parcialidades
+                {(prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]&&(
+                  <span> · Vencimientos desde {MESES_L[parseInt(((prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").split("-")[1]||1)-1]}</span>
+                )}
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between"}}>
                 <button onClick={()=>{setStep("filter");setContacts([]);setSelected([]);}} style={S.btn("#f3f4f6","#374151")}>← Volver</button>
