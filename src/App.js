@@ -24,6 +24,15 @@ const MODALIDADES = [
 const GENERACIONES = ["Primera","Segunda","Tercera","Cuarta","Quinta","Sexta","Séptima","Octava","Novena","Décima"];
 const NUMEROS_MOD  = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 const HORARIOS_PRE = ["18:00 – 22:00","09:00 – 13:00","08:00 – 14:00","07:00 – 13:00","16:00 – 20:00","Otro"];
+const PROMOCIONES_DEFAULT = [
+  {id:"promo_pronto",     nombre:"Pronto pago",              descuento:20, editable:false},
+  {id:"promo_alumni",     nombre:"Alumni IBERO",             descuento:30, editable:false},
+  {id:"promo_contado",    nombre:"Pago de contado",          descuento:25, editable:false},
+  {id:"promo_grupal2",    nombre:"Descuento grupal (2 pax)", descuento:30, editable:false},
+  {id:"promo_grupal5",    nombre:"Descuento grupal (5+ pax)",descuento:40, editable:false},
+  {id:"promo_colaborador",nombre:"Colaborador IBERO",        descuento:90, editable:false},
+  {id:"promo_beca",       nombre:"Beca especial",            descuento:0,  editable:true},
+];
 
 // ─── FESTIVOS MÉXICO ──────────────────────────────────
 const FESTIVOS_FIJOS = {
@@ -96,6 +105,10 @@ const GRADO_C = {
   Maestría:    {bg:"#f5f3ff",color:"#7c3aed"},
   Doctorado:   {bg:"#fef2f2",color:"#dc2626"},
 };
+const CATEGORIA_DOCENTE = {
+  A: {label:"Categoría A", tarifa:650, bg:"#f0fdf4", color:"#16a34a"},
+  B: {label:"Categoría B", tarifa:500, bg:"#eff6ff", color:"#2563eb"},
+};
 
 const INIT_DATA = [{
   id:"prog1", nombre:"Diplomado en Alta Dirección", tipo:"Diplomado", color:"#C8102E", estudiantes:[], modulos:[
@@ -141,7 +154,60 @@ const calcPct = (est, modulos) => {
   return Math.round(asist/total*100);
 };
 
-const RECARGO_PCT = 6; // 6% de recargo por pago tardío
+const RECARGO_PCT = 6;
+
+// Calcula honorarios de un módulo según categoría del docente
+const calcHonorarios = (mod, docentes) => {
+  if (!mod.docente&&!mod.docenteId) return 0;
+  const doc = docentes.find(d=>d.id===mod.docenteId||d.nombre===mod.docente);
+  const cat = CATEGORIA_DOCENTE[doc?.categoria||"A"];
+  const horas = (mod.clases||0)*(mod.horasPorClase||0);
+  return horas * cat.tarifa;
+};
+
+// Proyección mensual: por cada parcialidad pendiente o pagada, asigna al mes de vencimiento
+const proyeccionMensual = (programas, docentes) => {
+  const byMes = {}; // "2025-04" -> {esperado, cobrado, honorarios}
+
+  (programas||[]).forEach(prog=>{
+    // Ingresos por parcialidades
+    ests(prog).forEach(est=>{
+      const p=est.pago;
+      if(!p||!p.monto_acordado) return;
+      const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
+
+      if(p.tipo==="unico"){
+        // Pago único: asignar al mes de inicio del programa
+        const mesKey=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
+        if(!mesKey)return;
+        if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
+        byMes[mesKey].esperado+=mf;
+        const pagado=(p.parcialidades||[]).some(x=>x.pagado);
+        if(pagado)byMes[mesKey].cobrado+=mf;
+      } else {
+        // Parcialidades: asignar cada una a su mes de vencimiento
+        (p.parcialidades||[]).forEach(parc=>{
+          const mesKey=(parc.fecha_vencimiento||parc.fecha_pago||"").substring(0,7);
+          if(!mesKey)return;
+          if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
+          const montoParcialidad=mf/(p.parcialidades.length||1);
+          byMes[mesKey].esperado+=montoParcialidad;
+          if(parc.pagado)byMes[mesKey].cobrado+=montoParcialidad;
+        });
+      }
+    });
+
+    // Honorarios por módulo: asignar al mes de inicio del módulo
+    mods(prog).forEach(mod=>{
+      if(!mod.fechaInicio)return;
+      const mesKey=mod.fechaInicio.substring(0,7);
+      if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
+      byMes[mesKey].honorarios+=calcHonorarios(mod,docentes);
+    });
+  });
+
+  return byMes;
+};
 
 // Calcula el estado de pagos de un estudiante
 const calcEstadoPagos = (est) => {
@@ -1059,11 +1125,11 @@ function CalendarioView({programas}) {
 // ─── DOCENTES ─────────────────────────────────────────
 function DocentesView({docentes,saveDocentes,programas}) {
   const [showM,setShowM]   = useState(false);
-  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",programasIds:[],semblanza:""});
+  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
 
-  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",programasIds:[],semblanza:""}); setEditId(null); setShowM(true); };
+  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => { if(!form.nombre)return; editId?saveDocentes((docentes||[]).map(d=>d.id===editId?form:d)):saveDocentes([...(docentes||[]),form]); setShowM(false); };
   const delDoc  = id => saveDocentes((docentes||[]).filter(d=>d.id!==id));
@@ -1096,6 +1162,7 @@ function DocentesView({docentes,saveDocentes,programas}) {
         {filtrados.map(doc=>{
           const hist=historial(doc), horas=hist.reduce((a,{mod})=>a+(mod.clases||0)*(mod.horasPorClase||0),0);
           const gc=GRADO_C[doc.grado]||GRADO_C.Licenciatura;
+          const cat=CATEGORIA_DOCENTE[doc.categoria||"A"];
           return(
             <div key={doc.id} style={{...S.card,borderLeft:"4px solid "+RED,padding:"18px 22px"}}>
               <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
@@ -1103,6 +1170,7 @@ function DocentesView({docentes,saveDocentes,programas}) {
                   <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                     <span style={{fontWeight:700,fontSize:16}}>{doc.nombre}</span>
                     <span style={{background:gc.bg,color:gc.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{doc.grado}</span>
+                    <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{cat.label} · {fmtMXN(cat.tarifa)}/hr</span>
                   </div>
                   <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
                     {doc.email&&<span>{doc.email}</span>}{doc.telefono&&<span>{doc.telefono}</span>}
@@ -1152,6 +1220,18 @@ function DocentesView({docentes,saveDocentes,programas}) {
                   {["Licenciatura","Maestría","Doctorado"].map(g=>{const gc=GRADO_C[g];return(
                     <button key={g} onClick={()=>setForm({...form,grado:g})} style={{border:"2px solid "+(form.grado===g?gc.color:"#e5e7eb"),borderRadius:6,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.grado===g?gc.bg:"#fff",color:form.grado===g?gc.color:"#9ca3af"}}>{g}</button>
                   );})}
+                </div>
+              </div>
+              <div style={{marginBottom:16}}>
+                <label style={S.lbl}>Categoría de pago</label>
+                <div style={{display:"flex",gap:8}}>
+                  {Object.entries(CATEGORIA_DOCENTE).map(([k,cat])=>(
+                    <button key={k} onClick={()=>setForm({...form,categoria:k})}
+                      style={{flex:1,border:"2px solid "+(form.categoria===k?cat.color:"#e5e7eb"),borderRadius:8,padding:"10px 14px",cursor:"pointer",fontFamily:"system-ui",background:form.categoria===k?cat.bg:"#fff",textAlign:"left"}}>
+                      <div style={{fontWeight:700,fontSize:13,color:form.categoria===k?cat.color:"#1a1a1a"}}>{cat.label}</div>
+                      <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{fmtMXN(cat.tarifa)} / hora</div>
+                    </button>
+                  ))}
                 </div>
               </div>
               <div style={{marginBottom:20}}>
@@ -1287,6 +1367,8 @@ export default function App() {
   const [newFM,setNewFM]         = useState({id:"",label:""});
   const [repExp,setRepExp]       = useState(null);
   const [linkCopiado,setLinkCop] = useState("");
+  const [repVistaFin,setRepVistaFin] = useState("global");
+  const [repMesFin,setRepMesFin]     = useState(today().substring(0,7));
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -1294,8 +1376,8 @@ export default function App() {
   const [filtroEst,setFiltroEst] = useState("");
   const alertRef = useRef(null);
 
-  const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:6,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,promociones:[]};
+  const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:4,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,promociones:PROMOCIONES_DEFAULT.map(p=>({...p,id:p.id+"_"+newId()}))};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -2225,109 +2307,291 @@ export default function App() {
 
             {/* REPORTE FINANCIERO */}
             {(()=>{
+              const [repVista,setRepVista] = [repVistaFin,setRepVistaFin];
+              const [repMes,setRepMes]     = [repMesFin,setRepMesFin];
+
               const calcFinProg = p => {
                 const es=ests(p);
                 const esperado=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado)return a;return a+pg.monto_acordado*(1-(pg.descuento_pct||0)/100);},0);
                 const cobrado=es.reduce((a,e)=>{const pg=e.pago;if(!pg)return a;if(pg.tipo==="unico"){const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(pag>0?pg.monto_acordado*(1-(pg.descuento_pct||0)/100):0);}const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);const tot=(pg.parcialidades||[]).length;const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
                 const descuentos=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado||!pg.descuento_pct)return a;return a+pg.monto_acordado*(pg.descuento_pct/100);},0);
-                return{esperado,cobrado,pendiente:esperado-cobrado,descuentos};
+                const honorarios=mods(p).reduce((a,m)=>a+calcHonorarios(m,docentes),0);
+                return{esperado,cobrado,pendiente:esperado-cobrado,descuentos,honorarios,margen:esperado-honorarios};
               };
+
+              const proyMens = proyeccionMensual(programas,docentes);
+              const mesesDisp = Object.keys(proyMens).sort();
+              const aniosDisp  = [...new Set(mesesDisp.map(m=>m.substring(0,4)))].sort();
+
               const totalEsperado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).esperado,0);
               const totalCobrado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).cobrado,0);
-              const totalPendiente=(programas||[]).reduce((a,p)=>a+calcFinProg(p).pendiente,0);
-              const totalDescuentos=(programas||[]).reduce((a,p)=>a+calcFinProg(p).descuentos,0);
-              return(
-                <div style={{...S.card,marginTop:16}}>
-                  <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Reporte Financiero</div>
-                  <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
-                    {[["Total esperado",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalPendiente,"#d97706"],["Descuentos",totalDescuentos,RED]].map(([l,v,c])=>(
-                      <div key={l} style={{textAlign:"center"}}>
-                        <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
-                        <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
-                      <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>{["Programa","Estudiantes","Esperado","Cobrado","Pendiente","Descuentos","Avance"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                      <tbody>
-                        {(programas||[]).map(p=>{
-                          const {esperado,cobrado,pendiente,descuentos}=calcFinProg(p);
-                          const pct=esperado?Math.round(cobrado/esperado*100):0;
-                          return(<tr key={p.id} style={{borderBottom:"1px solid #f3f4f6"}}>
-                            <td style={{padding:"10px 12px",fontWeight:600}}>{p.nombre}</td>
-                            <td style={{padding:"10px 12px",color:"#6b7280"}}>{ests(p).length}</td>
-                            <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(esperado)}</td>
-                            <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(cobrado)}</td>
-                            <td style={{padding:"10px 12px",color:pendiente>0?"#d97706":"#16a34a",fontWeight:600}}>{fmtMXN(pendiente)}</td>
-                            <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(descuentos)}</td>
-                            <td style={{padding:"10px 12px"}}>
-                              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                <div style={{width:60,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
-                                  <div style={{width:pct+"%",height:"100%",background:pct>=100?"#16a34a":pct>=50?"#d97706":RED,borderRadius:4}}/>
-                                </div>
-                                <span style={{fontSize:12,fontWeight:700,color:pct>=100?"#16a34a":pct>=50?"#d97706":RED}}>{pct}%</span>
-                              </div>
-                            </td>
-                          </tr>);
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+              const totalHonorarios=(programas||[]).reduce((a,p)=>a+calcFinProg(p).honorarios,0);
+              const totalMargen=totalEsperado-totalHonorarios;
 
-                {/* TABLA DE MOROSIDAD */}
-                {(()=>{
-                  const morosos=[];
-                  (programas||[]).forEach(prog=>{
-                    ests(prog).forEach(est=>{
-                      const ep=calcEstadoPagos(est);
-                      if(!ep||ep.conRecargo.length===0)return;
-                      const mf=(est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
-                      const montoParcialidad=ep.total?mf/ep.total:0;
-                      const recargo=montoParcialidad*ep.conRecargo.length*(RECARGO_PCT/100);
-                      morosos.push({est,prog,ep,montoParcialidad,recargo,critico:ep.conRecargo.length>=2});
-                    });
-                  });
-                  if(!morosos.length)return null;
-                  return(
-                    <div style={{...S.card,marginTop:16}}>
-                      <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif",color:"#dc2626"}}>Cartera vencida — {morosos.length} estudiante{morosos.length!==1?"s":""}</div>
-                        <div style={{fontSize:13,fontFamily:"system-ui",color:"#6b7280"}}>Recargo total: <strong style={{color:"#dc2626"}}>{fmtMXN(morosos.reduce((a,m)=>a+m.recargo,0))}</strong></div>
+              return(
+                <div style={{marginTop:16}}>
+                  {/* Selector de vista */}
+                  <div style={{...S.card,padding:"16px 20px",marginBottom:12}}>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginRight:4}}>VER POR</span>
+                      {[["global","Todo el período"],["mes","Mes"],["programa","Programa"],["anual","Año"]].map(([v,l])=>(
+                        <button key={v} onClick={()=>setRepVista(v)} style={{border:"2px solid "+(repVista===v?RED:"#e5e7eb"),borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:repVista===v?700:400,background:repVista===v?"#fef2f2":"#fff",color:repVista===v?RED:"#6b7280"}}>{l}</button>
+                      ))}
+                      {repVista==="mes"&&(
+                        <select value={repMes} onChange={e=>setRepMes(e.target.value)} style={{...S.inp,width:"auto",marginLeft:8}}>
+                          {mesesDisp.map(m=><option key={m} value={m}>{MESES_L[parseInt(m.split("-")[1])-1]} {m.split("-")[0]}</option>)}
+                        </select>
+                      )}
+                      {repVista==="anual"&&(
+                        <select value={repMes} onChange={e=>setRepMes(e.target.value)} style={{...S.inp,width:"auto",marginLeft:8}}>
+                          {aniosDisp.map(a=><option key={a} value={a}>{a}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* VISTA GLOBAL */}
+                  {repVista==="global"&&(
+                    <div style={{...S.card}}>
+                      <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Resumen global</div>
+                      <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
+                        {[["Ingresos esperados",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalEsperado-totalCobrado,"#d97706"],["Honorarios docentes",totalHonorarios,RED],["Margen neto estimado",totalMargen,"#7c3aed"]].map(([l,v,c])=>(
+                          <div key={l} style={{textAlign:"center",padding:"8px 0"}}>
+                            <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                            <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                          </div>
+                        ))}
                       </div>
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
-                          <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#fef2f2"}}>{["Estudiante","Programa","Pagos vencidos","Monto/parcialidad","Recargo (6%)","Total a cobrar","Acción"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                          <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>{["Programa","Estudiantes","Esperado","Cobrado","Honorarios","Margen neto","Avance"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                           <tbody>
-                            {morosos.map(({est,prog,ep,montoParcialidad,recargo,critico},i)=>(
-                              <tr key={i} style={{borderBottom:"1px solid #f3f4f6",background:critico?"#fff5f5":"#fff"}}>
+                            {(programas||[]).map(p=>{
+                              const {esperado,cobrado,honorarios,margen}=calcFinProg(p);
+                              const pct=esperado?Math.round(cobrado/esperado*100):0;
+                              return(<tr key={p.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                                <td style={{padding:"10px 12px",fontWeight:600}}>{p.nombre}</td>
+                                <td style={{padding:"10px 12px",color:"#6b7280"}}>{ests(p).length}</td>
+                                <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(esperado)}</td>
+                                <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(cobrado)}</td>
+                                <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(honorarios)}</td>
+                                <td style={{padding:"10px 12px",color:margen>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margen)}</td>
                                 <td style={{padding:"10px 12px"}}>
-                                  <div style={{fontWeight:600}}>{est.nombre}</div>
-                                  {est.empresa&&<div style={{fontSize:11,color:"#9ca3af"}}>{est.empresa}</div>}
+                                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                    <div style={{width:60,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:pct>=100?"#16a34a":pct>=50?"#d97706":RED,borderRadius:4}}/></div>
+                                    <span style={{fontSize:12,fontWeight:700,color:pct>=100?"#16a34a":pct>=50?"#d97706":RED}}>{pct}%</span>
+                                  </div>
                                 </td>
-                                <td style={{padding:"10px 12px",color:"#6b7280"}}>{prog.nombre}</td>
-                                <td style={{padding:"10px 12px",textAlign:"center"}}>
-                                  <span style={{background:critico?"#fef2f2":"#fffbeb",color:critico?"#dc2626":"#d97706",border:"1px solid "+(critico?"#fca5a5":"#fde68a"),borderRadius:4,padding:"2px 8px",fontWeight:700}}>{ep.conRecargo.length}</span>
-                                </td>
-                                <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(montoParcialidad)}</td>
-                                <td style={{padding:"10px 12px",color:"#dc2626",fontWeight:700}}>{fmtMXN(recargo)}</td>
-                                <td style={{padding:"10px 12px",fontWeight:700}}>{fmtMXN(montoParcialidad*ep.conRecargo.length+recargo)}</td>
-                                <td style={{padding:"10px 12px"}}>
-                                  {critico
-                                    ? <span style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Dar de baja</span>
-                                    : <span style={{fontSize:11,background:"#fffbeb",color:"#d97706",border:"1px solid #fde68a",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Contactar</span>
-                                  }
-                                </td>
-                              </tr>
-                            ))}
+                              </tr>);
+                            })}
                           </tbody>
                         </table>
                       </div>
                     </div>
-                  );
-                })()}
-              </div>
+                  )}
+
+                  {/* VISTA MES */}
+                  {repVista==="mes"&&(()=>{
+                    const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
+                    const margen=d.esperado-d.honorarios;
+                    // Programas activos ese mes
+                    const progsDelMes=(programas||[]).filter(p=>
+                      mods(p).some(m=>m.fechaInicio&&m.fechaInicio.substring(0,7)===repMes)||
+                      ests(p).some(e=>(e.pago?.parcialidades||[]).some(pa=>pa.fecha_vencimiento?.substring(0,7)===repMes))
+                    );
+                    return(
+                      <div style={{...S.card}}>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
+                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
+                          {[["Ingresos esperados",d.esperado,"#1a1a1a"],["Cobrado",d.cobrado,"#16a34a"],["Pendiente",d.esperado-d.cobrado,"#d97706"],["Honorarios",d.honorarios,RED],["Margen neto",margen,"#7c3aed"]].map(([l,v,c])=>(
+                            <div key={l} style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                              <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {progsDelMes.length>0&&(
+                          <div style={{padding:"14px 20px"}}>
+                            <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:10}}>PROGRAMAS ACTIVOS ESTE MES</div>
+                            {progsDelMes.map(p=>{
+                              const modsDelMes=mods(p).filter(m=>m.fechaInicio?.substring(0,7)===repMes);
+                              const honMes=modsDelMes.reduce((a,m)=>a+calcHonorarios(m,docentes),0);
+                              const ingMes=ests(p).reduce((a,e)=>{
+                                const pg=e.pago;if(!pg)return a;
+                                if(pg.tipo==="parcialidades"){
+                                  return a+(pg.parcialidades||[]).filter(pa=>pa.fecha_vencimiento?.substring(0,7)===repMes).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);
+                                }
+                                return a;
+                              },0);
+                              return(
+                                <div key={p.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap",alignItems:"center"}}>
+                                  <div style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
+                                  <span style={{flex:1,fontWeight:600,fontSize:13}}>{p.nombre}</span>
+                                  {ingMes>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#16a34a"}}>Cobros: {fmtMXN(ingMes)}</span>}
+                                  {honMes>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:RED}}>Honorarios: {fmtMXN(honMes)}</span>}
+                                  {modsDelMes.map(m=><span key={m.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",color:"#6b7280"}}>{m.numero} · {m.docente||"Sin docente"} · {(m.clases||0)*(m.horasPorClase||0)}h</span>)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* VISTA ANUAL */}
+                  {repVista==="anual"&&(()=>{
+                    const anio=repMes||aniosDisp[0]||new Date().getFullYear().toString();
+                    const mesesAnio=Array.from({length:12},(_,i)=>anio+"-"+String(i+1).padStart(2,"0"));
+                    return(
+                      <div style={{...S.card}}>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Proyección anual {anio}</div>
+                        <div style={{overflowX:"auto"}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13,minWidth:700}}>
+                            <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
+                              {["Mes","Esperado","Cobrado","Pendiente","Honorarios","Margen"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}
+                            </tr></thead>
+                            <tbody>
+                              {mesesAnio.map(m=>{
+                                const d=proyMens[m]||{esperado:0,cobrado:0,honorarios:0};
+                                if(d.esperado===0&&d.honorarios===0)return null;
+                                const margen=d.esperado-d.honorarios;
+                                return(<tr key={m} style={{borderBottom:"1px solid #f3f4f6",background:m===today().substring(0,7)?"#fef2f2":"#fff"}}>
+                                  <td style={{padding:"10px 12px",fontWeight:600}}>{MESES_L[parseInt(m.split("-")[1])-1]}</td>
+                                  <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(d.esperado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(d.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#d97706"}}>{fmtMXN(d.esperado-d.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(d.honorarios)}</td>
+                                  <td style={{padding:"10px 12px",color:margen>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margen)}</td>
+                                </tr>);
+                              })}
+                              {/* Totales */}
+                              {(()=>{
+                                const tot=mesesAnio.reduce((a,m)=>{const d=proyMens[m]||{esperado:0,cobrado:0,honorarios:0};return{esperado:a.esperado+d.esperado,cobrado:a.cobrado+d.cobrado,honorarios:a.honorarios+d.honorarios};},{esperado:0,cobrado:0,honorarios:0});
+                                return(<tr style={{borderTop:"2px solid #e5e7eb",background:"#f9f9f9",fontWeight:700}}>
+                                  <td style={{padding:"10px 12px"}}>TOTAL {anio}</td>
+                                  <td style={{padding:"10px 12px"}}>{fmtMXN(tot.esperado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#16a34a"}}>{fmtMXN(tot.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#d97706"}}>{fmtMXN(tot.esperado-tot.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(tot.honorarios)}</td>
+                                  <td style={{padding:"10px 12px",color:"#7c3aed"}}>{fmtMXN(tot.esperado-tot.honorarios)}</td>
+                                </tr>);
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* VISTA POR PROGRAMA */}
+                  {repVista==="programa"&&(
+                    <div style={{display:"grid",gap:12}}>
+                      {(programas||[]).map(p=>{
+                        const {esperado,cobrado,honorarios,margen,descuentos}=calcFinProg(p);
+                        const pct=esperado?Math.round(cobrado/esperado*100):0;
+                        // Meses de este programa
+                        const mesesProg=[...new Set([
+                          ...mods(p).map(m=>m.fechaInicio?.substring(0,7)).filter(Boolean),
+                          ...ests(p).flatMap(e=>(e.pago?.parcialidades||[]).map(pa=>pa.fecha_vencimiento?.substring(0,7)).filter(Boolean))
+                        ])].sort();
+                        return(
+                          <div key={p.id} style={{...S.card,overflow:"hidden"}}>
+                            <div style={{padding:"14px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",gap:10,alignItems:"center",background:"#f9f9f9"}}>
+                              <div style={{width:10,height:10,borderRadius:"50%",background:p.color}}/>
+                              <span style={{fontWeight:700,fontSize:14,flex:1}}>{p.nombre}</span>
+                              <span style={{fontSize:12,fontFamily:"system-ui",color:"#6b7280"}}>{ests(p).length} estudiantes</span>
+                            </div>
+                            <div style={{padding:"14px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,borderBottom:mesesProg.length?"1px solid #e5e7eb":"none"}}>
+                              {[["Esperado",esperado,"#1a1a1a"],["Cobrado",cobrado,"#16a34a"],["Pendiente",esperado-cobrado,"#d97706"],["Honorarios",honorarios,RED],["Margen",margen,"#7c3aed"]].map(([l,v,c])=>(
+                                <div key={l} style={{textAlign:"center"}}>
+                                  <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui",fontWeight:700,marginBottom:2}}>{l.toUpperCase()}</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {mesesProg.length>0&&(
+                              <div style={{overflowX:"auto"}}>
+                                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:12,minWidth:500}}>
+                                  <thead><tr style={{borderBottom:"1px solid #e5e7eb"}}>{["Mes","Ingresos","Cobrado","Honorarios","Margen"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 14px",fontSize:10,fontWeight:700,color:"#9ca3af",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                                  <tbody>
+                                    {mesesProg.map(m=>{
+                                      const d=proyMens[m]||{esperado:0,cobrado:0,honorarios:0};
+                                      // Filtrar solo ingresos de este programa en este mes
+                                      const ingEst=ests(p).reduce((a,e)=>{
+                                        const pg=e.pago;if(!pg)return a;
+                                        if(pg.tipo==="parcialidades"){return a+(pg.parcialidades||[]).filter(pa=>pa.fecha_vencimiento?.substring(0,7)===m).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);}
+                                        if(pg.tipo==="unico"&&mods(p).some(mod=>mod.fechaInicio?.substring(0,7)===m)){const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);return a+mf;}
+                                        return a;
+                                      },0);
+                                      const ingCob=ests(p).reduce((a,e)=>{
+                                        const pg=e.pago;if(!pg)return a;
+                                        if(pg.tipo==="parcialidades"){return a+(pg.parcialidades||[]).filter(pa=>pa.pagado&&pa.fecha_vencimiento?.substring(0,7)===m).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);}
+                                        return a;
+                                      },0);
+                                      const honMes=mods(p).filter(mod=>mod.fechaInicio?.substring(0,7)===m).reduce((a,mod)=>a+calcHonorarios(mod,docentes),0);
+                                      if(ingEst===0&&honMes===0)return null;
+                                      const margenMes=ingEst-honMes;
+                                      return(<tr key={m} style={{borderBottom:"1px solid #f3f4f6",background:m===today().substring(0,7)?"#fef9ff":"#fff"}}>
+                                        <td style={{padding:"8px 14px",fontWeight:600}}>{MESES_L[parseInt(m.split("-")[1])-1]} {m.split("-")[0]}</td>
+                                        <td style={{padding:"8px 14px"}}>{fmtMXN(ingEst)}</td>
+                                        <td style={{padding:"8px 14px",color:"#16a34a"}}>{fmtMXN(ingCob)}</td>
+                                        <td style={{padding:"8px 14px",color:RED}}>{fmtMXN(honMes)}</td>
+                                        <td style={{padding:"8px 14px",color:margenMes>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margenMes)}</td>
+                                      </tr>);
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* TABLA DE MOROSIDAD */}
+                  {(()=>{
+                    const morosos=[];
+                    (programas||[]).forEach(prog=>{
+                      ests(prog).forEach(est=>{
+                        const ep=calcEstadoPagos(est);
+                        if(!ep||ep.conRecargo.length===0)return;
+                        const mf=(est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
+                        const montoParcialidad=ep.total?mf/ep.total:0;
+                        const recargo=montoParcialidad*ep.conRecargo.length*(RECARGO_PCT/100);
+                        morosos.push({est,prog,ep,montoParcialidad,recargo,critico:ep.conRecargo.length>=2});
+                      });
+                    });
+                    if(!morosos.length)return null;
+                    return(
+                      <div style={{...S.card,marginTop:16}}>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif",color:"#dc2626"}}>Cartera vencida — {morosos.length} estudiante{morosos.length!==1?"s":""}</div>
+                          <div style={{fontSize:13,fontFamily:"system-ui",color:"#6b7280"}}>Recargo total: <strong style={{color:"#dc2626"}}>{fmtMXN(morosos.reduce((a,m)=>a+m.recargo,0))}</strong></div>
+                        </div>
+                        <div style={{overflowX:"auto"}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                            <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#fef2f2"}}>{["Estudiante","Programa","Pagos vencidos","Monto/parcialidad","Recargo (6%)","Total a cobrar","Acción"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                            <tbody>
+                              {morosos.map(({est,prog,ep,montoParcialidad,recargo,critico},i)=>(
+                                <tr key={i} style={{borderBottom:"1px solid #f3f4f6",background:critico?"#fff5f5":"#fff"}}>
+                                  <td style={{padding:"10px 12px"}}><div style={{fontWeight:600}}>{est.nombre}</div>{est.empresa&&<div style={{fontSize:11,color:"#9ca3af"}}>{est.empresa}</div>}</td>
+                                  <td style={{padding:"10px 12px",color:"#6b7280"}}>{prog.nombre}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{background:critico?"#fef2f2":"#fffbeb",color:critico?"#dc2626":"#d97706",border:"1px solid "+(critico?"#fca5a5":"#fde68a"),borderRadius:4,padding:"2px 8px",fontWeight:700}}>{ep.conRecargo.length}</span></td>
+                                  <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(montoParcialidad)}</td>
+                                  <td style={{padding:"10px 12px",color:"#dc2626",fontWeight:700}}>{fmtMXN(recargo)}</td>
+                                  <td style={{padding:"10px 12px",fontWeight:700}}>{fmtMXN(montoParcialidad*ep.conRecargo.length+recargo)}</td>
+                                  <td style={{padding:"10px 12px"}}>{critico?<span style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Dar de baja</span>:<span style={{fontSize:11,background:"#fffbeb",color:"#d97706",border:"1px solid #fde68a",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Contactar</span>}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               );
             })()}
           </div>
@@ -2627,17 +2891,29 @@ export default function App() {
                 </div>
                 <div>
                   <label style={S.lbl}>Promociones / descuentos disponibles</label>
-                  {(progForm.promociones||[]).map((pr,i)=>(
-                    <div key={i} style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
-                      <input value={pr.nombre} onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],nombre:e.target.value};setProgForm({...progForm,promociones:p});}} placeholder="Ej: Pronto pago" style={{...S.inp,flex:2}}/>
-                      <div style={{display:"flex",alignItems:"center",gap:4,flex:1}}>
-                        <input type="number" min="0" max="100" value={pr.descuento} onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],descuento:parseFloat(e.target.value)||0};setProgForm({...progForm,promociones:p});}} style={{...S.inp,textAlign:"center"}}/>
-                        <span style={{fontFamily:"system-ui",fontSize:13,color:"#6b7280",flexShrink:0}}>%</span>
+                  <div style={{display:"grid",gap:6,marginBottom:10}}>
+                    {(progForm.promociones||[]).map((pr,i)=>(
+                      <div key={pr.id||i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",background:pr.editable?"#fffbeb":"#f9f9f9",borderRadius:6,border:"1px solid "+(pr.editable?"#fde68a":"#e5e7eb")}}>
+                        {/* Nombre — solo editable si es beca especial o personalizada */}
+                        <input value={pr.nombre}
+                          onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],nombre:e.target.value};setProgForm({...progForm,promociones:p});}}
+                          readOnly={!pr.editable&&pr.id&&pr.id.startsWith("promo_")&&pr.nombre!==""}
+                          style={{...S.inp,flex:2,background:(!pr.editable&&pr.id?.startsWith("promo_"))?"#f3f4f6":"#fff",color:"#1a1a1a"}}/>
+                        {/* Descuento */}
+                        <div style={{display:"flex",alignItems:"center",gap:4,width:80}}>
+                          <input type="number" min="0" max="100" value={pr.descuento}
+                            onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],descuento:parseFloat(e.target.value)||0};setProgForm({...progForm,promociones:p});}}
+                            style={{...S.inp,textAlign:"center",padding:"8px 4px"}}/>
+                          <span style={{fontFamily:"system-ui",fontSize:13,color:"#6b7280",flexShrink:0}}>%</span>
+                        </div>
+                        {pr.editable&&<span style={{fontSize:10,color:"#d97706",fontFamily:"system-ui",fontWeight:700,flexShrink:0}}>EDITABLE</span>}
+                        <button onClick={()=>setProgForm({...progForm,promociones:(progForm.promociones||[]).filter((_,j)=>j!==i)})}
+                          style={{background:"none",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#dc2626",fontWeight:700,flexShrink:0,fontSize:16}}>×</button>
                       </div>
-                      <button onClick={()=>setProgForm({...progForm,promociones:(progForm.promociones||[]).filter((_,j)=>j!==i)})} style={{background:"#fef2f2",border:"none",borderRadius:6,padding:"8px 10px",cursor:"pointer",color:"#dc2626",fontWeight:700,flexShrink:0}}>×</button>
-                    </div>
-                  ))}
-                  <button onClick={()=>setProgForm({...progForm,promociones:[...(progForm.promociones||[]),{id:newId(),nombre:"",descuento:0}]})} style={{...S.btn("#f3f4f6","#374151",{fontSize:12,marginTop:4})}}>+ Agregar promoción</button>
+                    ))}
+                  </div>
+                  <button onClick={()=>setProgForm({...progForm,promociones:[...(progForm.promociones||[]),{id:newId(),nombre:"",descuento:0,editable:true}]})}
+                    style={{...S.btn("#f3f4f6","#374151",{fontSize:12})}}>+ Agregar promoción especial</button>
                 </div>
               </div>
 
