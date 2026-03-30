@@ -180,6 +180,9 @@ function ListaDocente({programas, onSave}) {
   const mod  = prog && mods(prog).find(m=>m.id===modId);
   if (!prog||!mod) return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Módulo no encontrado.</div>;
 
+  const hoy = today();
+  const fmtHoy = () => { const d=new Date(); return d.getDate()+" de "+MESES_L[d.getMonth()]+" de "+d.getFullYear(); };
+
   const [local,setLocal] = useState(()=>ests(prog).map(e=>({...e,asistencia:{...(e.asistencia||{})}})));
   const [saved,setSaved] = useState(false);
 
@@ -194,36 +197,63 @@ function ListaDocente({programas, onSave}) {
 
   return (
     <div style={{minHeight:"100vh",background:"#f2f2f2",fontFamily:"system-ui"}}>
+      {/* Header */}
       <div style={{background:RED,padding:"16px 24px",display:"flex",alignItems:"center",gap:16}}>
         <IberoLogo h={40}/>
-        <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia</div>
+        <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia · Dirección de Educación Continua</div>
       </div>
-      <div style={{maxWidth:640,margin:"0 auto",padding:"28px 16px"}}>
-        <div style={{...S.card,padding:24,marginBottom:20}}>
-          <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",marginBottom:4}}>{mod.nombre}</div>
-          <div style={{fontSize:13,color:"#6b7280",display:"flex",gap:16,flexWrap:"wrap"}}>
-            <span>{prog.nombre}</span>
-            <span>Módulo {mod.numero}</span>
-            {mod.horario&&<span>{mod.horario}</span>}
-            <span>{mod.clases} clases</span>
+
+      <div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
+
+        {/* Info del módulo y docente */}
+        <div style={{...S.card,padding:24,marginBottom:16}}>
+          <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:RED,letterSpacing:"1px",marginBottom:4}}>PROGRAMA</div>
+              <div style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",marginBottom:2}}>{prog.nombre}</div>
+              <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Módulo {mod.numero} · {mod.nombre}</div>
+              <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#374151"}}>
+                {mod.docente&&<div><span style={{color:"#9ca3af"}}>Docente: </span><strong>{mod.docente}</strong></div>}
+                {mod.fechaInicio&&<div><span style={{color:"#9ca3af"}}>Fechas: </span><strong>{fmtFecha(mod.fechaInicio)} — {fmtFecha(mod.fechaFin)}</strong></div>}
+                {mod.horario&&<div><span style={{color:"#9ca3af"}}>Horario: </span><strong>{mod.horario}</strong></div>}
+                {mod.dias&&mod.dias.length>0&&<div><span style={{color:"#9ca3af"}}>Días: </span><strong>{mod.dias.join(", ")}</strong></div>}
+              </div>
+            </div>
           </div>
         </div>
-        <div style={{marginBottom:12,fontSize:13,color:"#6b7280"}}>Toca el contador para registrar asistencia por clase.</div>
+
+        {/* Sesión en curso */}
+        <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"12px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:10,height:10,borderRadius:"50%",background:RED,flexShrink:0}}/>
+          <div>
+            <div style={{fontWeight:700,fontSize:14,color:RED}}>Sesión en curso</div>
+            <div style={{fontSize:13,color:"#374151",marginTop:2}}>{fmtHoy()} · {local.filter(e=>(e.asistencia&&e.asistencia["mod_"+modId]||0)>0).length} de {local.length} presentes</div>
+          </div>
+        </div>
+
+        {/* Instrucción */}
+        <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Toca el nombre o el contador para registrar asistencia.</div>
+
+        {/* Lista de estudiantes */}
         <div style={{display:"grid",gap:10,marginBottom:20}}>
           {local.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:40}}>Sin estudiantes en este módulo.</div>}
           {local.map(e=>{
             const k="mod_"+modId, asist=(e.asistencia&&e.asistencia[k])||0, max=mod.clases||0, pct=max?Math.round(asist/max*100):0;
             return (
-              <div key={e.id} style={{...S.card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14}}>
+              <div key={e.id} style={{...S.card,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}} onClick={()=>toggle(e.id)}>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:600,fontSize:15}}>{e.nombre}</div>
-                  {e.empresa&&<div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{e.empresa}</div>}
-                  <div style={{marginTop:6,width:120,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                  <div style={{fontWeight:700,fontSize:15,color:"#1a1a1a"}}>{e.nombre}</div>
+                  <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,color:"#6b7280",marginTop:3}}>
+                    {e.puesto&&<span>{e.puesto}</span>}
+                    {e.empresa&&<span>{e.empresa}</span>}
+                    {e.email&&<span>{e.email}</span>}
+                  </div>
+                  <div style={{marginTop:8,width:"100%",maxWidth:160,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
                     <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
                   </div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                  <button onClick={()=>toggle(e.id)} style={{width:64,height:40,border:"2px solid "+(asist>0?"#16a34a":"#e5e7eb"),borderRadius:8,background:asist>0?"#f0fdf4":"#f9f9f9",cursor:"pointer",fontWeight:800,fontSize:16,color:asist>0?"#16a34a":"#9ca3af",fontFamily:"system-ui"}}>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={e=>{e.stopPropagation();toggle(e.id);}}>
+                  <button style={{width:64,height:40,border:"2px solid "+(asist>0?"#16a34a":"#e5e7eb"),borderRadius:8,background:asist>0?"#f0fdf4":"#f9f9f9",cursor:"pointer",fontWeight:800,fontSize:16,color:asist>0?"#16a34a":"#9ca3af",fontFamily:"system-ui"}}>
                     {asist}/{max}
                   </button>
                   <span style={{fontSize:10,color:pct>=80?"#16a34a":"#dc2626",fontWeight:700}}>{pct}%</span>
@@ -232,6 +262,7 @@ function ListaDocente({programas, onSave}) {
             );
           })}
         </div>
+
         <button onClick={()=>{onSave(progId,modId,local);setSaved(true);}} style={{...S.btn(RED,"#fff"),width:"100%",padding:14,fontSize:15}}>
           {saved?"Asistencia guardada":"Guardar asistencia"}
         </button>
@@ -918,6 +949,10 @@ export default function App() {
   const activos   = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus!=="egresado"&&e.estatus!=="baja"&&progStatus(p)==="activo"));
   const bajas     = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="baja"));
   const porConf   = (programas||[]).reduce((a,p)=>a+mods(p).filter(m=>m.estatus==="propuesta"&&m.docente).length,0);
+  // Egresados IBERO: activos en programa vigente con egresado_ibero="Sí"
+  const egresadosIberoActivos  = (programas||[]).flatMap(p=>ests(p).filter(e=>e.egresado_ibero==="Sí"&&progStatus(p)==="activo").map(e=>({...e,programa:p.nombre,estatus_prog:"activo"})));
+  // Egresados IBERO que concluyeron: estatus egresado O en programa finalizado
+  const egresadosIberoConcluyeron = (programas||[]).flatMap(p=>ests(p).filter(e=>e.egresado_ibero==="Sí"&&(e.estatus==="egresado"||progStatus(p)==="finalizado")).map(e=>({...e,programa:p.nombre,estatus_prog:"finalizado"})));
 
   const updateEst = (progId,est)=>{save((programas||[]).map(p=>p.id===progId?{...p,estudiantes:est}:p));notify("Estudiantes importados.");};
 
@@ -1293,7 +1328,7 @@ export default function App() {
           <div>
             <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 24px",letterSpacing:"-0.5px"}}>Reportes y estadísticas</h1>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
-              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados",egresados.length],["Bajas",bajas.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf]].map(([l,v])=>(
+              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados",egresados.length],["Bajas",bajas.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Eg. IBERO cursando",egresadosIberoActivos.length],["Eg. IBERO concluyeron",egresadosIberoConcluyeron.length]].map(([l,v])=>(
                 <div key={l} style={{...S.card,padding:"20px 22px"}}>
                   <div style={{fontSize:28,fontWeight:800,color:RED,fontFamily:"system-ui"}}>{v}</div>
                   <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
@@ -1313,6 +1348,57 @@ export default function App() {
                   </div>
                 ))}
               </div>}
+            </div>
+
+            {/* EGRESADOS IBERO */}
+            <div style={{...S.card,marginBottom:16,border:"1px solid #bfdbfe"}}>
+              <button onClick={()=>setRepExp(repExp==="egresadosIbero"?null:"egresadosIbero")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                  <span style={{fontWeight:700,fontSize:14}}>Egresados IBERO</span>
+                  <span style={{background:"#eff6ff",color:"#2563eb",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>Cursando: {egresadosIberoActivos.length}</span>
+                  <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>Concluyeron: {egresadosIberoConcluyeron.length}</span>
+                </div>
+                <span style={{color:"#9ca3af"}}>{repExp==="egresadosIbero"?"▲":"▼"}</span>
+              </button>
+              {repExp==="egresadosIbero"&&(
+                <div style={{borderTop:"1px solid #e5e7eb",padding:"0 20px 16px"}}>
+                  {egresadosIberoActivos.length===0&&egresadosIberoConcluyeron.length===0&&(
+                    <div style={{color:"#9ca3af",padding:"20px 0",fontFamily:"system-ui",textAlign:"center"}}>Sin egresados IBERO registrados.</div>
+                  )}
+                  {egresadosIberoActivos.length>0&&(
+                    <div style={{marginTop:16}}>
+                      <div style={{fontWeight:700,fontSize:11,color:"#2563eb",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CURSANDO ACTUALMENTE ({egresadosIberoActivos.length})</div>
+                      {egresadosIberoActivos.map((e,i)=>(
+                        <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
+                          <div style={{flex:1}}>
+                            <span style={{fontWeight:600}}>{e.nombre}</span>
+                            {e.puesto&&<span style={{color:"#6b7280",marginLeft:8,fontSize:12}}>{e.puesto}</span>}
+                            {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                          </div>
+                          <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                          <span style={{background:"#eff6ff",color:"#2563eb",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Activo</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {egresadosIberoConcluyeron.length>0&&(
+                    <div style={{marginTop:16}}>
+                      <div style={{fontWeight:700,fontSize:11,color:"#16a34a",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CONCLUYERON ({egresadosIberoConcluyeron.length})</div>
+                      {egresadosIberoConcluyeron.map((e,i)=>(
+                        <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
+                          <div style={{flex:1}}>
+                            <span style={{fontWeight:600}}>{e.nombre}</span>
+                            {e.puesto&&<span style={{color:"#6b7280",marginLeft:8,fontSize:12}}>{e.puesto}</span>}
+                            {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                          </div>
+                          <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                          <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Egresado</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div style={{...S.card,padding:24}}>
               <div style={{fontWeight:700,fontSize:12,marginBottom:16,color:RED,fontFamily:"system-ui",letterSpacing:"0.5px"}}>DETALLE POR PROGRAMA</div>
