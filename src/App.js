@@ -13,6 +13,53 @@ const RED = "#C8102E";
 const DIAS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const COLORES = ["#C8102E","#1a1a1a","#7c3aed","#1d4ed8","#0f766e","#b45309","#6b2d2d","#374151"];
 const MESES_L = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+const MODALIDADES = [
+  {valor:"Presencial Playas",    },
+  {valor:"Presencial Campus Río",},
+  {valor:"Online",               },
+  {valor:"Híbrido",              },
+];
+
+const GENERACIONES = ["Primera","Segunda","Tercera","Cuarta","Quinta","Sexta","Séptima","Octava","Novena","Décima"];
+
+// ─── FESTIVOS MÉXICO ──────────────────────────────────
+const FESTIVOS_FIJOS = {
+  "01-01":"Año Nuevo","02-05":"Día de la Constitución","03-21":"Natalicio de Benito Juárez",
+  "05-01":"Día del Trabajo","09-16":"Día de la Independencia","11-02":"Día de Muertos",
+  "11-20":"Revolución Mexicana","12-12":"Día de la Virgen de Guadalupe","12-25":"Navidad",
+};
+const calcViernesSanto = y => {
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mes=Math.floor((h+l-7*m+114)/31),dia=((h+l-7*m+114)%31)+1;
+  const pascua=new Date(y,mes-1,dia); pascua.setDate(pascua.getDate()-2);
+  return y+"-"+String(pascua.getMonth()+1).padStart(2,"0")+"-"+String(pascua.getDate()).padStart(2,"0");
+};
+const isFestivo = fecha => {
+  if(!fecha)return null;
+  const[y,m,d]=fecha.split("-"),clave=m+"-"+d;
+  if(FESTIVOS_FIJOS[clave])return FESTIVOS_FIJOS[clave];
+  const vs=calcViernesSanto(parseInt(y));
+  const js=new Date(vs+"T12:00:00"); js.setDate(js.getDate()-1);
+  const jsStr=y+"-"+String(js.getMonth()+1).padStart(2,"0")+"-"+String(js.getDate()).padStart(2,"0");
+  if(fecha===vs)return"Viernes Santo";
+  if(fecha===jsStr)return"Jueves Santo";
+  return null;
+};
+
+// Genera fechas de clase automáticamente respetando festivos
+const generarFechasClase = (fechaInicio,fechaFin,dias,clases,excepciones=[]) => {
+  if(!fechaInicio||!fechaFin||!dias||!dias.length)return[];
+  const DIAS_S=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+  const ini=new Date(fechaInicio+"T12:00:00"),fin=new Date(fechaFin+"T12:00:00"),cur=new Date(ini);
+  const resultado=[];
+  while(cur<=fin&&resultado.length<(clases||99)){
+    const da=DIAS_S[(cur.getDay()+6)%7];
+    const iso=cur.getFullYear()+"-"+String(cur.getMonth()+1).padStart(2,"0")+"-"+String(cur.getDate()).padStart(2,"0");
+    if(dias.includes(da)&&!isFestivo(iso)&&!(excepciones||[]).includes(iso))resultado.push(iso);
+    cur.setDate(cur.getDate()+1);
+  }
+  return resultado;
+};
 const MESES_C = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 const DIAS_S  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const TIPOS_PROG = [
@@ -154,7 +201,7 @@ function LoginScreen({onLogin}) {
         <div style={{background:RED,padding:"24px 36px",display:"flex",justifyContent:"center"}}><IberoLogo h={60}/></div>
         <div style={{padding:"32px 36px"}}>
           <div style={{fontWeight:700,fontSize:17,marginBottom:4,fontFamily:"Georgia,serif"}}>Acceso al sistema</div>
-          <div style={{fontSize:13,color:"#9ca3af",marginBottom:24,fontFamily:"system-ui"}}>Dirección de Educación Continua</div>
+          <div style={{fontSize:13,color:"#9ca3af",marginBottom:24,fontFamily:"system-ui"}}>Coordinación de Educación Continua</div>
           {[["Correo electrónico","email",email,setEmail],["Contraseña","password",pw,setPw]].map(([l,t,v,sv])=>(
             <div key={t} style={{marginBottom:16}}>
               <label style={S.lbl}>{l}</label>
@@ -200,7 +247,7 @@ function ListaDocente({programas, onSave}) {
       {/* Header */}
       <div style={{background:RED,padding:"16px 24px",display:"flex",alignItems:"center",gap:16}}>
         <IberoLogo h={40}/>
-        <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia · Dirección de Educación Continua</div>
+        <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia · Coordinación de Educación Continua</div>
       </div>
 
       <div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
@@ -889,7 +936,7 @@ export default function App() {
   const alertRef = useRef(null);
 
   const eMod  = {id:"",numero:"",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:3,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta"};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[]};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera"};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -996,11 +1043,42 @@ export default function App() {
     if(!dests.length){notify("Confirmado. Agrega correos en ⚙️.","warning");return;}
     setSending(modId);
     try{
-      const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,messages:[{role:"user",content:"Correo formal confirmando al docente "+m.docente+" en el módulo '"+m.nombre+"' del "+p.nombre+", IBERO Tijuana. Fechas: "+fmtFecha(m.fechaInicio)+" al "+fmtFecha(m.fechaFin)+". Solo cuerpo, sin asunto ni firma."}]})});
-      const ad=await ai.json();
-      const body=(ad.content&&ad.content.find(c=>c.type==="text")&&ad.content.find(c=>c.type==="text").text)||"Confirmamos su participación.";
       const totalH=(m.clases||0)*(m.horasPorClase||0);
-      const html="<div style='font-family:Georgia,serif;max-width:620px;margin:0 auto'><div style='background:#C8102E;padding:24px 36px'><div style='color:#fff;font-size:32px;font-weight:900;letter-spacing:3px'>IBERO</div><div style='color:rgba(255,255,255,0.75);font-size:9px;letter-spacing:4px;font-family:system-ui'>TIJUANA</div></div><div style='padding:32px 36px;border:1px solid #e5e7eb;border-top:none'><h2 style='font-size:20px;color:#1a1a1a;margin:0 0 20px'>"+m.nombre+"</h2><table style='width:100%;border-collapse:collapse;font-size:14px;font-family:system-ui'><tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280;width:130px'>Programa</td><td style='font-weight:600'>"+p.nombre+"</td></tr><tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Docente</td><td style='font-weight:600'>"+m.docente+"</td></tr><tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Período</td><td>"+fmtFecha(m.fechaInicio)+" — "+fmtFecha(m.fechaFin)+"</td></tr><tr><td style='padding:10px 0;color:#6b7280'>Horas</td><td>"+m.clases+" clases · "+m.horasPorClase+"h c/u · <strong>"+totalH+"h total</strong></td></tr></table><div style='color:#374151;font-size:14px;line-height:1.8;border-top:2px solid #C8102E;padding-top:20px;font-family:system-ui'>"+body.replace(/\n/g,"<br/>")+"</div></div><div style='background:#f9f9f9;padding:20px 36px;border:1px solid #e5e7eb;border-top:none;font-family:system-ui;font-size:12px;color:#6b7280'><strong style='color:#1a1a1a'>Dirección de Educación Continua · IBERO Tijuana</strong><br/>Av. Centro Universitario #2501, Playas de Tijuana, C.P. 22500<br/>Tel: 664 630 1577 · WhatsApp: 664 764 1119</div></div>";
+      const html=`<div style='font-family:Georgia,serif;max-width:620px;margin:0 auto'>
+        <div style='background:#C8102E;padding:24px 36px'>
+          <div style='color:#fff;font-size:32px;font-weight:900;letter-spacing:3px'>IBERO</div>
+          <div style='color:rgba(255,255,255,0.75);font-size:9px;letter-spacing:4px;font-family:system-ui'>TIJUANA</div>
+          <div style='color:rgba(255,255,255,0.7);font-size:11px;margin-top:6px;font-family:system-ui'>Coordinación de Educación Continua</div>
+        </div>
+        <div style='padding:32px 36px;border:1px solid #e5e7eb;border-top:none'>
+          <div style='display:inline-block;background:#fef2f2;color:#C8102E;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;margin-bottom:20px;font-family:system-ui'>DOCENTE CONFIRMADO</div>
+          <h2 style='font-size:20px;color:#1a1a1a;margin:0 0 20px;font-family:Georgia,serif'>${m.nombre}</h2>
+          <table style='width:100%;border-collapse:collapse;font-size:14px;font-family:system-ui'>
+            <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280;width:130px'>Programa</td><td style='font-weight:600'>${p.nombre}</td></tr>
+            ${p.generacion?`<tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Generación</td><td>${p.generacion} generación</td></tr>`:""}
+            ${p.modalidad?`<tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Modalidad</td><td>${p.modalidad}</td></tr>`:""}
+            <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Docente</td><td style='font-weight:600'>${m.docente}</td></tr>
+            <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Período</td><td>${fmtFecha(m.fechaInicio)} — ${fmtFecha(m.fechaFin)}</td></tr>
+            ${m.horario?`<tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Horario</td><td>${m.horario}</td></tr>`:""}
+            <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Días</td><td>${(m.dias||[]).join(", ")}</td></tr>
+            <tr><td style='padding:10px 0;color:#6b7280'>Horas</td><td>${m.clases} clases · ${m.horasPorClase}h c/u · <strong>${totalH}h total</strong></td></tr>
+          </table>
+          <div style='margin-top:24px;padding-top:20px;border-top:2px solid #C8102E;font-family:system-ui;font-size:14px;color:#374151;line-height:1.8'>
+            <p>Estimado/a <strong>${m.docente}</strong>,</p>
+            <p>Nos complace confirmar su participación como docente en el programa de Educación Continua de IBERO Tijuana. Su colaboración es fundamental para el desarrollo académico y profesional de nuestra comunidad universitaria.</p>
+            <p>Le pedimos de favor confirmar la recepción de este correo y contactarnos si tiene alguna pregunta o necesita información adicional.</p>
+            <p>Agradecemos de antemano su valiosa participación.</p>
+            <p>Atentamente,<br/><strong>Coordinación de Educación Continua</strong><br/>IBERO Tijuana</p>
+          </div>
+        </div>
+        <div style='background:#f9f9f9;padding:20px 36px;border:1px solid #e5e7eb;border-top:none;font-family:system-ui;font-size:12px;color:#6b7280;line-height:1.8'>
+          <strong style='color:#1a1a1a'>Coordinación de Educación Continua · IBERO Tijuana</strong><br/>
+          Av. Centro Universitario #2501, Playas de Tijuana, C.P. 22500<br/>
+          Tel: 664 630 1577 Ext. 2576 · WhatsApp: 664 764 1119<br/>
+          info@tijuana.ibero.mx<br/><br/>
+          <span style='font-size:10px;color:#9ca3af'>© 2026 IBERO Tijuana. Todos los derechos reservados.</span>
+        </div>
+      </div>`;
       let ok=0;
       for(const dest of dests){try{const res=await fetch("https://services.leadconnectorhq.com/conversations/messages/outbound",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+notifCfg.apiKey,"Version":"2021-04-15"},body:JSON.stringify({type:"Email",locationId:notifCfg.locationId,toEmail:dest.email,subject:"Confirmación — "+m.nombre,html})});if(res.ok)ok++;}catch(e){}}
       notify(ok+"/"+dests.length+" notificaciones enviadas.");
@@ -1545,18 +1623,73 @@ export default function App() {
                 ))}
                 <div><label style={S.lbl}>Total horas</label><div style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontSize:15,background:"#fef2f2",color:RED,fontWeight:800,fontFamily:"system-ui",textAlign:"center"}}>{((modForm.clases||0)*(modForm.horasPorClase||0)).toFixed(1)+"h"}</div></div>
               </div>
-              <div style={{marginBottom:13}}><label style={S.lbl}>Horario</label><input placeholder="09:00 – 12:00" value={modForm.horario||""} onChange={e=>setModForm({...modForm,horario:e.target.value})} style={S.inp}/></div>
+              <div style={{marginBottom:13}}><label style={S.lbl}>Horario</label><input placeholder="09:00 – 13:00" value={modForm.horario||""} onChange={e=>setModForm({...modForm,horario:e.target.value})} style={S.inp}/></div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
                 {[["Fecha inicio","fechaInicio"],["Fecha fin","fechaFin"]].map(([l,k])=>(
-                  <div key={k}><label style={S.lbl}>{l}</label><input type="date" value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value})} style={S.inp}/></div>
+                  <div key={k}><label style={S.lbl}>{l}</label><input type="date" value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value,fechasClase:[]})} style={S.inp}/></div>
                 ))}
               </div>
               <div style={{marginBottom:13}}>
                 <label style={S.lbl}>Días de clase</label>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {DIAS.map(d=><button key={d} onClick={()=>setModForm({...modForm,dias:(modForm.dias||[]).includes(d)?(modForm.dias||[]).filter(x=>x!==d):[...(modForm.dias||[]),d]})} style={{border:"none",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui",background:(modForm.dias||[]).includes(d)?RED:"#f3f4f6",color:(modForm.dias||[]).includes(d)?"#fff":"#6b7280"}}>{d}</button>)}
+                  {DIAS.map(d=><button key={d} onClick={()=>{
+                    const cur=modForm.dias||[];
+                    const nuevo=cur.includes(d)?cur.filter(x=>x!==d):[...cur,d];
+                    const tieneSab=nuevo.includes("Sáb");
+                    const tieneEntresemana=nuevo.some(x=>["Lun","Mar","Mié","Jue","Vie"].includes(x));
+                    let horario=modForm.horario;
+                    if(tieneSab&&!tieneEntresemana)horario="09:00 – 13:00";
+                    else if(tieneEntresemana&&!tieneSab)horario="18:00 – 22:00";
+                    else if(nuevo.length===0)horario="";
+                    setModForm({...modForm,dias:nuevo,horario,fechasClase:[]});
+                  }} style={{border:"none",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui",background:(modForm.dias||[]).includes(d)?RED:"#f3f4f6",color:(modForm.dias||[]).includes(d)?"#fff":"#6b7280"}}>{d}</button>)}
                 </div>
               </div>
+
+              {/* FECHAS DE CLASE AUTOMÁTICAS */}
+              {modForm.fechaInicio&&modForm.fechaFin&&(modForm.dias||[]).length>0&&(()=>{
+                const propuesta=generarFechasClase(modForm.fechaInicio,modForm.fechaFin,modForm.dias,modForm.clases);
+                const fechas=modForm.fechasClase&&modForm.fechasClase.length?modForm.fechasClase:propuesta;
+                const isPropuesta=!modForm.fechasClase||modForm.fechasClase.length===0;
+                return(
+                  <div style={{marginBottom:13,background:"#f9f9f9",borderRadius:8,padding:"14px 16px",border:"1px solid #e5e7eb"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                      <label style={{...S.lbl,margin:0}}>Fechas de clase ({fechas.length})</label>
+                      <div style={{display:"flex",gap:6}}>
+                        {!isPropuesta&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={S.btn("#f3f4f6","#374151",{padding:"3px 10px",fontSize:11})}>Recalcular</button>}
+                        {isPropuesta&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={S.btn("#fffbeb","#d97706",{padding:"3px 10px",fontSize:11,border:"1px solid #fde68a"})}>Confirmar fechas</button>}
+                      </div>
+                    </div>
+                    {isPropuesta&&<div style={{fontSize:12,color:"#d97706",marginBottom:8,fontFamily:"system-ui"}}>Propuesta automática — excluye festivos. Confirma o ajusta.</div>}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {fechas.map((f,i)=>{
+                        const fest=isFestivo(f);
+                        return(
+                          <div key={f} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                            <div style={{position:"relative"}}>
+                              <div style={{width:44,height:44,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:fest?"#fffbeb":"#fff",border:fest?"2px solid #fde68a":"1px solid #e5e7eb",padding:2,cursor:"default"}}>
+                                <span style={{fontSize:11,fontWeight:700,color:fest?"#d97706":"#374151",fontFamily:"system-ui"}}>{i+1}</span>
+                                <span style={{fontSize:9,color:fest?"#d97706":"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{f.slice(5).replace("-","/")}</span>
+                              </div>
+                              <button onClick={()=>setModForm({...modForm,fechasClase:fechas.filter((_,j)=>j!==i)})} style={{position:"absolute",top:-6,right:-6,width:16,height:16,borderRadius:"50%",background:"#dc2626",border:"none",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>×</button>
+                            </div>
+                            {fest&&<span style={{fontSize:8,color:"#d97706",fontFamily:"system-ui",fontWeight:700}}>festivo</span>}
+                          </div>
+                        );
+                      })}
+                      {/* Agregar fecha manual */}
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                        <label style={{width:44,height:44,borderRadius:8,border:"2px dashed #e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden",background:"#fff"}}>
+                          <span style={{fontSize:20,color:"#d1d5db"}}>+</span>
+                          <input type="date" style={{position:"absolute",opacity:0,width:"100%",height:"100%",cursor:"pointer"}} min={modForm.fechaInicio} max={modForm.fechaFin}
+                            onChange={e=>{const v=e.target.value;if(v&&!fechas.includes(v)){const nuevo=[...fechas,v].sort();setModForm({...modForm,fechasClase:nuevo});}e.target.value="";}}/>
+                        </label>
+                        <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>agregar</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
               <div style={{marginBottom:22}}>
                 <label style={S.lbl}>Estatus del docente</label>
                 <div style={{display:"flex",gap:8}}>
@@ -1594,6 +1727,29 @@ export default function App() {
                   ))}
                 </div>
                 {progForm.tipo==="Otro"&&<input placeholder="Especifica el tipo..." value={progForm.tipoCustom||""} onChange={e=>setProgForm({...progForm,tipoCustom:e.target.value})} style={{...S.inp,marginTop:4}}/>}
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={S.lbl}>Modalidad</label>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {MODALIDADES.map(m=>(
+                    <button key={m.valor} onClick={()=>setProgForm({...progForm,modalidad:m.valor})} style={{border:"2px solid "+(progForm.modalidad===m.valor?RED:"#e5e7eb"),borderRadius:8,padding:"10px 12px",cursor:"pointer",fontFamily:"system-ui",background:progForm.modalidad===m.valor?"#fef2f2":"#fff",textAlign:"left"}}>
+                      <span style={{fontWeight:700,fontSize:13,color:progForm.modalidad===m.valor?RED:"#1a1a1a"}}>{m.valor}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={S.lbl}>Generación</label>
+                <div style={{overflowX:"auto",paddingBottom:4}}>
+                  <div style={{display:"flex",gap:8,width:"max-content"}}>
+                    {GENERACIONES.map((g,i)=>(
+                      <button key={g} onClick={()=>setProgForm({...progForm,generacion:g})} style={{border:"2px solid "+(progForm.generacion===g?RED:"#e5e7eb"),borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"system-ui",background:progForm.generacion===g?"#fef2f2":"#fff",whiteSpace:"nowrap",flexShrink:0}}>
+                        <div style={{fontWeight:700,fontSize:13,color:progForm.generacion===g?RED:"#1a1a1a"}}>{g}</div>
+                        <div style={{fontSize:10,color:"#9ca3af",marginTop:1}}>{i+1}ª gen.</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div style={{marginBottom:22}}>
                 <label style={S.lbl}>Color identificador</label>
