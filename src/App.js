@@ -22,6 +22,8 @@ const MODALIDADES = [
 ];
 
 const GENERACIONES = ["Primera","Segunda","Tercera","Cuarta","Quinta","Sexta","Séptima","Octava","Novena","Décima"];
+const NUMEROS_MOD  = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
+const HORARIOS_PRE = ["18:00 – 22:00","09:00 – 13:00","08:00 – 14:00","07:00 – 13:00","16:00 – 20:00","Otro"];
 
 // ─── FESTIVOS MÉXICO ──────────────────────────────────
 const FESTIVOS_FIJOS = {
@@ -169,6 +171,53 @@ const StatusBadge = ({p}) => {
   const ss = ST_STYLE[progStatus(p)];
   return <span style={{background:ss.bg,border:"1px solid "+ss.border,color:ss.color,borderRadius:4,padding:"2px 8px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{ss.label}</span>;
 };
+
+// ─── CONFIRMACIÓN SIMPLE ──────────────────────────────
+function ConfirmSimple({titulo,mensaje,onConfirm,onClose}) {
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.2)",overflow:"hidden"}}>
+        <div style={{padding:"20px 24px",borderBottom:"1px solid #e5e7eb"}}>
+          <div style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif",marginBottom:4}}>{titulo}</div>
+          <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",lineHeight:1.6}}>{mensaje}</div>
+        </div>
+        <div style={{padding:"16px 24px",background:"#fafafa",display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{background:"#f3f4f6",color:"#374151",border:"none",borderRadius:6,padding:"9px 20px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Cancelar</button>
+          <button onClick={()=>{onConfirm();onClose();}} style={{background:"#dc2626",color:"#fff",border:"none",borderRadius:6,padding:"9px 20px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Sí, eliminar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CONFIRMACIÓN CON TEXTO ESCRITO ──────────────────
+function ConfirmEscrita({titulo,subtitulo,mensaje,onConfirm,onClose}) {
+  const [texto,setTexto] = useState("");
+  const valido = texto === "ELIMINAR";
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.2)",overflow:"hidden"}}>
+        <div style={{background:"#fef2f2",padding:"20px 24px",borderBottom:"1px solid #fca5a5"}}>
+          <div style={{fontWeight:700,fontSize:16,color:"#dc2626",fontFamily:"Georgia,serif"}}>{titulo}</div>
+          {subtitulo&&<div style={{fontSize:13,color:"#dc2626",marginTop:4,fontFamily:"system-ui"}}>{subtitulo}</div>}
+        </div>
+        <div style={{padding:"20px 24px"}}>
+          <p style={{fontSize:14,color:"#374151",fontFamily:"system-ui",margin:"0 0 16px",lineHeight:1.6}}>{mensaje}</p>
+          <p style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",margin:"0 0 8px"}}>Para confirmar escribe <strong style={{color:"#dc2626"}}>ELIMINAR</strong>:</p>
+          <input value={texto} onChange={e=>setTexto(e.target.value)} placeholder="ELIMINAR"
+            style={{width:"100%",border:"2px solid "+(valido?"#dc2626":"#e5e7eb"),borderRadius:6,padding:"10px 12px",fontSize:15,boxSizing:"border-box",fontFamily:"system-ui",outline:"none",fontWeight:700,color:"#dc2626",letterSpacing:"1px"}}/>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+            <button onClick={onClose} style={{background:"#f3f4f6",color:"#374151",border:"none",borderRadius:6,padding:"10px 20px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Cancelar</button>
+            <button onClick={()=>{if(valido){onConfirm();onClose();}}} disabled={!valido}
+              style={{background:valido?"#dc2626":"#e5e7eb",color:valido?"#fff":"#9ca3af",border:"none",borderRadius:6,padding:"10px 20px",cursor:valido?"pointer":"default",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>
+              Eliminar definitivamente
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const S = { // estilos reutilizables
   inp: {width:"100%",border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontSize:14,boxSizing:"border-box",fontFamily:"system-ui",outline:"none"},
@@ -708,11 +757,11 @@ function CalendarioView({programas}) {
 // ─── DOCENTES ─────────────────────────────────────────
 function DocentesView({docentes,saveDocentes,programas}) {
   const [showM,setShowM]   = useState(false);
-  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",programasIds:[]});
+  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",programasIds:[],semblanza:""});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
 
-  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",programasIds:[]}); setEditId(null); setShowM(true); };
+  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",programasIds:[],semblanza:""}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => { if(!form.nombre)return; editId?saveDocentes((docentes||[]).map(d=>d.id===editId?form:d)):saveDocentes([...(docentes||[]),form]); setShowM(false); };
   const delDoc  = id => saveDocentes((docentes||[]).filter(d=>d.id!==id));
@@ -775,7 +824,7 @@ function DocentesView({docentes,saveDocentes,programas}) {
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0}}>
                   <button onClick={()=>openEdit(doc)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>
-                  <button onClick={()=>delDoc(doc.id)} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>
+                  <button onClick={()=>setCS({titulo:"Eliminar docente",mensaje:`¿Estás seguro de que deseas eliminar a "${doc.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delDoc(doc.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>
                 </div>
               </div>
             </div>
@@ -824,6 +873,11 @@ function DocentesView({docentes,saveDocentes,programas}) {
                     );
                   })}
                 </div>
+              </div>
+              <div style={{marginBottom:20}}>
+                <label style={S.lbl}>Semblanza</label>
+                <textarea value={form.semblanza||""} onChange={e=>setForm({...form,semblanza:e.target.value})} placeholder="Describe la trayectoria académica y profesional del docente..." rows={5} style={{...S.inp,resize:"vertical",lineHeight:1.6}}/>
+                <div style={{fontSize:11,color:"#9ca3af",marginTop:4,fontFamily:"system-ui"}}>{(form.semblanza||"").length} caracteres</div>
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                 <button onClick={()=>setShowM(false)} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
@@ -920,6 +974,8 @@ export default function App() {
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
   const [notif,setNotif]         = useState(null);
+  const [confirmSimple,setCS]    = useState(null); // {titulo,mensaje,onConfirm}
+  const [confirmEscrita,setCE]   = useState(null); // {titulo,subtitulo,mensaje,onConfirm}
   const [sending,setSending]     = useState(null);
   const [newResp,setNewResp]     = useState({nombre:"",email:""});
   const [users,setUsers]         = useState([]);
@@ -935,7 +991,7 @@ export default function App() {
   const [filtroEst,setFiltroEst] = useState("");
   const alertRef = useRef(null);
 
-  const eMod  = {id:"",numero:"",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:3,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta"};
+  const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:6,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
   const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera"};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
@@ -1031,6 +1087,129 @@ export default function App() {
     if(!rows.length)return;
     const hdr=["Nombre","Empresa","Puesto"],csv=[hdr.join(","),...rows.map(r=>hdr.map(h=>'"'+(r[h]||"").replace(/"/g,'""')+'"').join(","))].join("\n");
     const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));a.download="Lista_"+prog.nombre.replace(/\s+/g,"_")+".csv";a.click();notify("Lista para docente exportada.");
+  };
+
+  const exportPDF = prog => {
+    const ms = mods(prog);
+    const DIAS_S = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+    // Recopilar todas las fechas de clase por módulo
+    const todasFechas = [];
+    ms.forEach(mod => {
+      const fechas = mod.fechasClase&&mod.fechasClase.length
+        ? mod.fechasClase
+        : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+      fechas.forEach(f=>todasFechas.push({fecha:f,mod}));
+    });
+    todasFechas.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+
+    // Agrupar por mes para el calendario visual
+    const byMes = {};
+    todasFechas.forEach(({fecha,mod})=>{
+      const [y,m] = fecha.split("-");
+      const key = y+"-"+m;
+      if(!byMes[key]) byMes[key]={anio:parseInt(y),mes:parseInt(m)-1,clases:[]};
+      byMes[key].clases.push({fecha,mod});
+    });
+
+    const colores = ["#C8102E","#1d4ed8","#0f766e","#7c3aed","#b45309","#6b2d2d"];
+    const modColor = {};
+    ms.forEach((m,i)=>modColor[m.id]=colores[i%colores.length]);
+
+    // Construir HTML del PDF
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <style>
+      body{font-family:Georgia,serif;margin:0;padding:0;color:#1a1a1a;}
+      .page{max-width:800px;margin:0 auto;padding:40px;}
+      .header{background:#C8102E;padding:24px 36px;margin-bottom:32px;}
+      .header h1{color:#fff;font-size:36px;font-weight:900;margin:0;letter-spacing:3px;}
+      .header p{color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:11px;letter-spacing:4px;font-family:Arial,sans-serif;}
+      .prog-title{font-size:22px;font-weight:700;margin-bottom:4px;}
+      .prog-meta{font-size:13px;color:#6b7280;margin-bottom:24px;font-family:Arial,sans-serif;}
+      .section-title{font-size:11px;font-weight:700;color:#C8102E;letter-spacing:1px;text-transform:uppercase;margin:24px 0 12px;font-family:Arial,sans-serif;}
+      table.modulos{width:100%;border-collapse:collapse;font-size:13px;font-family:Arial,sans-serif;}
+      table.modulos th{text-align:left;padding:8px 12px;background:#f9f9f9;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #e5e7eb;}
+      table.modulos td{padding:10px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;}
+      .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;}
+      .mes-grid{margin-bottom:28px;}
+      .mes-titulo{font-size:15px;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #C8102E;}
+      .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-family:Arial,sans-serif;}
+      .cal-head{text-align:center;font-size:10px;font-weight:700;color:#6b7280;padding:4px;}
+      .cal-day{min-height:52px;padding:4px;border:1px solid #f3f4f6;border-radius:4px;font-size:11px;}
+      .cal-day.vacio{background:#fafafa;}
+      .cal-day.festivo{background:#fffbeb;}
+      .cal-num{font-weight:600;color:#374151;margin-bottom:2px;}
+      .cal-num.fest{color:#d97706;}
+      .clase-chip{font-size:9px;padding:2px 4px;border-radius:3px;color:#fff;margin-bottom:2px;line-height:1.3;}
+      .leyenda{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-family:Arial,sans-serif;font-size:12px;}
+      .leyenda-item{display:flex;align-items:center;gap:6px;}
+      .leyenda-dot{width:12px;height:12px;border-radius:3px;}
+      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+    </style></head><body><div class="page">
+    <div class="header"><h1>IBERO</h1><p>TIJUANA &nbsp;·&nbsp; COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div>
+    <div class="prog-title">${prog.nombre}</div>
+    <div class="prog-meta">${prog.tipo}${prog.modalidad?" · "+prog.modalidad:""}${prog.generacion?" · "+prog.generacion+" generación":""}</div>`;
+
+    // Tabla de módulos
+    html += `<div class="section-title">Módulos del programa</div>
+    <table class="modulos"><thead><tr>
+      <th>Módulo</th><th>Nombre</th><th>Docente</th><th>Fechas</th><th>Días</th><th>Horas</th>
+    </tr></thead><tbody>`;
+    ms.forEach(m=>{
+      const totalH=(m.clases||0)*(m.horasPorClase||0);
+      const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+      html+=`<tr>
+        <td><span class="badge" style="background:${modColor[m.id]};color:#fff">${m.numero}</span></td>
+        <td style="font-weight:600">${m.nombre}</td>
+        <td style="color:#6b7280">${m.docente||"Por confirmar"}</td>
+        <td style="color:#6b7280;font-size:12px">${m.fechaInicio?fmtFecha(m.fechaInicio)+" — "+fmtFecha(m.fechaFin):"-"}<br/>${m.horario||""}</td>
+        <td style="color:#6b7280">${(m.dias||[]).join(", ")}</td>
+        <td><strong>${totalH}h</strong><br/><span style="color:#9ca3af;font-size:11px">${m.clases} cl · ${m.horasPorClase}h</span></td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+
+    // Leyenda
+    html += `<div class="section-title" style="margin-top:20px">Calendario de clases</div>
+    <div class="leyenda">
+      ${ms.map(m=>`<div class="leyenda-item"><div class="leyenda-dot" style="background:${modColor[m.id]}"></div><span>${m.numero} · ${m.nombre.split(" ").slice(0,4).join(" ")}</span></div>`).join("")}
+      <div class="leyenda-item"><div class="leyenda-dot" style="background:#fde68a;border:1px solid #d97706"></div><span>Festivo</span></div>
+    </div>`;
+
+    // Calendarios por mes
+    Object.values(byMes).forEach(({anio,mes,clases})=>{
+      const pD=new Date(anio,mes,1),uD=new Date(anio,mes+1,0),off=(pD.getDay()+6)%7;
+      const tot=Math.ceil((off+uD.getDate())/7)*7;
+      const byD={};
+      clases.forEach(({fecha,mod})=>{const d=parseInt(fecha.split("-")[2]);if(!byD[d])byD[d]=[];byD[d].push(mod);});
+
+      html+=`<div class="mes-grid"><div class="mes-titulo">${MESES_L[mes]} ${anio}</div><div class="cal">`;
+      DIAS_S.forEach(d=>{html+=`<div class="cal-head">${d}</div>`;});
+      for(let i=0;i<tot;i++){
+        const d=i-off+1,valid=d>=1&&d<=uD.getDate();
+        if(!valid){html+=`<div class="cal-day vacio"></div>`;continue;}
+        const iso=anio+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+        const fest=isFestivo(iso);
+        const clasesDelDia=byD[d]||[];
+        html+=`<div class="cal-day${fest?" festivo":""}">
+          <div class="cal-num${fest?" fest":""}">${d}${fest?`<div style="font-size:8px;color:#d97706">${fest}</div>`:""}</div>
+          ${clasesDelDia.map(m=>`<div class="clase-chip" style="background:${modColor[m.id]}">${m.numero}</div>`).join("")}
+        </div>`;
+      }
+      html+=`</div></div>`;
+    });
+
+    html+=`<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#9ca3af;text-align:center">
+      Coordinación de Educación Continua · IBERO Tijuana · Av. Centro Universitario #2501, Playas de Tijuana<br/>
+      Tel: 664 630 1577 Ext. 2576 · info@tijuana.ibero.mx · © ${new Date().getFullYear()} IBERO Tijuana
+    </div></div></body></html>`;
+
+    // Abrir en nueva ventana para imprimir/guardar como PDF
+    const win=window.open("","_blank");
+    win.document.write(html);
+    win.document.close();
+    win.onload=()=>{win.print();};
+    notify("Calendario abierto — guarda como PDF desde el diálogo de impresión.");
   };
 
   const confirmar = async (progId,modId)=>{
@@ -1202,7 +1381,7 @@ export default function App() {
                     </div>
                     <div style={{display:"flex",gap:8,flexShrink:0}}>
                       <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff")}>Ver</button>
-                      {can(session,"editarProgramas")&&<button onClick={()=>delProg(p.id)} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
+                      {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
                     </div>
                   </div>
                 );
@@ -1219,12 +1398,17 @@ export default function App() {
         {/* DETALLE PROGRAMA */}
         {view==="programa"&&prog&&(
           <div>
-            <button onClick={()=>setView("lista")} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,marginBottom:20,padding:0,fontWeight:700,fontFamily:"system-ui"}}>← Volver</button>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <button onClick={()=>setView("lista")} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,padding:0,fontWeight:700,fontFamily:"system-ui"}}>← Volver</button>
+              <button onClick={()=>exportPDF(prog)} style={S.btn(RED,"#fff",{fontSize:12})}>Descargar calendario PDF</button>
+            </div>
             <div style={{...S.card,padding:"22px 26px",marginBottom:20}}>
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}>
                 <div style={{width:10,height:10,borderRadius:"50%",background:prog.color}}/>
                 <h1 style={{fontSize:20,fontWeight:700,margin:0}}>{prog.nombre}</h1>
                 <span style={{background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>{prog.tipo.toUpperCase()}</span>
+                {prog.modalidad&&<span style={{background:"#eff6ff",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#2563eb",fontFamily:"system-ui",fontWeight:600}}>{prog.modalidad}</span>}
+                {prog.generacion&&<span style={{background:"#f0fdf4",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#16a34a",fontFamily:"system-ui",fontWeight:600}}>{prog.generacion} generación</span>}
                 <StatusBadge p={prog}/>
               </div>
               <div style={{display:"flex",gap:20,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
@@ -1270,7 +1454,7 @@ export default function App() {
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                               {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
-                              {can(session,"editarModulos")&&<button onClick={()=>delMod(m.id)} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
+                              {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
                             </div>
                           </div>
                         </div>
@@ -1335,7 +1519,7 @@ export default function App() {
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
                               <option value="activo">Activo</option><option value="egresado">Egresado</option><option value="baja">Baja</option>
                             </select>
-                            <button onClick={()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
+                            <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
                           </div>
                         </div>
                       </div>
@@ -1515,7 +1699,7 @@ export default function App() {
                   <div key={i} style={{marginBottom:12,padding:"14px 16px",background:"#f9f9f9",borderRadius:6}}>
                     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
                       <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14,fontFamily:"system-ui"}}>{u.nombre}</div><div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{u.email}</div></div>
-                      {u.email!==session.email&&<button onClick={()=>saveUsers((users||[]).filter((_,j)=>j!==i))} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
+                      {u.email!==session.email&&<button onClick={()=>setCS({titulo:"Eliminar usuario",mensaje:`¿Estás seguro de que deseas eliminar al usuario "${u.nombre}"? Perderá acceso al sistema.`,onConfirm:()=>saveUsers((users||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
                     </div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                       {ALL_PERMISOS.map(p=>(
@@ -1581,7 +1765,7 @@ export default function App() {
                 {(responsables||[]).map((r,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,fontFamily:"system-ui"}}>
                     <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14}}>{r.nombre}</div><div style={{fontSize:13,color:"#6b7280"}}>{r.email}</div></div>
-                    <button onClick={()=>saveResp((responsables||[]).filter((_,j)=>j!==i))} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>
+                    <button onClick={()=>setCS({titulo:"Eliminar responsable",mensaje:`¿Estás seguro de que deseas eliminar a "${r.nombre}" de los responsables? Dejará de recibir notificaciones.`,onConfirm:()=>saveResp((responsables||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>
                   </div>
                 ))}
                 <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
@@ -1596,6 +1780,8 @@ export default function App() {
       </div>
 
       {/* MODALES */}
+      {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)}/>}
+      {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
       {showModM&&(
@@ -1606,7 +1792,18 @@ export default function App() {
               <button onClick={()=>setShowModM(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
             </div>
             <div style={{padding:"20px 24px"}}>
-              {[["Número del módulo","numero","text","I, II, III..."],["Nombre del módulo","nombre","text",""],["Correo del docente","emailDocente","email",""]].map(([l,k,t,ph])=>(
+              {/* Número de módulo — selector romano */}
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Número del módulo</label>
+                <div style={{overflowX:"auto",paddingBottom:4}}>
+                  <div style={{display:"flex",gap:6,width:"max-content"}}>
+                    {NUMEROS_MOD.map(n=>(
+                      <button key={n} onClick={()=>setModForm({...modForm,numero:n})} style={{width:42,height:42,border:"2px solid "+(modForm.numero===n?RED:"#e5e7eb"),borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:13,fontFamily:"Georgia,serif",background:modForm.numero===n?"#fef2f2":"#fff",color:modForm.numero===n?RED:"#374151",flexShrink:0}}>{n}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {[["Nombre del módulo","nombre","text",""],["Correo del docente","emailDocente","email",""]].map(([l,k,t,ph])=>(
                 <div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input type={t} placeholder={ph} value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value})} style={S.inp}/></div>
               ))}
               <div style={{marginBottom:13}}>
@@ -1623,7 +1820,16 @@ export default function App() {
                 ))}
                 <div><label style={S.lbl}>Total horas</label><div style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontSize:15,background:"#fef2f2",color:RED,fontWeight:800,fontFamily:"system-ui",textAlign:"center"}}>{((modForm.clases||0)*(modForm.horasPorClase||0)).toFixed(1)+"h"}</div></div>
               </div>
-              <div style={{marginBottom:13}}><label style={S.lbl}>Horario</label><input placeholder="09:00 – 13:00" value={modForm.horario||""} onChange={e=>setModForm({...modForm,horario:e.target.value})} style={S.inp}/></div>
+              {/* Selector de horario */}
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Horario</label>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {HORARIOS_PRE.map(h=>(
+                    <button key={h} onClick={()=>setModForm({...modForm,horario:h==="Otro"?"":h})} style={{border:"2px solid "+(modForm.horario===h?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"system-ui",background:modForm.horario===h?"#fef2f2":"#fff",color:modForm.horario===h?RED:"#6b7280"}}>{h}</button>
+                  ))}
+                </div>
+                <input placeholder="Escribe un horario personalizado..." value={modForm.horario||""} onChange={e=>setModForm({...modForm,horario:e.target.value})} style={S.inp}/>
+              </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
                 {[["Fecha inicio","fechaInicio"],["Fecha fin","fechaFin"]].map(([l,k])=>(
                   <div key={k}><label style={S.lbl}>{l}</label><input type="date" value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value,fechasClase:[]})} style={S.inp}/></div>
@@ -1677,15 +1883,16 @@ export default function App() {
                           </div>
                         );
                       })}
-                      {/* Agregar fecha manual */}
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                        <label style={{width:44,height:44,borderRadius:8,border:"2px dashed #e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden",background:"#fff"}}>
-                          <span style={{fontSize:20,color:"#d1d5db"}}>+</span>
-                          <input type="date" style={{position:"absolute",opacity:0,width:"100%",height:"100%",cursor:"pointer"}} min={modForm.fechaInicio} max={modForm.fechaFin}
-                            onChange={e=>{const v=e.target.value;if(v&&!fechas.includes(v)){const nuevo=[...fechas,v].sort();setModForm({...modForm,fechasClase:nuevo});}e.target.value="";}}/>
-                        </label>
-                        <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>agregar</span>
-                      </div>
+                    </div>
+                    {/* Agregar fecha manual — input visible */}
+                    <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center"}}>
+                      <input type="date" id="fecha_manual_input" min={modForm.fechaInicio||undefined} max={modForm.fechaFin||undefined} style={{...S.inp,flex:1,fontSize:13}}/>
+                      <button onClick={()=>{
+                        const inp=document.getElementById("fecha_manual_input");
+                        const v=inp?inp.value:"";
+                        if(v&&!fechas.includes(v)){const nuevo=[...fechas,v].sort();setModForm({...modForm,fechasClase:nuevo});}
+                        if(inp)inp.value="";
+                      }} style={S.btn(RED,"#fff",{whiteSpace:"nowrap",padding:"8px 14px",fontSize:12})}>Agregar fecha</button>
                     </div>
                   </div>
                 );
