@@ -141,6 +141,30 @@ const calcPct = (est, modulos) => {
   return Math.round(asist/total*100);
 };
 
+const RECARGO_PCT = 6; // 6% de recargo por pago tardío
+
+// Calcula el estado de pagos de un estudiante
+const calcEstadoPagos = (est) => {
+  const p = est.pago;
+  if (!p||p.tipo!=="parcialidades"||!(p.parcialidades||[]).length) return null;
+  const hoy = today();
+  const dia = parseInt(hoy.split("-")[2]);
+  const vencidas = (p.parcialidades||[]).filter(parc=>
+    !parc.pagado && parc.fecha_vencimiento && parc.fecha_vencimiento < hoy
+  );
+  // Vencidas después del día 15 del mes de vencimiento
+  const conRecargo = (p.parcialidades||[]).filter(parc=>{
+    if (parc.pagado||!parc.fecha_vencimiento) return false;
+    const [vy,vm] = parc.fecha_vencimiento.split("-");
+    const mesVence = vy+"-"+vm;
+    const mesHoy = hoy.substring(0,7);
+    if (mesVence < mesHoy) return true; // mes anterior = vencida con recargo
+    if (mesVence === mesHoy && dia >= 16) return true; // mismo mes, ya pasó el 15
+    return false;
+  });
+  return {vencidas, conRecargo, total:(p.parcialidades||[]).length, pagadas:(p.parcialidades||[]).filter(x=>x.pagado).length};
+};
+
 const getAlertas = programas => {
   const alerts = [];
   (programas||[]).forEach(prog => {
@@ -154,6 +178,21 @@ const getAlertas = programas => {
       const pct = calcPct(est, mods(prog));
       if (pct !== null && pct < 80 && progStatus(prog)==="activo")
         alerts.push({tipo:"asistencia",prog,est,pct});
+
+      // Alertas de pago
+      const ep = calcEstadoPagos(est);
+      if (!ep) return;
+      const mf = (est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
+      const montoParcialidad = ep.total ? mf/ep.total : 0;
+      const recargo = montoParcialidad * (RECARGO_PCT/100);
+
+      if (ep.conRecargo.length >= 2) {
+        // Alerta roja: 2+ mensualidades sin pagar después del día 15
+        alerts.push({tipo:"pago_critico",prog,est,vencidas:ep.conRecargo.length,montoParcialidad,recargo:recargo*ep.conRecargo.length});
+      } else if (ep.conRecargo.length === 1) {
+        // Alerta amarilla: 1 mensualidad vencida después del día 15
+        alerts.push({tipo:"pago_recargo",prog,est,vencidas:ep.conRecargo,montoParcialidad,recargo});
+      }
     });
   });
   return alerts;
@@ -1578,10 +1617,12 @@ export default function App() {
                 <div style={{maxHeight:320,overflowY:"auto"}}>
                   {alertas.map((a,i)=>(
                     <div key={i} style={{padding:"12px 16px",borderBottom:"1px solid #f3f4f6",display:"flex",gap:10,alignItems:"flex-start"}}>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:a.tipo==="sin_docente"?"#f59e0b":"#dc2626",marginTop:5,flexShrink:0}}/>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:a.tipo==="sin_docente"?"#f59e0b":a.tipo==="pago_recargo"?"#d97706":"#dc2626",marginTop:5,flexShrink:0}}/>
                       <div style={{flex:1,fontFamily:"system-ui"}}>
                         {a.tipo==="sin_docente"&&<><div style={{fontWeight:600,fontSize:13}}>Módulo sin docente</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre}<br/>{a.prog.nombre} · Inicia en {a.dias} días</div></>}
                         {a.tipo==="asistencia"&&<><div style={{fontWeight:600,fontSize:13,color:"#dc2626"}}>Asistencia baja: {a.pct}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre}<br/>{a.prog.nombre}</div></>}
+                        {a.tipo==="pago_recargo"&&<><div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>Pago vencido — recargo {RECARGO_PCT}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo: {fmtMXN(a.recargo)}</div></>}
+                        {a.tipo==="pago_critico"&&<><div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>Acción requerida — {a.vencidas} pagos sin cubrir</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div></>}
                       </div>
                     </div>
                   ))}
@@ -2234,6 +2275,59 @@ export default function App() {
                     </table>
                   </div>
                 </div>
+
+                {/* TABLA DE MOROSIDAD */}
+                {(()=>{
+                  const morosos=[];
+                  (programas||[]).forEach(prog=>{
+                    ests(prog).forEach(est=>{
+                      const ep=calcEstadoPagos(est);
+                      if(!ep||ep.conRecargo.length===0)return;
+                      const mf=(est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
+                      const montoParcialidad=ep.total?mf/ep.total:0;
+                      const recargo=montoParcialidad*ep.conRecargo.length*(RECARGO_PCT/100);
+                      morosos.push({est,prog,ep,montoParcialidad,recargo,critico:ep.conRecargo.length>=2});
+                    });
+                  });
+                  if(!morosos.length)return null;
+                  return(
+                    <div style={{...S.card,marginTop:16}}>
+                      <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif",color:"#dc2626"}}>Cartera vencida — {morosos.length} estudiante{morosos.length!==1?"s":""}</div>
+                        <div style={{fontSize:13,fontFamily:"system-ui",color:"#6b7280"}}>Recargo total: <strong style={{color:"#dc2626"}}>{fmtMXN(morosos.reduce((a,m)=>a+m.recargo,0))}</strong></div>
+                      </div>
+                      <div style={{overflowX:"auto"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                          <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#fef2f2"}}>{["Estudiante","Programa","Pagos vencidos","Monto/parcialidad","Recargo (6%)","Total a cobrar","Acción"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {morosos.map(({est,prog,ep,montoParcialidad,recargo,critico},i)=>(
+                              <tr key={i} style={{borderBottom:"1px solid #f3f4f6",background:critico?"#fff5f5":"#fff"}}>
+                                <td style={{padding:"10px 12px"}}>
+                                  <div style={{fontWeight:600}}>{est.nombre}</div>
+                                  {est.empresa&&<div style={{fontSize:11,color:"#9ca3af"}}>{est.empresa}</div>}
+                                </td>
+                                <td style={{padding:"10px 12px",color:"#6b7280"}}>{prog.nombre}</td>
+                                <td style={{padding:"10px 12px",textAlign:"center"}}>
+                                  <span style={{background:critico?"#fef2f2":"#fffbeb",color:critico?"#dc2626":"#d97706",border:"1px solid "+(critico?"#fca5a5":"#fde68a"),borderRadius:4,padding:"2px 8px",fontWeight:700}}>{ep.conRecargo.length}</span>
+                                </td>
+                                <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(montoParcialidad)}</td>
+                                <td style={{padding:"10px 12px",color:"#dc2626",fontWeight:700}}>{fmtMXN(recargo)}</td>
+                                <td style={{padding:"10px 12px",fontWeight:700}}>{fmtMXN(montoParcialidad*ep.conRecargo.length+recargo)}</td>
+                                <td style={{padding:"10px 12px"}}>
+                                  {critico
+                                    ? <span style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Dar de baja</span>
+                                    : <span style={{fontSize:11,background:"#fffbeb",color:"#d97706",border:"1px solid #fde68a",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Contactar</span>
+                                  }
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
               );
             })()}
           </div>
