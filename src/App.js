@@ -1631,7 +1631,8 @@ export default function App() {
   const [busqPagos,setBusqPagos]     = useState("");
   const [progPagos,setProgPagos]     = useState("");
   const [filtroPagos,setFiltroPagos] = useState("");
-  const [expandido,setExpandido]     = useState(null);
+  const [expandido,setExpandido]       = useState(null); // programa abierto
+  const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [editEstModal,setEditEstModal] = useState(null);
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
@@ -2683,11 +2684,13 @@ export default function App() {
                   return(
                     <div key={prog.id} style={{...S.card,overflow:"hidden",borderLeft:"4px solid "+prog.color}}>
                       {/* CABECERA DEL PROGRAMA */}
-                      <div onClick={()=>setExpandido(progAbierto?null:prog.id)} style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",background:"#fff"}}>
+                      <div onClick={()=>{setExpandido(progAbierto?null:prog.id);setExpandidoEst(null);}} style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",background:"#fff"}}>
                         <div style={{flex:1}}>
                           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
                             <span style={{fontWeight:700,fontSize:15}}>{prog.nombre}</span>
                             <span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#6b7280",fontFamily:"system-ui"}}>{prog.tipo}</span>
+                            {prog.generacion&&<span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600}}>{prog.generacion} generación</span>}
+                            {prog.modalidad&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{prog.modalidad}</span>}
                             <StatusBadge p={prog}/>
                           </div>
                           <div style={{display:"flex",gap:12,fontSize:12,color:"#9ca3af",fontFamily:"system-ui",flexWrap:"wrap",alignItems:"center"}}>
@@ -2712,7 +2715,7 @@ export default function App() {
                             const st=estadoStyle[estado]||estadoStyle.sinconfig;
                             const recargo=ep&&ep.conRecargo.length>0?(mf/(total||1))*ep.conRecargo.length*(RECARGO_PCT/100):0;
                             const estKey=prog.id+"_"+est.id;
-                            const estAbierto=expandido===estKey;
+                            const estAbierto=expandidoEst===estKey;
                             const esInactivo=est.estatus==="inactivo";
 
                             // Asistencia por módulo
@@ -2730,7 +2733,7 @@ export default function App() {
                             return(
                               <div key={est.id} style={{borderBottom:estIdx<estsFiltrados.length-1?"1px solid #f3f4f6":"none",background:esInactivo?"#fafafa":"#fff"}}>
                                 {/* FILA DEL ESTUDIANTE */}
-                                <div onClick={()=>setExpandido(estAbierto?null:estKey)} style={{padding:"12px 20px 12px 28px",display:"flex",gap:10,alignItems:"center",cursor:"pointer",opacity:esInactivo?0.65:1}}>
+                                <div onClick={()=>setExpandidoEst(estAbierto?null:estKey)} style={{padding:"12px 20px 12px 28px",display:"flex",gap:10,alignItems:"center",cursor:"pointer",opacity:esInactivo?0.65:1}}>
                                   <div style={{flex:1,minWidth:160}}>
                                     <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2,flexWrap:"wrap"}}>
                                       <span style={{fontWeight:600,fontSize:13}}>{est.nombre}</span>
@@ -3444,9 +3447,35 @@ export default function App() {
                 <input placeholder="Escribe un horario personalizado..." value={modForm.horario||""} onChange={e=>setModForm({...modForm,horario:e.target.value})} style={S.inp}/>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
-                {[["Fecha inicio","fechaInicio"],["Fecha fin","fechaFin"]].map(([l,k])=>(
-                  <div key={k}><label style={S.lbl}>{l}</label><input type="date" value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value,fechasClase:[]})} style={S.inp}/></div>
-                ))}
+                <div>
+                  <label style={S.lbl}>Fecha inicio</label>
+                  <input type="date" value={modForm.fechaInicio||""} onChange={e=>{
+                    const val=e.target.value;
+                    if(!val){setModForm({...modForm,fechaInicio:"",fechasClase:[]});return;}
+                    // Auto-detectar día de la semana
+                    const d=new Date(val+"T12:00:00");
+                    const diaSemana=DIAS_S[(d.getDay()+6)%7]; // 0=Lun...6=Dom
+                    // Auto-horario según día
+                    const esSabado=diaSemana==="Sáb";
+                    const horarioSugerido=esSabado?"09:00 – 13:00":"18:00 – 22:00";
+                    setModForm({
+                      ...modForm,
+                      fechaInicio:val,
+                      dias:[diaSemana],
+                      horario:modForm.horario||horarioSugerido,
+                      fechasClase:[]
+                    });
+                  }} style={S.inp}/>
+                  {modForm.fechaInicio&&(()=>{
+                    const d=new Date(modForm.fechaInicio+"T12:00:00");
+                    const nombre=["lunes","martes","miércoles","jueves","viernes","sábado","domingo"][(d.getDay()+6)%7];
+                    return<div style={{fontSize:11,color:"#16a34a",fontFamily:"system-ui",marginTop:4}}>Día detectado: <strong>{nombre}</strong> — puedes cambiar abajo</div>;
+                  })()}
+                </div>
+                <div>
+                  <label style={S.lbl}>Fecha fin</label>
+                  <input type="date" value={modForm.fechaFin||""} onChange={e=>setModForm({...modForm,fechaFin:e.target.value,fechasClase:[]})} style={S.inp}/>
+                </div>
               </div>
               <div style={{marginBottom:13}}>
                 <label style={S.lbl}>Días de clase</label>
