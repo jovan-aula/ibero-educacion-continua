@@ -88,7 +88,7 @@ const ALL_PERMISOS = [
   {key:"gestionarUsuarios",   label:"Gestionar usuarios"},
   {key:"configurarNotif",     label:"Configurar notificaciones"},
   {key:"verReportes",         label:"Ver reportes / estadísticas"},
-  {key:"importarEstudiantes", label:"Importar estudiantes desde CRM"},
+  {key:"importarEstudiantes", label:"Importar / sincronizar estudiantes"},
   {key:"gestionarDocentes",   label:"Gestionar catálogo de docentes"},
 ];
 const ADMIN_P  = Object.fromEntries(ALL_PERMISOS.map(p=>[p.key,true]));
@@ -147,7 +147,7 @@ const calcPct = (est, modulos) => {
   if (!est || !modulos || !modulos.length) return null;
   // Usar fechas reales si existen, si no usar clases como fallback
   const total = modulos.reduce((a,m)=>{
-    const fechas = m.fechasClase&&m.fechasClase.length ? m.fechasClase.length : (m.clases||0);
+    const fechas = getFechasMod(m).length || (m.clases||0);
     return a + fechas;
   }, 0);
   if (!total) return null;
@@ -159,6 +159,13 @@ const calcPct = (est, modulos) => {
 };
 
 const RECARGO_PCT = 6;
+
+// Helper central — siempre usar fechasClase confirmadas, generar como fallback
+const getFechasMod = mod => {
+  if (mod.fechasClase && mod.fechasClase.length > 0) return mod.fechasClase;
+  if (!mod.fechaInicio || !mod.fechaFin) return [];
+  return generarFechasClase(mod.fechaInicio, mod.fechaFin, mod.dias, mod.clases);
+};
 
 // Calcula honorarios de un módulo según categoría del docente
 const calcHonorarios = (mod, docentes) => {
@@ -386,9 +393,7 @@ function ListaDocente({programas, onSave}) {
   const fmtHoy = () => { const d=new Date(); return d.getDate()+" de "+MESES_L[d.getMonth()]+" de "+d.getFullYear(); };
 
   // Calcular si hoy es día de clase
-  const fechasClase = mod.fechasClase&&mod.fechasClase.length
-    ? mod.fechasClase
-    : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+  const fechasClase = getFechasMod(mod);
   const esHoyClase = fechasClase.includes(hoy);
   const festivo = isFestivo(hoy);
   const numClaseHoy = fechasClase.indexOf(hoy)+1;
@@ -817,10 +822,10 @@ function PagoModal({est,prog,onSave,onClose}) {
         </div>
         <div style={{padding:"20px 24px"}}>
 
-          {/* Referencia GHL */}
+          {/* Monto de referencia al importar */}
           {est.monto_ghl>0&&(
             <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",marginBottom:8,fontFamily:"system-ui",fontSize:13}}>
-              <span style={{color:"#92400e"}}>Monto GHL (referencia): </span>
+              <span style={{color:"#92400e"}}>Monto de referencia al importar: </span>
               <strong style={{color:"#92400e"}}>{fmtMXN(est.monto_ghl)}</strong>
             </div>
           )}
@@ -1128,7 +1133,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
         </div>
         <div style={{padding:"20px 24px"}}>
-          {!hasApi&&<div style={{marginBottom:16,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",fontSize:13,color:"#92400e",fontFamily:"system-ui"}}>Modo simulación — configura credenciales en ⚙️ para usar tu CRM real.</div>}
+          {!hasApi&&<div style={{marginBottom:16,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",fontSize:13,color:"#92400e",fontFamily:"system-ui"}}>Modo demostración — configura las credenciales en ⚙️ Configuración para conectar tu cuenta real.</div>}
           {step==="filter"&&(
             <div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
@@ -1213,14 +1218,15 @@ function CalendarioView({programas}) {
     const evs=[];
     progs.forEach(prog=>{
       mods(prog).forEach(mod=>{
-        if (!mod.fechaInicio||!mod.fechaFin) return;
-        const ini=new Date(mod.fechaInicio+"T12:00:00"), fin=new Date(mod.fechaFin+"T12:00:00"), cur=new Date(ini);
-        while(cur<=fin){
-          const dm=cur.getMonth(),dy=cur.getFullYear(),dd=cur.getDate(),da=DIAS_S[(cur.getDay()+6)%7];
-          if(mod.dias&&mod.dias.includes(da)&&(fa==null||dy===fa)&&(fm==null||dm===fm)&&(fd==null||dd===fd))
-            evs.push({dia:dd,mes:dm,anio:dy,prog,mod});
-          cur.setDate(cur.getDate()+1);
-        }
+        if (!mod.fechaInicio&&!(mod.fechasClase&&mod.fechasClase.length)) return;
+        // Usar fechasClase confirmadas si existen, si no recalcular desde el rango
+        const fechas = getFechasMod(mod);
+        fechas.forEach(f=>{
+          const [ay,am,ad] = f.split("-").map(Number);
+          const da = DIAS_S[(new Date(f+"T12:00:00").getDay()+6)%7];
+          if((fa==null||ay===fa)&&(fm==null||am-1===fm)&&(fd==null||ad===fd))
+            evs.push({dia:ad,mes:am-1,anio:ay,prog,mod});
+        });
       });
     });
     return evs;
@@ -1602,6 +1608,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
 function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, onRegEval, onEnviarEval}) {
   const [selProgId, setSelProgId] = useState(null);
   const [selModId,  setSelModId]  = useState(null);
+  const [busqAsist, setBusqAsist] = useState("");
   const hoy = today();
 
   const prog = selProgId ? (programas||[]).find(p=>p.id===selProgId) : null;
@@ -1619,7 +1626,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
           const totalEst=ests(p).length;
           const modsActivos=mods(p).filter(m=>m.fechaInicio&&m.fechaFin);
           const modHoy=modsActivos.find(m=>{
-            const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+            const fechas=getFechasMod(m);
             return fechas.includes(hoy);
           });
           return(
@@ -1650,9 +1657,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
   const modulos = mods(prog);
   const estudiantes = ests(prog);
 
-  const getFechas = mod => mod.fechasClase&&mod.fechasClase.length
-    ? mod.fechasClase
-    : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+  const getFechas = getFechasMod;
 
   const presenteEnFecha = (est, modId, fecha) => {
     const v = est.asistencia&&est.asistencia["mod_"+modId];
@@ -1665,7 +1670,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
     if (!total) return null;
     const v = est.asistencia&&est.asistencia["mod_"+mod.id];
     const asist = Array.isArray(v) ? v.length : (v||0);
-    return Math.round(asist/total*100);
+    return Math.min(100, Math.round(asist/total*100));
   };
 
   const modActivo = selModId ? modulos.find(m=>m.id===selModId) : null;
@@ -1731,9 +1736,18 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
       {selModId&&modActivo&&(()=>{
         const fechas = getFechas(modActivo);
         const activos = estudiantes.filter(e=>e.estatus!=="baja");
+        const ql = busqAsist.toLowerCase().trim();
+        const activosFiltrados = ql
+          ? activos.filter(e=>
+              e.nombre?.toLowerCase().includes(ql)||
+              e.email?.toLowerCase().includes(ql)||
+              e.telefono?.includes(ql)||
+              e.empresa?.toLowerCase().includes(ql)
+            )
+          : activos;
         return(
           <div>
-            <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
               <div style={{flex:1}}>
                 <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4}}>
                   <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 9px",fontSize:12,fontWeight:800,fontFamily:"system-ui"}}>{modActivo.numero}</span>
@@ -1758,9 +1772,36 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
               </button>
             </div>
 
+            {/* Buscador de estudiante */}
+            <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+              <input
+                value={busqAsist}
+                onChange={e=>setBusqAsist(e.target.value)}
+                placeholder="Buscar estudiante por nombre, correo, teléfono o empresa..."
+                style={{...S.inp,flex:1,fontSize:13}}
+                autoComplete="off"
+              />
+              {busqAsist&&(
+                <button onClick={()=>setBusqAsist("")} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:12})}>
+                  Limpiar
+                </button>
+              )}
+              {busqAsist&&(
+                <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",whiteSpace:"nowrap"}}>
+                  {activosFiltrados.length} de {activos.length}
+                </span>
+              )}
+            </div>
+
             {fechas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin sesiones programadas. Configura las fechas de clase en el módulo.</div>}
 
-            {fechas.length>0&&(
+            {fechas.length>0&&activosFiltrados.length===0&&busqAsist&&(
+              <div style={{...S.card,padding:32,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>
+                Sin resultados para "<strong>{busqAsist}</strong>"
+              </div>
+            )}
+
+            {fechas.length>0&&(activosFiltrados.length>0||!busqAsist)&&(
               <div style={{...S.card,overflow:"hidden"}}>
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
@@ -1782,7 +1823,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
                       </tr>
                     </thead>
                     <tbody>
-                      {activos.map((e,ri)=>{
+                      {activosFiltrados.map((e,ri)=>{
                         const pct = pctEst(e,modActivo);
                         return(
                           <tr key={e.id} style={{borderBottom:"1px solid #f3f4f6",background:ri%2===0?"#fff":"#fafafa"}}>
@@ -1901,12 +1942,37 @@ export default function App() {
 
   useEffect(()=>{
     const s=localStorage.getItem(SK2); if(s) setSession(JSON.parse(s));
-    const p=localStorage.getItem(SK);  setProgramas(p?JSON.parse(p):INIT_DATA);
     const r=localStorage.getItem(RK);  setResp(r?JSON.parse(r):[]);
     const n=localStorage.getItem(NK);  setNotifCfg(n?JSON.parse(n):{apiKey:"",locationId:""});
     const u=localStorage.getItem(UK);  setUsers(u?JSON.parse(u):DEFAULT_USERS);
     const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
     const d=localStorage.getItem(DK);  setDocentes(d?JSON.parse(d):[]);
+
+    // Cargar programas y migrar módulos sin fechasClase
+    const rawP = localStorage.getItem(SK);
+    const programasRaw = rawP ? JSON.parse(rawP) : INIT_DATA;
+    let migrado = false;
+    const programasMigrados = programasRaw.map(prog=>({
+      ...prog,
+      modulos: (prog.modulos||[]).map(mod=>{
+        if(mod.fechasClase&&mod.fechasClase.length>0) return mod; // ya tiene fechas
+        if(!mod.fechaInicio||!mod.fechaFin) return mod; // sin datos suficientes
+        const fechasClase = generarFechasClase(mod.fechaInicio, mod.fechaFin, mod.dias, mod.clases);
+        if(!fechasClase.length) return mod;
+        migrado = true;
+        return {
+          ...mod,
+          fechasClase,
+          fechaInicio: fechasClase[0],
+          fechaFin:    fechasClase[fechasClase.length-1],
+        };
+      })
+    }));
+    if(migrado){
+      // Guardar la versión migrada
+      localStorage.setItem(SK, JSON.stringify(programasMigrados));
+    }
+    setProgramas(programasMigrados);
     setReady(true);
   },[]);
 
@@ -2129,9 +2195,7 @@ export default function App() {
     // Recopilar todas las fechas de clase por módulo
     const todasFechas = [];
     ms.forEach(mod => {
-      const fechas = mod.fechasClase&&mod.fechasClase.length
-        ? mod.fechasClase
-        : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+      const fechas = getFechasMod(mod);
       fechas.forEach(f=>todasFechas.push({fecha:f,mod}));
     });
     todasFechas.sort((a,b)=>a.fecha.localeCompare(b.fecha));
@@ -2190,7 +2254,7 @@ export default function App() {
     </tr></thead><tbody>`;
     ms.forEach(m=>{
       const totalH=(m.clases||0)*(m.horasPorClase||0);
-      const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+      const fechas=getFechasMod(m);
       html+=`<tr>
         <td><span class="badge" style="background:${modColor[m.id]};color:#fff">${m.numero}</span></td>
         <td style="font-weight:600">${m.nombre}</td>
@@ -2302,8 +2366,21 @@ export default function App() {
   const openEditMod= m=>{setModForm({...m});setEditMod(m.id);setShowModM(true);};
   const saveMod = ()=>{
     if(!modForm.nombre||!modForm.fechaInicio||!modForm.fechaFin){notify("Completa nombre y fechas","error");return;}
-    save((programas||[]).map(p=>p.id===selProg?{...p,modulos:editMod?mods(p).map(m=>m.id===editMod?modForm:m):[...mods(p),modForm]}:p));
-    setShowModM(false);notify(editMod?"Módulo actualizado":"Módulo agregado");
+    // Auto-generar fechasClase si no se confirmaron manualmente
+    let modFinal = {...modForm};
+    if(!modFinal.fechasClase||modFinal.fechasClase.length===0){
+      if(modFinal.fechaInicio&&modFinal.fechaFin&&modFinal.dias&&modFinal.dias.length){
+        modFinal.fechasClase = generarFechasClase(modFinal.fechaInicio,modFinal.fechaFin,modFinal.dias,modFinal.clases);
+      }
+    }
+    // Sincronizar fechaInicio y fechaFin con la primera y última fecha real
+    if(modFinal.fechasClase&&modFinal.fechasClase.length>0){
+      modFinal.fechaInicio = modFinal.fechasClase[0];
+      modFinal.fechaFin    = modFinal.fechasClase[modFinal.fechasClase.length-1];
+    }
+    save((programas||[]).map(p=>p.id===selProg?{...p,modulos:editMod?mods(p).map(m=>m.id===editMod?modFinal:m):[...mods(p),modFinal]}:p));
+    setShowModM(false);
+    notify((editMod?"Módulo actualizado":"Módulo agregado")+(modFinal.fechasClase?.length?" · "+modFinal.fechasClase.length+" fechas confirmadas":""));
   };
   const delMod  = id=>{save((programas||[]).map(p=>p.id===selProg?{...p,modulos:mods(p).filter(m=>m.id!==id)}:p));notify("Módulo eliminado","warning");};
   const openNewProg=()=>{setProgForm({...eProg,id:newId()});setEditProgId(null);setShowProgM(true);};
@@ -2383,9 +2460,7 @@ export default function App() {
           const modulosHoy = [];
           (programas||[]).forEach(prog=>{
             mods(prog).forEach(mod=>{
-              const fechas = mod.fechasClase&&mod.fechasClase.length
-                ? mod.fechasClase
-                : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+              const fechas = getFechasMod(mod);
               if(fechas.includes(hoy)) modulosHoy.push({prog,mod,fechas});
             });
           });
@@ -2694,7 +2769,7 @@ export default function App() {
                       </div>
                     );
                   })}
-                  {ests(prog).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:48,fontFamily:"system-ui"}}>Sin estudiantes. Importa desde tu CRM.</div>}
+                  {ests(prog).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:48,fontFamily:"system-ui"}}>Sin estudiantes. Usa el botón Importar / Sincronizar para agregarlos.</div>}
                 </div>
               </div>
             )}
@@ -2715,7 +2790,7 @@ export default function App() {
                         <tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
                           <th style={{textAlign:"left",padding:"12px 16px",fontWeight:700,color:"#374151",fontSize:12,position:"sticky",left:0,background:"#f9f9f9"}}>Estudiante</th>
                           {mods(prog).map(m=>{
-                            const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+                            const fechas=getFechasMod(m);
                             return(<th key={m.id} style={{padding:"10px 12px",fontWeight:700,color:"#374151",fontSize:11,textAlign:"center",whiteSpace:"nowrap",minWidth:90}}>
                               {m.numero}<br/>
                               <span style={{fontWeight:400,color:"#9ca3af",fontSize:10}}>{fechas.length} sesiones</span>
@@ -2739,7 +2814,7 @@ export default function App() {
                                 const v=e.asistencia&&e.asistencia[k];
                                 // Leer como array de fechas (sistema nuevo) o número (sistema viejo)
                                 const asist=Array.isArray(v)?v.length:(v||0);
-                                const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+                                const fechas=getFechasMod(m);
                                 const max=fechas.length||m.clases||0;
                                 const pm=max?Math.round(asist/max*100):0;
                                 return(
@@ -2766,7 +2841,7 @@ export default function App() {
                           <td style={{padding:"10px 16px",fontSize:12,color:"#6b7280",position:"sticky",left:0,background:"#f9f9f9"}}>PROMEDIO GRUPO</td>
                           {mods(prog).map(m=>{
                             const activos=ests(prog).filter(e=>e.estatus!=="baja");
-                            const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+                            const fechas=getFechasMod(m);
                             const max=fechas.length||m.clases||0;
                             const promG=activos.length&&max?Math.min(100,Math.round(activos.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+m.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/activos.length/max*100)):0;
                             return(<td key={m.id} style={{padding:"10px 12px",textAlign:"center"}}>
@@ -3080,7 +3155,7 @@ export default function App() {
                               const k="mod_"+mod.id;
                               const v=est.asistencia&&est.asistencia[k];
                               const asist=Array.isArray(v)?v.length:(v||0);
-                              const fechas=mod.fechasClase&&mod.fechasClase.length?mod.fechasClase:generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+                              const fechas=getFechasMod(mod);
                               const totalSes=fechas.length||mod.clases||0;
                               return{mod,asist,totalSes};
                             }).filter(x=>x.totalSes>0);
@@ -3972,7 +4047,7 @@ export default function App() {
             )}
             {can(session,"configurarNotif")&&(<>
               <div style={{...S.card,padding:24,marginBottom:20}}>
-                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>CONFIGURACIÓN DE NOTIFICACIONES Y CRM</div>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>CONFIGURACIÓN DE NOTIFICACIONES E INTEGRACIÓN</div>
                 <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Credenciales para envío de correos e importación de estudiantes.</p>
                 {[["API Key","apiKey"],["Account ID","locationId"]].map(([l,k])=>(
                   <div key={k} style={{marginBottom:14}}><label style={S.lbl}>{l}</label><div style={{position:"relative"}}><input type={k==="apiKey"&&!showApiKey?"password":"text"} value={notifCfg[k]||""} onChange={e=>setNotifCfg({...notifCfg,[k]:e.target.value})} placeholder={k==="apiKey"?"••••••••":"ID de cuenta"} style={{...S.inp,paddingRight:k==="apiKey"?80:12}}/>{k==="apiKey"&&<button onClick={()=>setShowAK(!showApiKey)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:12,fontFamily:"system-ui"}}>{showApiKey?"Ocultar":"Mostrar"}</button>}</div></div>
@@ -3981,7 +4056,7 @@ export default function App() {
               </div>
               <div style={{...S.card,padding:24,marginBottom:20}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>CAMPOS PERSONALIZADOS A IMPORTAR</div>
-                <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Pega la Clave Única del campo en GHL y asígnale una etiqueta.</p>
+                <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Pega la Clave Única del campo del CRM y asígnale una etiqueta.</p>
                 {(fieldMap||[]).map((f,i)=>(
                   <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,fontFamily:"system-ui"}}>
                     <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{f.label}</div><div style={{fontSize:12,color:"#9ca3af",fontFamily:"monospace"}}>{f.id}</div></div>
