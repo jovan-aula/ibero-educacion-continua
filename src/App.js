@@ -1877,6 +1877,9 @@ export default function App() {
   const [filtroPagos,setFiltroPagos] = useState("");
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
+  const [evalTab,setEvalTab]           = useState("modulos");
+  const [filtroDocEval,setFiltroDocEval]   = useState("");
+  const [filtroProgEval,setFiltroProgEval] = useState("");
   const [editEstModal,setEditEstModal] = useState(null);
   const [npsModal,setNpsModal]         = useState(null);
   const [npsData,setNpsData]           = useState(()=>{try{return JSON.parse(localStorage.getItem("ibero_nps")||"[]");}catch(e){return[];}});
@@ -3238,9 +3241,7 @@ export default function App() {
 
         {/* EVALUACIONES */}
         {view==="evaluaciones"&&(()=>{
-          const [evalTab,setEvalTab]       = useState("modulos");
-          const [filtroDocEval,setFiltroDocEval] = useState("");
-          const [filtroProgEval,setFiltroProgEval] = useState("");
+          // estados al nivel del App: evalTab, filtroDocEval, filtroProgEval
 
           const DIM_LABELS = ["Expectativas","Relevancia","Aplicación","Didáctica","Dominio"];
           const DIM_KEYS   = ["q1","q2","q3","q4","q5"];
