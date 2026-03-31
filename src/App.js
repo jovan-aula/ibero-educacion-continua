@@ -1595,7 +1595,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
 }
 
 // ─── ASISTENCIA GLOBAL ────────────────────────────────
-function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) {
+function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, onRegEval, onEnviarEval}) {
   const [selProgId, setSelProgId] = useState(null);
   const [selModId,  setSelModId]  = useState(null);
   const hoy = today();
@@ -1744,11 +1744,11 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
               <button onClick={()=>generarLink(prog.id,modActivo.id)} style={S.btn(linkCopiado===prog.id+"_"+modActivo.id?"#f0fdf4":"#f3f4f6",linkCopiado===prog.id+"_"+modActivo.id?"#16a34a":"#374151",{fontSize:12,padding:"6px 14px",border:"1px solid "+(linkCopiado===prog.id+"_"+modActivo.id?"#bbf7d0":"#e5e7eb")})}>
                 {linkCopiado===prog.id+"_"+modActivo.id?"Enlace copiado":"Copiar enlace docente"}
               </button>
-              <button onClick={()=>enviarEvalPorCorreo(prog.id,modActivo.id)}
+              <button onClick={()=>onEnviarEval&&onEnviarEval(prog.id,modActivo.id)}
                 style={S.btn("#f5f3ff","#7c3aed",{fontSize:12,padding:"6px 14px",border:"1px solid #ddd6fe"})}>
                 ✉ Enviar evaluación
               </button>
-              <button onClick={()=>setNpsModal({prog,mod:modActivo})}
+              <button onClick={()=>onRegEval&&onRegEval({prog,mod:modActivo})}
                 style={S.btn("#eff6ff","#2563eb",{fontSize:12,padding:"6px 14px",border:"1px solid #bfdbfe"})}>
                 Registrar respuestas
               </button>
@@ -2368,7 +2368,7 @@ export default function App() {
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
         {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas} npsData={npsData} setCS={setCS}/>}
-        {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado} onToggleAsist={toggleAsistFecha}/>}
+        {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado} onToggleAsist={toggleAsistFecha} onRegEval={({prog,mod})=>setNpsModal({prog,mod})} onEnviarEval={enviarEvalPorCorreo}/>}
 
         {/* VISTA HOY */}
         {view==="hoy"&&(()=>{
