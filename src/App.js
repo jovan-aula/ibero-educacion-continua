@@ -145,13 +145,17 @@ const progStatus = p => {
 
 const calcPct = (est, modulos) => {
   if (!est || !modulos || !modulos.length) return null;
-  const total = modulos.reduce((a,m)=>a+(m.clases||0), 0);
+  // Usar fechas reales si existen, si no usar clases como fallback
+  const total = modulos.reduce((a,m)=>{
+    const fechas = m.fechasClase&&m.fechasClase.length ? m.fechasClase.length : (m.clases||0);
+    return a + fechas;
+  }, 0);
   if (!total) return null;
   const asist = modulos.reduce((a,m)=>{
     const v = est.asistencia && est.asistencia["mod_"+m.id];
-    return a + (v || 0);
+    return a + (Array.isArray(v) ? v.length : (v||0));
   }, 0);
-  return Math.round(asist/total*100);
+  return Math.min(100, Math.round(asist/total*100)); // cap a 100% por seguridad
 };
 
 const RECARGO_PCT = 6;
@@ -1692,7 +1696,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
               const numHoy = fechas.indexOf(hoy)+1;
               const presHoy = sesionHoy ? estudiantes.filter(e=>presenteEnFecha(e,mod.id,hoy)).length : null;
               const progGrupal = fechas.length>0
-                ? Math.round(estudiantes.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+mod.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/(fechas.length*estudiantes.length||1)*100)
+                ? Math.min(100, Math.round(estudiantes.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+mod.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/(fechas.length*estudiantes.length||1)*100))
                 : null;
               return(
                 <div key={mod.id} style={{...S.card,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+(sesionHoy?"#16a34a":mod.estatus==="confirmado"?"#2563eb":"#e5e7eb")}}
@@ -2764,7 +2768,7 @@ export default function App() {
                             const activos=ests(prog).filter(e=>e.estatus!=="baja");
                             const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
                             const max=fechas.length||m.clases||0;
-                            const promG=activos.length&&max?Math.round(activos.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+m.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/activos.length/max*100):0;
+                            const promG=activos.length&&max?Math.min(100,Math.round(activos.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+m.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/activos.length/max*100)):0;
                             return(<td key={m.id} style={{padding:"10px 12px",textAlign:"center"}}>
                               <span style={{fontSize:12,fontWeight:700,color:promG>=80?"#16a34a":"#dc2626"}}>{promG}%</span>
                             </td>);
