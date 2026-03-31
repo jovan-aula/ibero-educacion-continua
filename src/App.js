@@ -518,6 +518,71 @@ function ListaDocente({programas, onSave}) {
 
 // ─── IMPORT MODAL ─────────────────────────────────────
 // ─── MODAL DE PAGO POR ESTUDIANTE ─────────────────────
+const NPS_PREGUNTAS = [
+  {key:"q1",texto:"¿El módulo cumplió mis expectativas?"},
+  {key:"q2",texto:"¿Los contenidos fueron relevantes para mis objetivos?"},
+  {key:"q3",texto:"¿Puedo aplicar al menos una herramienta/idea de manera inmediata?"},
+  {key:"q4",texto:"¿La didáctica del docente (claridad, ritmo, actividades) facilitó mi aprendizaje?"},
+  {key:"q5",texto:"¿El docente demostró dominio actualizado del tema y resolvió dudas con paciencia?"},
+];
+
+function NPSModal({prog, mod, onSave, onClose}) {
+  const [resp,setResp] = useState({q1:null,q2:null,q3:null,q4:null,q5:null,comentarios:""});
+  const completo = [resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].every(v=>v!==null);
+  const promedio = completo ? Math.round([resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].reduce((a,b)=>a+b,0)/5*10)/10 : null;
+  const colorProm = promedio ? (promedio>=4?"#16a34a":promedio>=3?"#d97706":"#dc2626") : "#9ca3af";
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+        <div style={{background:RED,padding:"16px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:"#fff",fontFamily:"Georgia,serif"}}>Evaluación del módulo</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.8)",fontFamily:"system-ui",marginTop:2}}>{mod.nombre} · {mod.docente||"Sin docente"}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"rgba(255,255,255,0.8)"}}>×</button>
+        </div>
+        <div style={{padding:"20px 24px"}}>
+          <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:18,background:"#f9f9f9",borderRadius:6,padding:"10px 14px"}}>
+            <strong>1</strong> = Totalmente en desacuerdo &nbsp;·&nbsp; <strong>5</strong> = Totalmente de acuerdo
+          </div>
+          {NPS_PREGUNTAS.map(({key,texto},i)=>(
+            <div key={key} style={{marginBottom:16,paddingBottom:16,borderBottom:i<4?"1px solid #f3f4f6":"none"}}>
+              <div style={{fontFamily:"system-ui",fontSize:13,fontWeight:600,color:"#1a1a1a",marginBottom:8}}>{i+1}. {texto}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",minWidth:70}}>En desacuerdo</span>
+                {[1,2,3,4,5].map(v=>(
+                  <button key={v} onClick={()=>setResp({...resp,[key]:v})}
+                    style={{width:36,height:36,borderRadius:6,border:"2px solid "+(resp[key]===v?RED:"#e5e7eb"),background:resp[key]===v?RED:"#fff",color:resp[key]===v?"#fff":"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"system-ui"}}>
+                    {v}
+                  </button>
+                ))}
+                <span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",minWidth:56}}>De acuerdo</span>
+              </div>
+            </div>
+          ))}
+          <div style={{marginBottom:16}}>
+            <label style={S.lbl}>Comentarios (opcional)</label>
+            <textarea value={resp.comentarios} onChange={e=>setResp({...resp,comentarios:e.target.value})} placeholder="Observaciones sobre el módulo o el docente..." rows={3} style={{...S.inp,resize:"vertical",lineHeight:1.6}}/>
+          </div>
+          {promedio!==null&&(
+            <div style={{background:"#f9f9f9",border:"1px solid #e5e7eb",borderRadius:8,padding:"12px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontFamily:"system-ui",fontSize:13,color:"#374151",fontWeight:600}}>Promedio del módulo</span>
+              <span style={{fontFamily:"system-ui",fontSize:24,fontWeight:800,color:colorProm}}>{promedio}/5</span>
+            </div>
+          )}
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick={onClose} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
+            <button onClick={()=>{if(completo){onSave(resp);onClose();}}} disabled={!completo}
+              style={S.btn(completo?RED:"#e5e7eb",completo?"#fff":"#9ca3af")}>
+              {completo?"Guardar evaluación":"Responde todas las preguntas"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditEstModal({est,prog,onSave,onClose}) {
   const [form,setForm] = useState({...est});
   const guardar = () => { onSave(form); onClose(); };
@@ -1202,7 +1267,7 @@ function CalendarioView({programas}) {
 }
 
 // ─── DOCENTES ─────────────────────────────────────────
-function DocentesView({docentes,saveDocentes,programas}) {
+function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const [showM,setShowM]   = useState(false);
   const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""});
   const [editId,setEditId] = useState(null);
@@ -1276,6 +1341,54 @@ function DocentesView({docentes,saveDocentes,programas}) {
                       </div>
                     </div>
                   )}
+                  {/* EVALUACIONES NPS DEL DOCENTE */}
+                  {(()=>{
+                    const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
+                    if(!evals.length)return null;
+                    const prom=Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10;
+                    const cp=prom>=4?"#16a34a":prom>=3?"#d97706":"#dc2626";
+                    const dimLabels=["Expect.","Relevancia","Aplicación","Didáctica","Dominio"];
+                    return(
+                      <div style={{marginTop:12,padding:"12px 14px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px"}}>EVALUACIONES NPS · {evals.length} módulo{evals.length!==1?"s":""}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Promedio:</span>
+                            <span style={{fontSize:20,fontWeight:800,color:cp,fontFamily:"system-ui"}}>{prom}<span style={{fontSize:12,color:"#9ca3af"}}>/5</span></span>
+                          </div>
+                        </div>
+                        {/* Promedios por dimensión */}
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                          {dimLabels.map((l,i)=>{
+                            const key="q"+(i+1);
+                            const dim=Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10;
+                            const cd=dim>=4?"#16a34a":dim>=3?"#d97706":"#dc2626";
+                            return(
+                              <div key={key} style={{textAlign:"center",minWidth:56}}>
+                                <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",marginBottom:2}}>{l.toUpperCase()}</div>
+                                <div style={{fontSize:15,fontWeight:800,color:cd,fontFamily:"system-ui"}}>{dim}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Lista de evaluaciones */}
+                        <div style={{display:"grid",gap:4}}>
+                          {evals.slice().reverse().map((e,i)=>(
+                            <div key={e.id||i} style={{display:"flex",gap:8,alignItems:"center",fontSize:11,fontFamily:"system-ui",padding:"5px 0",borderTop:i>0?"1px solid #f3f4f6":"none"}}>
+                              <div style={{flex:1,color:"#374151"}}><span style={{fontWeight:600}}>{e.mod||"Módulo"}</span><span style={{color:"#9ca3af",marginLeft:6}}>{e.prog}</span></div>
+                              <div style={{display:"flex",gap:4}}>
+                                {["q1","q2","q3","q4","q5"].map(q=>(
+                                  <div key={q} style={{width:18,height:18,borderRadius:3,background:e[q]>=4?"#dcfce7":e[q]>=3?"#fef9c3":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:e[q]>=4?"#16a34a":e[q]>=3?"#d97706":"#dc2626"}}>{e[q]}</div>
+                                ))}
+                                <div style={{width:24,height:18,borderRadius:3,background:e.promedio>=4?"#16a34a":e.promedio>=3?"#d97706":"#dc2626",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:"#fff"}}>{e.promedio}</div>
+                              </div>
+                              {e.fecha&&<span style={{color:"#9ca3af",minWidth:64,textAlign:"right"}}>{fmtFecha(e.fecha)}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0}}>
                   <button onClick={()=>openEdit(doc)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>
@@ -1634,6 +1747,8 @@ export default function App() {
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [editEstModal,setEditEstModal] = useState(null);
+  const [npsModal,setNpsModal]         = useState(null);
+  const [npsData,setNpsData]           = useState(()=>{try{return JSON.parse(localStorage.getItem("ibero_nps")||"[]");}catch(e){return[];}});
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -1671,6 +1786,51 @@ export default function App() {
   const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),4500);};
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
   const logout    = ()=>{localStorage.removeItem(SK2);setSession(null);setView("lista");};
+
+  const abrirCorreo = (tipo, est, prog) => {
+    const mf  = ((est.pago?.monto_acordado||0)*(1-(est.pago?.descuento_pct||0)/100));
+    const n   = (est.pago?.parcialidades||[]).length;
+    const mp  = n ? mf/n : 0;
+    const pendientes = (est.pago?.parcialidades||[]).filter(x=>!x.pagado);
+    const proxima    = pendientes.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento>=today()).sort((a,b)=>a.fecha_vencimiento.localeCompare(b.fecha_vencimiento))[0];
+    const vencidas   = pendientes.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento<today());
+    const gen        = prog.generacion ? ` (${prog.generacion} generación)` : "";
+    const firma      = "\n\nAtentamente,\n[Tu nombre]\nCoordinación de Educación Continua — IBERO Tijuana\nTel: 664 630 1577 Ext. 2576 | WhatsApp: 664 764 1119";
+    let subject="", body="";
+    if(tipo==="proximo"){
+      subject = `Recordatorio de pago — ${prog.nombre}`;
+      body = [`Estimado/a ${est.nombre},`,``,`Esperamos que estés aprovechando al máximo el ${prog.nombre}${gen}.`,``,`Te recordamos que tienes una parcialidad próxima a vencer:`,``,`  • Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya realizaste tu pago, ignora este mensaje o escríbenos para confirmarlo.`,firma].join("\n");
+    } else if(tipo==="vencido"){
+      const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
+      const totalPend = mp*vencidas.length;
+      subject = `Aviso de pago vencido — ${prog.nombre}`;
+      body = [`Estimado/a ${est.nombre},`,``,`Nos comunicamos contigo porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en el programa ${prog.nombre}${gen}.`,``,`  • Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos.`,``,`Si tienes alguna situación especial, con gusto podemos coordinarnos.`,firma].join("\n");
+    }
+    window.open(`mailto:${est.email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
+  };
+
+  const abrirEvaluacion = (tipo, est, prog, mod) => {
+    const url = tipo==="modulo"
+      ? "https://www.educon.iberotijuana.edu.mx/evaluaciones_parciales"
+      : "https://www.educon.iberotijuana.edu.mx/evaluaciones";
+    const gen = prog.generacion ? ` (${prog.generacion} generación)` : "";
+    const subject = tipo==="modulo"
+      ? `Tu evaluación del módulo: ${mod?.nombre||""}`
+      : `Evaluación final — ${prog.nombre}`;
+    const body = [`Estimado/a ${est.nombre},`,``,tipo==="modulo"?`Hemos concluido el módulo "${mod?.nombre||""}" del programa ${prog.nombre}${gen}. Nos interesa conocer tu experiencia.`:`Hemos concluido el programa ${prog.nombre}${gen}. Tu opinión es fundamental para nosotros.`,``,`Por favor dedica unos minutos a completar la evaluación (5 preguntas):`,``,url,``,`¡Muchas gracias por tu participación!`,``,`Atentamente,`,`[Tu nombre]`,`Coordinación de Educación Continua — IBERO Tijuana`].join("\n");
+    window.open(`mailto:${est.email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
+  };
+
+  const saveNPS = (progId, modId, docenteId, docenteNombre, respuestas) => {
+    const progObj = (programas||[]).find(p=>p.id===progId);
+    const modObj  = mods(progObj||{}).find(m=>m.id===modId);
+    const vals = [respuestas.q1,respuestas.q2,respuestas.q3,respuestas.q4,respuestas.q5].filter(Boolean);
+    const nueva = {id:newId(),fecha:today(),progId,modId,docenteId,docenteNombre,prog:progObj?.nombre||"",mod:modObj?.nombre||"",...respuestas,promedio:vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10:0};
+    const d = [...npsData, nueva];
+    localStorage.setItem("ibero_nps", JSON.stringify(d));
+    setNpsData(d);
+    notify("Evaluación guardada.");
+  };
 
   const generarLink = (progId,modId) => {
     const token=btoa(JSON.stringify({progId,modId}));
@@ -2015,7 +2175,7 @@ export default function App() {
       <div style={{maxWidth:980,margin:"0 auto",padding:"32px 20px"}}>
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
-        {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas}/>}
+        {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas} npsData={npsData} setCS={setCS}/>}
         {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado} onToggleAsist={toggleAsistFecha}/>}
 
         {/* VISTA HOY */}
@@ -2244,6 +2404,7 @@ export default function App() {
                             <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:conf?"#f0fdf4":"#fffbeb",color:conf?"#16a34a":"#d97706",fontWeight:700,fontFamily:"system-ui",border:"1px solid "+(conf?"#bbf7d0":"#fde68a")}}>{conf?"Confirmado":"Propuesta"}</span>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                               {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
+                              {m.docente&&<button onClick={()=>setNpsModal({prog,mod:m})} style={S.btn("#eff6ff","#2563eb",{border:"1px solid #bfdbfe",padding:"5px 11px",fontSize:12})}>Registrar evaluación</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
                             </div>
@@ -2772,6 +2933,17 @@ export default function App() {
                                     <div style={{padding:"10px 28px",display:"flex",gap:8,flexWrap:"wrap",borderBottom:"1px solid #f3f4f6",alignItems:"center"}}>
                                       <button onClick={e=>{e.stopPropagation();setEditEstModal({est,prog});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar datos</button>
                                       {!esInactivo&&<button onClick={e=>{e.stopPropagation();setPagoModal({est,prog});}} style={S.btn(estado==="critico"||estado==="vencido"?RED:"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"5px 12px",fontSize:12})}>{mf===0?"Configurar pago":"Editar pago"}</button>}
+                                      {/* Correos mailto */}
+                                      {est.email&&!esInactivo&&(estado==="pendiente"||estado==="ok")&&(p.parcialidades||[]).some(x=>!x.pagado&&x.fecha_vencimiento>=today())&&(
+                                        <button onClick={e=>{e.stopPropagation();abrirCorreo("proximo",est,prog);}} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>✉ Recordatorio pago</button>
+                                      )}
+                                      {est.email&&!esInactivo&&(estado==="vencido"||estado==="critico")&&(
+                                        <button onClick={e=>{e.stopPropagation();abrirCorreo("vencido",est,prog);}} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>✉ Aviso vencido</button>
+                                      )}
+                                      {/* Evaluación de diplomado */}
+                                      {est.email&&(
+                                        <button onClick={e=>{e.stopPropagation();abrirEvaluacion("diplomado",est,prog,null);}} style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 12px",fontSize:12,border:"1px solid #ddd6fe"})}>✉ Eval. diplomado</button>
+                                      )}
                                       {/* Botón Activo / Inactivo */}
                                       {esInactivo
                                         ?<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"activo");}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
@@ -3398,6 +3570,7 @@ export default function App() {
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
       {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
+      {npsModal&&<NPSModal prog={npsModal.prog} mod={npsModal.mod} onSave={resp=>saveNPS(npsModal.prog.id,npsModal.mod.id,npsModal.mod.docenteId||"",npsModal.mod.docente||"",resp)} onClose={()=>setNpsModal(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
       {showModM&&(
