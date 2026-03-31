@@ -1480,7 +1480,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                       </div>
                     </div>
                   )}
-                  {/* EVALUACIONES NPS DEL DOCENTE */}
+                  {/* EVALUACIONES NPS — resumen en tarjeta, detalle en sección Evaluaciones */}
                   {(()=>{
                     const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
                     if(!evals.length)return null;
@@ -1488,42 +1488,26 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                     const cp=prom>=4?"#16a34a":prom>=3?"#d97706":"#dc2626";
                     const dimLabels=["Expect.","Relevancia","Aplicación","Didáctica","Dominio"];
                     return(
-                      <div style={{marginTop:12,padding:"12px 14px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px"}}>EVALUACIONES NPS · {evals.length} módulo{evals.length!==1?"s":""}</div>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Promedio:</span>
-                            <span style={{fontSize:20,fontWeight:800,color:cp,fontFamily:"system-ui"}}>{prom}<span style={{fontSize:12,color:"#9ca3af"}}>/5</span></span>
+                      <div style={{marginTop:12,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",fontWeight:700,marginBottom:2}}>EVALUACIONES</div>
+                            <div style={{fontSize:22,fontWeight:800,color:cp,fontFamily:"system-ui",lineHeight:1}}>{prom}<span style={{fontSize:11,color:"#9ca3af"}}>/5</span></div>
+                            <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>{evals.length} módulo{evals.length!==1?"s":""}</div>
                           </div>
                         </div>
-                        {/* Promedios por dimensión */}
-                        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                        <div style={{display:"flex",gap:10,flexWrap:"wrap",flex:1}}>
                           {dimLabels.map((l,i)=>{
                             const key="q"+(i+1);
                             const dim=Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10;
                             const cd=dim>=4?"#16a34a":dim>=3?"#d97706":"#dc2626";
                             return(
-                              <div key={key} style={{textAlign:"center",minWidth:56}}>
-                                <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",marginBottom:2}}>{l.toUpperCase()}</div>
-                                <div style={{fontSize:15,fontWeight:800,color:cd,fontFamily:"system-ui"}}>{dim}</div>
+                              <div key={key} style={{textAlign:"center"}}>
+                                <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",marginBottom:1}}>{l.toUpperCase()}</div>
+                                <div style={{fontSize:14,fontWeight:800,color:cd,fontFamily:"system-ui"}}>{dim}</div>
                               </div>
                             );
                           })}
-                        </div>
-                        {/* Lista de evaluaciones */}
-                        <div style={{display:"grid",gap:4}}>
-                          {evals.slice().reverse().map((e,i)=>(
-                            <div key={e.id||i} style={{display:"flex",gap:8,alignItems:"center",fontSize:11,fontFamily:"system-ui",padding:"5px 0",borderTop:i>0?"1px solid #f3f4f6":"none"}}>
-                              <div style={{flex:1,color:"#374151"}}><span style={{fontWeight:600}}>{e.mod||"Módulo"}</span><span style={{color:"#9ca3af",marginLeft:6}}>{e.prog}</span></div>
-                              <div style={{display:"flex",gap:4}}>
-                                {["q1","q2","q3","q4","q5"].map(q=>(
-                                  <div key={q} style={{width:18,height:18,borderRadius:3,background:e[q]>=4?"#dcfce7":e[q]>=3?"#fef9c3":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:e[q]>=4?"#16a34a":e[q]>=3?"#d97706":"#dc2626"}}>{e[q]}</div>
-                                ))}
-                                <div style={{width:24,height:18,borderRadius:3,background:e.promedio>=4?"#16a34a":e.promedio>=3?"#d97706":"#dc2626",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:"#fff"}}>{e.promedio}</div>
-                              </div>
-                              {e.fecha&&<span style={{color:"#9ca3af",minWidth:64,textAlign:"right"}}>{fmtFecha(e.fecha)}</span>}
-                            </div>
-                          ))}
                         </div>
                       </div>
                     );
@@ -2110,10 +2094,25 @@ export default function App() {
   };
 
   const exportDocente = prog=>{
-    const rows=ests(prog).map(e=>({Nombre:e.nombre||"",Empresa:e.empresa||"",Puesto:e.puesto||e["Puesto"]||""}));
+    const rows=ests(prog).filter(e=>e.estatus!=="baja").map(e=>({
+      "Nombre":            e.nombre||"",
+      "Correo":            e.email||"",
+      "Teléfono":          e.telefono||"",
+      "Empresa":           e.empresa||"",
+      "Puesto":            e.puesto||"",
+      "Carrera":           e.carrera||"",
+      "Último grado":      e.grado||"",
+      "Egresado IBERO":    e.egresado_ibero||"",
+      "Requiere factura":  e.requiere_factura||"",
+    }));
     if(!rows.length)return;
-    const hdr=["Nombre","Empresa","Puesto"],csv=[hdr.join(","),...rows.map(r=>hdr.map(h=>'"'+(r[h]||"").replace(/"/g,'""')+'"').join(","))].join("\n");
-    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));a.download="Lista_"+prog.nombre.replace(/\s+/g,"_")+".csv";a.click();notify("Lista para docente exportada.");
+    const hdr=Object.keys(rows[0]);
+    const csv=[hdr.join(","),...rows.map(r=>hdr.map(h=>'"'+(r[h]||"").toString().replace(/"/g,'""')+'"').join(","))].join("\n");
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+    a.download="Lista_"+prog.nombre.replace(/\s+/g,"_")+".csv";
+    a.click();
+    notify("Lista exportada con campos completos.");
   };
 
   const exportPDF = prog => {
@@ -2325,7 +2324,7 @@ export default function App() {
         <div style={{color:"rgba(255,255,255,0.9)",fontSize:13,fontFamily:"system-ui"}}>Educación Continua</div>
         <div style={{flex:1}}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-          {[["lista","Programas"],["hoy","Hoy"],["calendario","Calendario"],["asistencia","Asistencia"],["pagos_global","Pagos"],["docentes","Docentes"],["reportes","Reportes"]].map(([v,l])=>(
+          {[["lista","Programas"],["hoy","Hoy"],["calendario","Calendario"],["asistencia","Asistencia"],["pagos_global","Pagos"],["docentes","Docentes"],["evaluaciones","Evaluaciones"],["reportes","Reportes"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view===v?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>{l}</button>
           ))}
           <div style={{width:1,height:24,background:"rgba(255,255,255,0.25)",margin:"0 6px"}}/>
@@ -2594,15 +2593,6 @@ export default function App() {
                             <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:conf?"#f0fdf4":"#fffbeb",color:conf?"#16a34a":"#d97706",fontWeight:700,fontFamily:"system-ui",border:"1px solid "+(conf?"#bbf7d0":"#fde68a")}}>{conf?"Confirmado":"Propuesta"}</span>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                               {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
-                              {/* Evaluación de módulo */}
-                              <button onClick={()=>generarEnlaceEval(prog.id,m.id)}
-                                style={S.btn(linkCopiado==="eval_"+prog.id+"_"+m.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+m.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+m.id?"#bbf7d0":"#e5e7eb")})}>
-                                {linkCopiado==="eval_"+prog.id+"_"+m.id?"Enlace copiado":"Copiar enlace eval."}
-                              </button>
-                              <button onClick={()=>enviarEvalPorCorreo(prog.id,m.id)}
-                                style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
-                                ✉ Enviar a estudiantes
-                              </button>
                               {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
                             </div>
@@ -2623,7 +2613,7 @@ export default function App() {
                   <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{ests(prog).length} estudiantes</div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     {can(session,"importarEstudiantes")&&<button onClick={()=>setShowImp(true)} style={S.btn(RED,"#fff")}>Importar / Sincronizar</button>}
-                    {ests(prog).length>0&&<><button onClick={()=>exportCSV(prog)} style={S.btn("#f3f4f6","#374151")}>Exportar CSV</button><button onClick={()=>exportDocente(prog)} style={S.btn("#f3f4f6","#374151")}>Lista para docente</button></>}
+                    {ests(prog).length>0&&<><button onClick={()=>exportCSV(prog)} style={S.btn("#f3f4f6","#374151")}>Exportar CSV</button><button onClick={()=>exportDocente(prog)} style={S.btn("#f3f4f6","#374151")}>Exportar lista completa</button></>}
                   </div>
                 </div>
                 {ests(prog).length>0&&(
@@ -2706,8 +2696,8 @@ export default function App() {
             {progTab==="asistencia"&&(
               <div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-                  <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>Mínimo requerido: 80% de asistencia</div>
-                  {ests(prog).length>0&&<button onClick={()=>exportDocente(prog)} style={S.btn("#f3f4f6","#374151")}>Exportar lista para docente</button>}
+                  <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>Mínimo requerido: 80% · Datos sincronizados con la vista de Asistencia</div>
+                  <button onClick={()=>{setView("asistencia");}} style={S.btn("#f3f4f6","#374151",{fontSize:12})}>Ir a Asistencia detallada →</button>
                 </div>
                 {mods(prog).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:48,fontFamily:"system-ui"}}>Agrega módulos primero.</div>}
                 {mods(prog).length>0&&ests(prog).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:48,fontFamily:"system-ui"}}>Importa estudiantes primero.</div>}
@@ -2717,37 +2707,71 @@ export default function App() {
                       <thead>
                         <tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
                           <th style={{textAlign:"left",padding:"12px 16px",fontWeight:700,color:"#374151",fontSize:12,position:"sticky",left:0,background:"#f9f9f9"}}>Estudiante</th>
-                          {mods(prog).map(m=><th key={m.id} style={{padding:"10px 12px",fontWeight:700,color:"#374151",fontSize:11,textAlign:"center",whiteSpace:"nowrap",minWidth:90}}>{m.numero}<br/><span style={{fontWeight:400,color:"#9ca3af",fontSize:10}}>{m.clases+" cl."}</span></th>)}
-                          <th style={{padding:"10px 12px",fontWeight:700,color:"#374151",fontSize:11,textAlign:"center"}}>Total</th>
+                          {mods(prog).map(m=>{
+                            const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+                            return(<th key={m.id} style={{padding:"10px 12px",fontWeight:700,color:"#374151",fontSize:11,textAlign:"center",whiteSpace:"nowrap",minWidth:90}}>
+                              {m.numero}<br/>
+                              <span style={{fontWeight:400,color:"#9ca3af",fontSize:10}}>{fechas.length} sesiones</span>
+                            </th>);
+                          })}
+                          <th style={{padding:"10px 12px",fontWeight:700,color:"#374151",fontSize:11,textAlign:"center"}}>Global</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {ests(prog).map(e=>{
+                        {ests(prog).filter(e=>e.estatus!=="baja").map(e=>{
                           const pct=calcPct(e,mods(prog)), riesgo=pct!==null&&pct<80;
                           return(
                             <tr key={e.id} style={{borderBottom:"1px solid #f3f4f6",background:riesgo?"#fef9f9":"#fff"}}>
                               <td style={{padding:"12px 16px",fontWeight:600,position:"sticky",left:0,background:riesgo?"#fef9f9":"#fff"}}>
                                 <div>{e.nombre}</div>
                                 {e.empresa&&<div style={{fontSize:11,color:"#9ca3af",fontWeight:400}}>{e.empresa}</div>}
+                                {e.estatus==="inactivo"&&<span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",borderRadius:4,padding:"1px 6px"}}>Inactivo</span>}
                               </td>
                               {mods(prog).map(m=>{
-                                const k="mod_"+m.id, asist=(e.asistencia&&e.asistencia[k])||0, max=m.clases||0, pm=max?Math.round(asist/max*100):0;
+                                const k="mod_"+m.id;
+                                const v=e.asistencia&&e.asistencia[k];
+                                // Leer como array de fechas (sistema nuevo) o número (sistema viejo)
+                                const asist=Array.isArray(v)?v.length:(v||0);
+                                const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+                                const max=fechas.length||m.clases||0;
+                                const pm=max?Math.round(asist/max*100):0;
                                 return(
                                   <td key={m.id} style={{padding:"10px 12px",textAlign:"center"}}>
                                     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                                      <button onClick={()=>toggleAsist(prog.id,m.id,e.id)} style={{background:asist>0?"#f0fdf4":"#f3f4f6",color:asist>0?"#16a34a":"#9ca3af",border:"1px solid "+(asist>0?"#bbf7d0":"#e5e7eb"),borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>{asist+"/"+max}</button>
-                                      <div style={{width:48,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pm+"%",height:"100%",background:pm>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
+                                      <span style={{fontWeight:700,fontSize:13,color:pm>=80?"#16a34a":asist>0?"#d97706":"#9ca3af"}}>{asist}/{max}</span>
+                                      <div style={{width:48,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                        <div style={{width:pm+"%",height:"100%",background:pm>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
+                                      </div>
+                                      <span style={{fontSize:10,color:pm>=80?"#16a34a":"#dc2626"}}>{pm}%</span>
                                     </div>
                                   </td>
                                 );
                               })}
                               <td style={{padding:"10px 12px",textAlign:"center"}}>
-                                <span style={{fontSize:12,fontWeight:800,color:riesgo?"#dc2626":"#16a34a"}}>{pct!==null?pct+"%":"—"}</span>
+                                <span style={{fontSize:14,fontWeight:800,color:riesgo?"#dc2626":"#16a34a"}}>{pct!==null?pct+"%":"—"}</span>
                                 {riesgo&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>En riesgo</div>}
                               </td>
                             </tr>
                           );
                         })}
+                        {/* Fila de promedios del grupo */}
+                        <tr style={{borderTop:"2px solid #e5e7eb",background:"#f9f9f9",fontWeight:700}}>
+                          <td style={{padding:"10px 16px",fontSize:12,color:"#6b7280",position:"sticky",left:0,background:"#f9f9f9"}}>PROMEDIO GRUPO</td>
+                          {mods(prog).map(m=>{
+                            const activos=ests(prog).filter(e=>e.estatus!=="baja");
+                            const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
+                            const max=fechas.length||m.clases||0;
+                            const promG=activos.length&&max?Math.round(activos.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+m.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/activos.length/max*100):0;
+                            return(<td key={m.id} style={{padding:"10px 12px",textAlign:"center"}}>
+                              <span style={{fontSize:12,fontWeight:700,color:promG>=80?"#16a34a":"#dc2626"}}>{promG}%</span>
+                            </td>);
+                          })}
+                          <td style={{padding:"10px 12px",textAlign:"center"}}>
+                            <span style={{fontSize:13,fontWeight:800,color:"#374151"}}>
+                              {(()=>{const activos=ests(prog).filter(e=>e.estatus!=="baja");const total=mods(prog).reduce((a,m)=>a+(m.clases||0),0);if(!activos.length||!total)return"—";const prom=Math.round(activos.reduce((a,e)=>a+(calcPct(e,mods(prog))||0),0)/activos.length);return prom+"%";})()}
+                            </span>
+                          </td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
@@ -2757,91 +2781,58 @@ export default function App() {
 
             {/* PAGOS */}
             {progTab==="pagos"&&(()=>{
-              const estudiantes=ests(prog);
-              const totalEsperado=estudiantes.reduce((a,e)=>{
-                const p=e.pago;if(!p||!p.monto_acordado)return a;
-                return a+p.monto_acordado*(1-(p.descuento_pct||0)/100);
-              },0);
-              const totalCobrado=estudiantes.reduce((a,e)=>{
-                const p=e.pago;if(!p)return a;
-                if(p.tipo==="unico"){const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(pagadas>0?p.monto_acordado*(1-(p.descuento_pct||0)/100):0);}
-                const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
-                const tot=(p.parcialidades||[]).length;
-                const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;
-                return a+(tot?mf/tot*pag:0);
-              },0);
-              const totalDescuentos=estudiantes.reduce((a,e)=>{
-                const p=e.pago;if(!p||!p.monto_acordado||!p.descuento_pct)return a;
-                return a+p.monto_acordado*(p.descuento_pct/100);
-              },0);
+              const estudiantes=ests(prog).filter(e=>e.estatus!=="baja");
+              const activos=estudiantes.filter(e=>e.estatus!=="inactivo");
+              const inactivos=estudiantes.filter(e=>e.estatus==="inactivo");
+              const totalEsperado=activos.reduce((a,e)=>{const p=e.pago;if(!p||!p.monto_acordado)return a;return a+p.monto_acordado*(1-(p.descuento_pct||0)/100);},0);
+              const totalCobrado=activos.reduce((a,e)=>{const p=e.pago;if(!p)return a;if(p.tipo==="unico"){const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(pag>0?p.monto_acordado*(1-(p.descuento_pct||0)/100):0);}const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);const tot=(p.parcialidades||[]).length;const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
+              const totalDescuentos=activos.reduce((a,e)=>{const p=e.pago;if(!p||!p.monto_acordado||!p.descuento_pct)return a;return a+p.monto_acordado*(p.descuento_pct/100);},0);
+              const honorarios=mods(prog).reduce((a,m)=>a+calcHonorarios(m,docentes),0);
               const pendiente=totalEsperado-totalCobrado;
+              const pct=totalEsperado>0?Math.round(totalCobrado/totalEsperado*100):0;
+              const sinConfig=activos.filter(e=>!e.pago?.monto_acordado).length;
+              const vencidos=activos.filter(e=>{const ep=calcEstadoPagos(e);return ep&&ep.conRecargo.length>0;}).length;
               return(
                 <div>
-                  {/* Resumen financiero */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
-                    {[[`Total esperado`,totalEsperado,"#1a1a1a"],[`Cobrado`,totalCobrado,"#16a34a"],[`Pendiente`,pendiente,"#d97706"],[`Descuentos`,totalDescuentos,RED]].map(([l,v,c])=>(
-                      <div key={l} style={{...S.card,padding:"16px 18px"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
-                        <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                  {/* Tarjetas resumen */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:20}}>
+                    {[["Esperado",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",pendiente,"#d97706"],["Descuentos",totalDescuentos,RED],["Honorarios",honorarios,"#7c3aed"]].map(([l,v,c])=>(
+                      <div key={l} style={{...S.card,padding:"14px 16px"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{l.toUpperCase()}</div>
+                        <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
                       </div>
                     ))}
                   </div>
-                  {/* Barra de progreso */}
+                  {/* Barra de cobranza */}
                   {totalEsperado>0&&(
-                    <div style={{...S.card,padding:"14px 18px",marginBottom:20}}>
+                    <div style={{...S.card,padding:"14px 18px",marginBottom:16}}>
                       <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontFamily:"system-ui",marginBottom:8}}>
                         <span style={{color:"#6b7280"}}>Progreso de cobranza</span>
-                        <span style={{fontWeight:700,color:"#16a34a"}}>{Math.round(totalCobrado/totalEsperado*100)}%</span>
+                        <span style={{fontWeight:700,color:pct>=80?"#16a34a":"#d97706"}}>{pct}%</span>
                       </div>
                       <div style={{height:8,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
-                        <div style={{width:Math.round(totalCobrado/totalEsperado*100)+"%",height:"100%",background:"#16a34a",borderRadius:4,transition:"width 0.3s"}}/>
+                        <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#d97706",borderRadius:4,transition:"width 0.3s"}}/>
+                      </div>
+                      <div style={{display:"flex",gap:16,marginTop:10,flexWrap:"wrap"}}>
+                        <span style={{fontSize:12,fontFamily:"system-ui",color:"#6b7280"}}>{activos.length} estudiante{activos.length!==1?"s":""} activos</span>
+                        {sinConfig>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#d97706"}}>{sinConfig} sin configurar</span>}
+                        {vencidos>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#dc2626"}}>{vencidos} con pagos vencidos</span>}
+                        {inactivos.length>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#9ca3af"}}>{inactivos.length} inactivo{inactivos.length!==1?"s":""}</span>}
                       </div>
                     </div>
                   )}
-                  {/* Tabla por estudiante */}
-                  <div style={{...S.card,overflow:"hidden"}}>
-                    <div style={{padding:"14px 18px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Desglose por estudiante</div>
-                    {estudiantes.length===0&&<div style={{padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Importa estudiantes primero.</div>}
-                    {estudiantes.map((e,i)=>{
-                      const p=e.pago||{};
-                      const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
-                      const tot=(p.parcialidades||[]).length;
-                      const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;
-                      const cobrado=p.tipo==="unico"?(pag>0?mf:0):(tot?mf/tot*pag:0);
-                      const pendienteEst=mf-cobrado;
-                      const sinConfig=!p.monto_acordado;
-                      return(
-                        <div key={e.id} style={{padding:"14px 18px",borderBottom:i<estudiantes.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                          <div style={{flex:1,minWidth:160}}>
-                            <div style={{fontWeight:600,fontSize:14}}>{e.nombre}</div>
-                            {e.empresa&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{e.empresa}</div>}
-                            {sinConfig&&<div style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",marginTop:2}}>Sin configurar</div>}
-                          </div>
-                          {!sinConfig&&(
-                            <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,fontFamily:"system-ui"}}>
-                              <div style={{textAlign:"center"}}>
-                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>ACORDADO</div>
-                                <div style={{fontWeight:700}}>{fmtMXN(mf)}</div>
-                                {p.descuento_pct>0&&<div style={{fontSize:10,color:RED}}>-{p.descuento_pct}%</div>}
-                              </div>
-                              <div style={{textAlign:"center"}}>
-                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>TIPO</div>
-                                <div style={{fontWeight:600,fontSize:12}}>{p.tipo==="unico"?"Único":`${tot} parcialidades`}</div>
-                              </div>
-                              <div style={{textAlign:"center"}}>
-                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>COBRADO</div>
-                                <div style={{fontWeight:700,color:"#16a34a"}}>{fmtMXN(cobrado)}</div>
-                              </div>
-                              <div style={{textAlign:"center"}}>
-                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PENDIENTE</div>
-                                <div style={{fontWeight:700,color:pendienteEst>0?"#d97706":"#16a34a"}}>{fmtMXN(pendienteEst)}</div>
-                              </div>
-                            </div>
-                          )}
-                          <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12,flexShrink:0})}>{sinConfig?"Configurar":"Editar"}</button>
-                        </div>
-                      );
-                    })}
+                  {/* Margen neto */}
+                  <div style={{...S.card,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:2}}>MARGEN NETO ESTIMADO</div>
+                      <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Ingresos esperados menos honorarios de docentes</div>
+                    </div>
+                    <div style={{fontSize:28,fontWeight:800,color:(totalEsperado-honorarios)>=0?"#7c3aed":"#dc2626",fontFamily:"Georgia,serif"}}>{fmtMXN(totalEsperado-honorarios)}</div>
+                  </div>
+                  {/* Link a Control de Pagos */}
+                  <div style={{...S.card,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f9f9f9"}}>
+                    <span style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>Para ver parcialidades, enviar correos y gestionar pagos individuales:</span>
+                    <button onClick={()=>{setProgPagos(prog.id);setView("pagos_global");}} style={S.btn(RED,"#fff",{fontSize:12})}>Ir a Control de Pagos →</button>
                   </div>
                 </div>
               );
@@ -3241,6 +3232,261 @@ export default function App() {
                   );
                 })}
               </div>
+            </div>
+          );
+        })()}
+
+        {/* EVALUACIONES */}
+        {view==="evaluaciones"&&(()=>{
+          const [evalTab,setEvalTab]       = useState("modulos");
+          const [filtroDocEval,setFiltroDocEval] = useState("");
+          const [filtroProgEval,setFiltroProgEval] = useState("");
+
+          const DIM_LABELS = ["Expectativas","Relevancia","Aplicación","Didáctica","Dominio"];
+          const DIM_KEYS   = ["q1","q2","q3","q4","q5"];
+
+          const dimProm = (evals, key) => evals.length
+            ? Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10
+            : null;
+
+          const colorVal = v => v>=4?"#16a34a":v>=3?"#d97706":"#dc2626";
+          const bgVal    = v => v>=4?"#f0fdf4":v>=3?"#fffbeb":"#fef2f2";
+
+          // Todos los módulos de todos los programas
+          const todosModulos = [];
+          (programas||[]).forEach(prog=>{
+            mods(prog).forEach(mod=>{
+              const evalsDelMod = (npsData||[]).filter(e=>e.modId===mod.id);
+              const promMod = evalsDelMod.length
+                ? Math.round(evalsDelMod.reduce((a,e)=>a+(e.promedio||0),0)/evalsDelMod.length*10)/10
+                : null;
+              todosModulos.push({prog,mod,evals:evalsDelMod,prom:promMod});
+            });
+          });
+
+          // Docentes con evaluaciones
+          const docentesConEvals = [];
+          const docentesVistos = new Set();
+          (npsData||[]).forEach(e=>{
+            const key = e.docenteId||e.docenteNombre;
+            if(!key||docentesVistos.has(key))return;
+            docentesVistos.add(key);
+            const evalsDoc = (npsData||[]).filter(ev=>ev.docenteId===e.docenteId||ev.docenteNombre===e.docenteNombre);
+            const prom = Math.round(evalsDoc.reduce((a,ev)=>a+(ev.promedio||0),0)/evalsDoc.length*10)/10;
+            docentesConEvals.push({nombre:e.docenteNombre,id:e.docenteId,evals:evalsDoc,prom});
+          });
+          docentesConEvals.sort((a,b)=>b.prom-a.prom);
+
+          // Evaluaciones filtradas para pestaña Resultados
+          const evalsFiltradas = (npsData||[]).filter(e=>{
+            const matchDoc = !filtroDocEval || e.docenteNombre===filtroDocEval || e.docenteId===filtroDocEval;
+            const matchProg = !filtroProgEval || e.progId===filtroProgEval;
+            return matchDoc&&matchProg;
+          }).slice().reverse();
+
+          return(
+            <div>
+              <div style={{marginBottom:20}}>
+                <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Evaluaciones</h1>
+                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+                  {(npsData||[]).length} respuesta{(npsData||[]).length!==1?"s":""} registradas · {docentesConEvals.length} docente{docentesConEvals.length!==1?"s":""} evaluados
+                </p>
+              </div>
+
+              {/* Pestañas */}
+              <div style={{display:"flex",...S.card,overflow:"hidden",marginBottom:20}}>
+                {[["modulos","Módulos"],["resultados","Resultados"],["docentes_eval","Docentes"]].map(([t,l])=>(
+                  <button key={t} onClick={()=>setEvalTab(t)}
+                    style={{flex:1,padding:"12px 16px",border:"none",borderBottom:evalTab===t?"3px solid "+RED:"3px solid transparent",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui",background:"#fff",color:evalTab===t?RED:"#6b7280"}}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── PESTAÑA MÓDULOS ── */}
+              {evalTab==="modulos"&&(
+                <div style={{display:"grid",gap:10}}>
+                  {todosModulos.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin módulos registrados.</div>}
+                  {todosModulos.map(({prog,mod,evals:evMod,prom},i)=>(
+                    <div key={mod.id} style={{...S.card,padding:"16px 20px",borderLeft:"4px solid "+prog.color}}>
+                      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:200}}>
+                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
+                            <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:800,fontFamily:"system-ui"}}>{mod.numero}</span>
+                            <span style={{fontWeight:700,fontSize:14}}>{mod.nombre}</span>
+                          </div>
+                          <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
+                            <span>{prog.nombre}{prog.generacion?" · "+prog.generacion+" gen.":""}</span>
+                            {mod.docente&&<span>· {mod.docente}</span>}
+                          </div>
+                        </div>
+                        {/* Respuestas recibidas */}
+                        <div style={{textAlign:"center",flexShrink:0}}>
+                          <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>RESPUESTAS</div>
+                          <div style={{fontSize:22,fontWeight:800,color:evMod.length>0?"#1a1a1a":"#d1d5db",fontFamily:"system-ui"}}>{evMod.length}</div>
+                        </div>
+                        {/* Promedio */}
+                        {prom!==null&&(
+                          <div style={{textAlign:"center",flexShrink:0}}>
+                            <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PROMEDIO</div>
+                            <div style={{fontSize:22,fontWeight:800,color:colorVal(prom),fontFamily:"system-ui"}}>{prom}<span style={{fontSize:12,color:"#9ca3af"}}>/5</span></div>
+                          </div>
+                        )}
+                        {/* Botones */}
+                        <div style={{display:"flex",gap:6,flexShrink:0}}>
+                          <button onClick={()=>generarEnlaceEval(prog.id,mod.id)}
+                            style={S.btn(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+mod.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#bbf7d0":"#e5e7eb")})}>
+                            {linkCopiado==="eval_"+prog.id+"_"+mod.id?"Copiado":"Copiar enlace"}
+                          </button>
+                          <button onClick={()=>enviarEvalPorCorreo(prog.id,mod.id)}
+                            style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
+                            ✉ Enviar
+                          </button>
+                          <button onClick={()=>setNpsModal({prog,mod})}
+                            style={S.btn("#eff6ff","#2563eb",{padding:"5px 11px",fontSize:12,border:"1px solid #bfdbfe"})}>
+                            + Registrar
+                          </button>
+                        </div>
+                      </div>
+                      {/* Barras de dimensiones si hay respuestas */}
+                      {evMod.length>0&&(
+                        <div style={{marginTop:12,display:"flex",gap:16,flexWrap:"wrap"}}>
+                          {DIM_KEYS.map((key,i)=>{
+                            const d=dimProm(evMod,key);
+                            return(
+                              <div key={key} style={{flex:1,minWidth:80}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{DIM_LABELS[i]}</div>
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <div style={{flex:1,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                    <div style={{width:(d/5*100)+"%",height:"100%",background:colorVal(d),borderRadius:4}}/>
+                                  </div>
+                                  <span style={{fontSize:11,fontWeight:700,color:colorVal(d),fontFamily:"system-ui",minWidth:20}}>{d}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── PESTAÑA RESULTADOS ── */}
+              {evalTab==="resultados"&&(
+                <div>
+                  {/* Filtros */}
+                  <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                    <select value={filtroProgEval} onChange={e=>setFiltroProgEval(e.target.value)}
+                      style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
+                      <option value="">Todos los programas</option>
+                      {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    </select>
+                    <select value={filtroDocEval} onChange={e=>setFiltroDocEval(e.target.value)}
+                      style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
+                      <option value="">Todos los docentes</option>
+                      {docentesConEvals.map(d=><option key={d.id||d.nombre} value={d.nombre}>{d.nombre}</option>)}
+                    </select>
+                    {(filtroProgEval||filtroDocEval)&&<button onClick={()=>{setFiltroProgEval("");setFiltroDocEval("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
+                  </div>
+
+                  {evalsFiltradas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin evaluaciones registradas{filtroProgEval||filtroDocEval?" con estos filtros":""}.</div>}
+
+                  <div style={{...S.card,overflow:"hidden"}}>
+                    {/* Header */}
+                    {evalsFiltradas.length>0&&(
+                      <div style={{padding:"10px 18px",background:"#f9f9f9",borderBottom:"2px solid #e5e7eb",display:"flex",gap:8,alignItems:"center",fontFamily:"system-ui",fontSize:11,fontWeight:700,color:"#6b7280"}}>
+                        <div style={{flex:1}}>MÓDULO / DOCENTE</div>
+                        {DIM_LABELS.map(l=><div key={l} style={{textAlign:"center",minWidth:52}}>{l.slice(0,5).toUpperCase()}</div>)}
+                        <div style={{textAlign:"center",minWidth:48}}>PROM.</div>
+                        <div style={{minWidth:72}}>FECHA</div>
+                      </div>
+                    )}
+                    {evalsFiltradas.map((e,i)=>(
+                      <div key={e.id||i} style={{padding:"12px 18px",borderBottom:i<evalsFiltradas.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:160}}>
+                          <div style={{fontWeight:600,fontSize:13,fontFamily:"system-ui"}}>{e.mod||"Módulo"}</div>
+                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:6,flexWrap:"wrap"}}>
+                            <span>{e.prog}</span>
+                            {e.docenteNombre&&<span>· {e.docenteNombre}</span>}
+                          </div>
+                          {e.comentarios&&<div style={{marginTop:4,fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic",background:"#f9f9f9",borderRadius:4,padding:"4px 8px"}}>"{e.comentarios}"</div>}
+                        </div>
+                        {DIM_KEYS.map(key=>(
+                          <div key={key} style={{textAlign:"center",minWidth:52,flexShrink:0}}>
+                            <div style={{width:32,height:32,borderRadius:6,background:bgVal(e[key]),border:"1px solid "+colorVal(e[key])+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:14,fontWeight:800,color:colorVal(e[key]),fontFamily:"system-ui"}}>
+                              {e[key]||"—"}
+                            </div>
+                          </div>
+                        ))}
+                        <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
+                          <div style={{width:40,height:32,borderRadius:6,background:colorVal(e.promedio),display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:14,fontWeight:800,color:"#fff",fontFamily:"system-ui"}}>
+                            {e.promedio}
+                          </div>
+                        </div>
+                        <div style={{minWidth:72,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",flexShrink:0}}>
+                          {e.fecha?fmtFecha(e.fecha):"—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── PESTAÑA DOCENTES ── */}
+              {evalTab==="docentes_eval"&&(
+                <div>
+                  {docentesConEvals.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin evaluaciones registradas aún.</div>}
+                  <div style={{display:"grid",gap:12}}>
+                    {docentesConEvals.map((d,rank)=>(
+                      <div key={d.id||d.nombre} style={{...S.card,padding:"18px 22px",borderLeft:"4px solid "+(d.prom>=4?"#16a34a":d.prom>=3?"#d97706":"#dc2626")}}>
+                        <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
+                          {/* Ranking */}
+                          <div style={{width:36,height:36,borderRadius:"50%",background:rank===0?"#fef9c3":rank===1?"#f3f4f6":rank===2?"#fef2f2":"#f9f9f9",border:"2px solid "+(rank===0?"#d97706":rank===1?"#9ca3af":rank===2?"#dc2626":"#e5e7eb"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:800,fontSize:16,fontFamily:"system-ui",color:rank===0?"#d97706":rank===1?"#6b7280":rank===2?"#dc2626":"#374151"}}>
+                            {rank+1}
+                          </div>
+                          <div style={{flex:1,minWidth:180}}>
+                            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{d.nombre}</div>
+                            <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginBottom:12}}>{d.evals.length} evaluación{d.evals.length!==1?"es":""} · {[...new Set(d.evals.map(e=>e.modId))].length} módulo{[...new Set(d.evals.map(e=>e.modId))].length!==1?"s":""}</div>
+                            {/* Barras por dimensión */}
+                            <div style={{display:"grid",gap:6}}>
+                              {DIM_KEYS.map((key,i)=>{
+                                const val=dimProm(d.evals,key);
+                                return(
+                                  <div key={key} style={{display:"flex",alignItems:"center",gap:10}}>
+                                    <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",minWidth:90}}>{DIM_LABELS[i]}</span>
+                                    <div style={{flex:1,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                      <div style={{width:(val/5*100)+"%",height:"100%",background:colorVal(val),borderRadius:4,transition:"width 0.3s"}}/>
+                                    </div>
+                                    <span style={{fontSize:12,fontWeight:700,color:colorVal(val),fontFamily:"system-ui",minWidth:24}}>{val}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* Comentarios recientes */}
+                            {d.evals.filter(e=>e.comentarios).length>0&&(
+                              <div style={{marginTop:12}}>
+                                <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>COMENTARIOS RECIENTES</div>
+                                {d.evals.filter(e=>e.comentarios).slice(-2).map((e,i)=>(
+                                  <div key={i} style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic",background:"#f9f9f9",borderRadius:4,padding:"6px 10px",marginBottom:4}}>
+                                    "{e.comentarios}" <span style={{color:"#9ca3af",fontStyle:"normal"}}>— {e.mod}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {/* Promedio grande */}
+                          <div style={{textAlign:"center",flexShrink:0}}>
+                            <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>PROMEDIO GENERAL</div>
+                            <div style={{fontSize:44,fontWeight:800,color:colorVal(d.prom),fontFamily:"Georgia,serif",lineHeight:1}}>{d.prom}</div>
+                            <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>/5</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
