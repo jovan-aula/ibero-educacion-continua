@@ -1613,43 +1613,157 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
 
   const prog = selProgId ? (programas||[]).find(p=>p.id===selProgId) : null;
 
-  // ── Lista de programas ──────────────────────────────
+  // ── Lista de programas / búsqueda global ───────────────
   if (!selProgId) return (
     <div>
       <div style={{marginBottom:20}}>
         <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Asistencia</h1>
-        <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Selecciona un programa para tomar lista</p>
+        <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+          {busqAsist?"Resultados de búsqueda":"Selecciona un programa o busca un estudiante directamente"}
+        </p>
       </div>
-      <div style={{display:"grid",gap:10}}>
-        {(programas||[]).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>Sin programas registrados.</div>}
-        {(programas||[]).map(p=>{
-          const totalEst=ests(p).length;
-          const modsActivos=mods(p).filter(m=>m.fechaInicio&&m.fechaFin);
-          const modHoy=modsActivos.find(m=>{
-            const fechas=getFechasMod(m);
-            return fechas.includes(hoy);
+
+      {/* Buscador global */}
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
+        <input
+          value={busqAsist}
+          onChange={e=>setBusqAsist(e.target.value)}
+          placeholder="Buscar estudiante por nombre, correo o teléfono..."
+          style={{...S.inp,flex:1,fontSize:14}}
+          autoComplete="off"
+          autoFocus
+        />
+        {busqAsist&&<button onClick={()=>setBusqAsist("")} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
+      </div>
+
+      {/* MODO BÚSQUEDA — resultados globales */}
+      {busqAsist.length>=2&&(()=>{
+        const ql=busqAsist.toLowerCase().trim();
+        const resultados=[];
+        (programas||[]).forEach(prog=>{
+          ests(prog).filter(e=>e.estatus!=="baja").forEach(est=>{
+            if(
+              est.nombre?.toLowerCase().includes(ql)||
+              est.email?.toLowerCase().includes(ql)||
+              est.telefono?.includes(ql)||
+              est.empresa?.toLowerCase().includes(ql)
+            ){
+              // Módulo activo hoy o el más reciente con fechas
+              const modHoyE = mods(prog).find(m=>getFechasMod(m).includes(hoy));
+              const modReciente = mods(prog).filter(m=>getFechasMod(m).length>0).sort((a,b)=>{
+                const ua=getFechasMod(a).slice(-1)[0]||"";
+                const ub=getFechasMod(b).slice(-1)[0]||"";
+                return ub.localeCompare(ua);
+              })[0];
+              const modRef = modHoyE || modReciente;
+              resultados.push({est,prog,modRef,tieneClaseHoy:!!modHoyE});
+            }
           });
-          return(
-            <div key={p.id} onClick={()=>setSelProgId(p.id)}
-              style={{...S.card,padding:"18px 22px",cursor:"pointer",borderLeft:"4px solid "+p.color,display:"flex",alignItems:"center",gap:14}}>
-              <div style={{flex:1}}>
-                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
-                  <span style={{fontWeight:700,fontSize:16}}>{p.nombre}</span>
-                  <span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#6b7280",fontFamily:"system-ui"}}>{p.tipo}</span>
-                  {p.modalidad&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{p.modalidad}</span>}
-                  {modHoy&&<span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>Clase hoy</span>}
-                </div>
-                <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:14,flexWrap:"wrap"}}>
-                  <span>{mods(p).length} módulos</span>
-                  <span>{totalEst} estudiantes</span>
-                  {p.generacion&&<span>{p.generacion} generación</span>}
-                </div>
-              </div>
-              <span style={{fontSize:20,color:"#d1d5db"}}>›</span>
+        });
+        if(!resultados.length) return(
+          <div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>
+            Sin resultados para "<strong>{busqAsist}</strong>"
+          </div>
+        );
+        return(
+          <div>
+            <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>
+              {resultados.length} estudiante{resultados.length!==1?"s":""} encontrado{resultados.length!==1?"s":""}
             </div>
-          );
-        })}
-      </div>
+            <div style={{display:"grid",gap:8}}>
+              {resultados.map(({est,prog,modRef,tieneClaseHoy},idx)=>{
+                const pctGlobal = calcPct(est, mods(prog));
+                const presenteAhora = modRef && getFechasMod(modRef).includes(hoy)
+                  ? (Array.isArray(est.asistencia?.["mod_"+modRef.id])
+                      ? est.asistencia["mod_"+modRef.id].includes(hoy)
+                      : false)
+                  : null;
+                return(
+                  <div key={idx} style={{...S.card,padding:"14px 18px",borderLeft:"4px solid "+prog.color,
+                    border:"1px solid "+(tieneClaseHoy?"#bbf7d0":"#e5e7eb"),
+                    borderLeft:"4px solid "+prog.color}}>
+                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:180}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:700,fontSize:14}}>{est.nombre}</span>
+                          {tieneClaseHoy&&<span style={{fontSize:10,background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>Clase hoy</span>}
+                        </div>
+                        <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:8,flexWrap:"wrap"}}>
+                          <span style={{color:prog.color,fontWeight:600}}>{prog.nombre}</span>
+                          {est.empresa&&<span>· {est.empresa}</span>}
+                          {est.email&&<span>· {est.email}</span>}
+                        </div>
+                        {modRef&&(
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginTop:4}}>
+                            Módulo {modRef.numero}: {modRef.nombre}
+                            {modRef.horario&&<span style={{marginLeft:6}}>· {modRef.horario}</span>}
+                          </div>
+                        )}
+                      </div>
+                      {/* % asistencia global */}
+                      {pctGlobal!==null&&(
+                        <div style={{textAlign:"center",flexShrink:0}}>
+                          <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui",marginBottom:2}}>ASISTENCIA</div>
+                          <div style={{fontSize:22,fontWeight:800,color:pctGlobal>=80?"#16a34a":"#dc2626",fontFamily:"system-ui"}}>{pctGlobal}%</div>
+                        </div>
+                      )}
+                      {/* Toggle asistencia HOY si hay clase */}
+                      {tieneClaseHoy&&modRef&&(
+                        <button
+                          onClick={()=>onToggleAsist(prog.id,modRef.id,est.id,hoy)}
+                          style={{...S.btn(presenteAhora?"#16a34a":"#f3f4f6",presenteAhora?"#fff":"#374151",{
+                            padding:"10px 18px",fontSize:13,flexShrink:0,
+                            border:"2px solid "+(presenteAhora?"#16a34a":"#e5e7eb"),
+                            minWidth:110
+                          })}}>
+                          {presenteAhora?"✓ Presente":"Marcar presente"}
+                        </button>
+                      )}
+                      {/* Botón ir al módulo */}
+                      <button
+                        onClick={()=>{setSelProgId(prog.id);setSelModId(modRef?.id||null);setBusqAsist("");}}
+                        style={S.btn("#f3f4f6","#374151",{padding:"8px 14px",fontSize:12,flexShrink:0})}>
+                        Ver módulo →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODO NORMAL — lista de programas */}
+      {busqAsist.length<2&&(
+        <div style={{display:"grid",gap:10}}>
+          {busqAsist.length===1&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>Escribe al menos 2 caracteres para buscar</div>}
+          {(programas||[]).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>Sin programas registrados.</div>}
+          {(programas||[]).map(p=>{
+            const totalEst=ests(p).length;
+            const modHoy=mods(p).find(m=>getFechasMod(m).includes(hoy));
+            return(
+              <div key={p.id} onClick={()=>setSelProgId(p.id)}
+                style={{...S.card,padding:"18px 22px",cursor:"pointer",borderLeft:"4px solid "+p.color,display:"flex",alignItems:"center",gap:14}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:700,fontSize:16}}>{p.nombre}</span>
+                    <span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#6b7280",fontFamily:"system-ui"}}>{p.tipo}</span>
+                    {p.modalidad&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{p.modalidad}</span>}
+                    {modHoy&&<span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>Clase hoy</span>}
+                  </div>
+                  <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:14,flexWrap:"wrap"}}>
+                    <span>{mods(p).length} módulos</span>
+                    <span>{totalEst} estudiantes</span>
+                    {p.generacion&&<span>{p.generacion} generación</span>}
+                  </div>
+                </div>
+                <span style={{fontSize:20,color:"#d1d5db"}}>›</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 
@@ -2704,7 +2818,7 @@ export default function App() {
                     <select value={filtroEst} onChange={e=>setFiltroEst(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",outline:"none",background:"#fff"}}>
                       <option value="">Todos los estatus</option>
                       <option value="activo">Activo</option>
-                      <option value="egresado">Egresado</option>
+                      <option value="egresado">Egresado EC</option>
                       <option value="baja">Baja</option>
                     </select>
                     {(busqEst||filtroEst)&&<button onClick={()=>{setBusqEst("");setFiltroEst("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
@@ -2719,7 +2833,7 @@ export default function App() {
                           <div style={{flex:1,minWidth:200}}>
                             <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
                               <span style={{fontWeight:700,fontSize:15}}>{e.nombre}</span>
-                              <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,fontFamily:"system-ui",fontWeight:700,background:e.estatus==="egresado"?"#f0fdf4":e.estatus==="baja"?"#fef2f2":"#eff6ff",color:e.estatus==="egresado"?"#16a34a":e.estatus==="baja"?"#dc2626":"#2563eb",border:"1px solid "+(e.estatus==="egresado"?"#bbf7d0":e.estatus==="baja"?"#fca5a5":"#bfdbfe")}}>{e.estatus==="egresado"?"Egresado":e.estatus==="baja"?"Baja":"Activo"}</span>
+                              <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,fontFamily:"system-ui",fontWeight:700,background:e.estatus==="egresado"?"#f0fdf4":e.estatus==="baja"?"#fef2f2":"#eff6ff",color:e.estatus==="egresado"?"#16a34a":e.estatus==="baja"?"#dc2626":"#2563eb",border:"1px solid "+(e.estatus==="egresado"?"#bbf7d0":e.estatus==="baja"?"#fca5a5":"#bfdbfe")}}>{e.estatus==="egresado"?"Egresado EC":e.estatus==="baja"?"Baja":"Activo"}</span>
                               {riesgo&&<span style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",fontWeight:700}}>Asistencia: {pct}%</span>}
                             </div>
                             <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
@@ -2761,7 +2875,7 @@ export default function App() {
                             <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 10px",fontSize:12})}>Pago</button>
                             <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
-                              <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado</option><option value="baja">Baja</option>
+                              <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado EC</option><option value="baja">Baja</option>
                             </select>
                             <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
                           </div>
@@ -2953,7 +3067,7 @@ export default function App() {
                       <div style={{flex:1,minWidth:200}}>
                         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
                           <span style={{fontWeight:700,fontSize:15}}>{est.nombre}</span>
-                          <span style={{fontSize:11,background:est.estatus==="baja"?"#fef2f2":est.estatus==="egresado"?"#f0fdf4":"#eff6ff",color:est.estatus==="baja"?"#dc2626":est.estatus==="egresado"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",fontWeight:700}}>{est.estatus==="baja"?"Baja":est.estatus==="egresado"?"Egresado":"Activo"}</span>
+                          <span style={{fontSize:11,background:est.estatus==="baja"?"#fef2f2":est.estatus==="egresado"?"#f0fdf4":"#eff6ff",color:est.estatus==="baja"?"#dc2626":est.estatus==="egresado"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",fontWeight:700}}>{est.estatus==="baja"?"Baja":est.estatus==="egresado"?"Egresado EC":"Activo"}</span>
                         </div>
                         <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
                           {est.email&&<span>{est.email}</span>}
@@ -3220,7 +3334,7 @@ export default function App() {
                                         ?<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"activo");}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
                                         :<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"inactivo");}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
                                       }
-                                      {esInactivo&&<span style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",fontStyle:"italic"}}>Cuenta como deserción en Reportes</span>}
+                                      {esInactivo&&<span style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",fontStyle:"italic"}}>Cuenta en tasa de deserción en Reportes</span>}
                                       {estado==="critico"&&!esInactivo&&<span style={{fontSize:11,color:"#dc2626",fontFamily:"system-ui",fontStyle:"italic"}}>2+ pagos vencidos — considera marcar inactivo</span>}
                                     </div>
 
@@ -3576,7 +3690,7 @@ export default function App() {
           <div>
             <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 24px",letterSpacing:"-0.5px"}}>Reportes y estadísticas</h1>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
-              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Eg. IBERO cursando",egresadosIberoActivos.length],["Eg. IBERO concluyeron",egresadosIberoConcluyeron.length]].map(([l,v])=>(
+              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados EC",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Alumni IBERO cursando",egresadosIberoActivos.length],["Alumni IBERO egresados de EC",egresadosIberoConcluyeron.length]].map(([l,v])=>(
                 <div key={l} style={{...S.card,padding:"20px 22px"}}>
                   <div style={{fontSize:28,fontWeight:800,color:RED,fontFamily:"system-ui"}}>{v}</div>
                   <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
@@ -3585,11 +3699,11 @@ export default function App() {
             </div>
             <div style={{...S.card,marginBottom:16}}>
               <button onClick={()=>setRepExp(repExp==="egresados"?null:"egresados")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
-                <span style={{fontWeight:700,fontSize:14}}>{"Egresados ("+egresados.length+")"}</span>
+                <span style={{fontWeight:700,fontSize:14}}>{"Egresados de EC ("+egresados.length+")"}</span>
                 <span style={{color:"#9ca3af"}}>{repExp==="egresados"?"▲":"▼"}</span>
               </button>
               {repExp==="egresados"&&<div style={{borderTop:"1px solid #e5e7eb",padding:"0 20px 16px"}}>
-                {egresados.length===0?<div style={{color:"#9ca3af",padding:"20px 0",fontFamily:"system-ui",textAlign:"center"}}>Sin egresados registrados.</div>:egresados.map((e,i)=>(
+                {egresados.length===0?<div style={{color:"#9ca3af",padding:"20px 0",fontFamily:"system-ui",textAlign:"center"}}>Sin egresados de EC registrados.</div>:egresados.map((e,i)=>(
                   <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13}}>
                     <div style={{flex:1}}><span style={{fontWeight:600}}>{e.nombre}</span>{e.empresa&&<span style={{color:"#9ca3af",marginLeft:8}}>{e.empresa}</span>}</div>
                     <div style={{color:"#6b7280"}}>{e.programa}</div>
@@ -3602,7 +3716,7 @@ export default function App() {
             <div style={{...S.card,marginBottom:16,border:"1px solid #bfdbfe"}}>
               <button onClick={()=>setRepExp(repExp==="egresadosIbero"?null:"egresadosIbero")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
                 <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                  <span style={{fontWeight:700,fontSize:14}}>Egresados IBERO</span>
+                  <span style={{fontWeight:700,fontSize:14}}>Alumni IBERO</span>
                   <span style={{background:"#eff6ff",color:"#2563eb",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>Cursando: {egresadosIberoActivos.length}</span>
                   <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>Concluyeron: {egresadosIberoConcluyeron.length}</span>
                 </div>
@@ -3615,7 +3729,7 @@ export default function App() {
                   )}
                   {egresadosIberoActivos.length>0&&(
                     <div style={{marginTop:16}}>
-                      <div style={{fontWeight:700,fontSize:11,color:"#2563eb",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CURSANDO ACTUALMENTE ({egresadosIberoActivos.length})</div>
+                      <div style={{fontWeight:700,fontSize:11,color:"#2563eb",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CURSANDO PROGRAMA DE EC ({egresadosIberoActivos.length})</div>
                       {egresadosIberoActivos.map((e,i)=>(
                         <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
                           <div style={{flex:1}}>
@@ -3631,7 +3745,7 @@ export default function App() {
                   )}
                   {egresadosIberoConcluyeron.length>0&&(
                     <div style={{marginTop:16}}>
-                      <div style={{fontWeight:700,fontSize:11,color:"#16a34a",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CONCLUYERON ({egresadosIberoConcluyeron.length})</div>
+                      <div style={{fontWeight:700,fontSize:11,color:"#16a34a",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>EGRESADOS DE EC ({egresadosIberoConcluyeron.length})</div>
                       {egresadosIberoConcluyeron.map((e,i)=>(
                         <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
                           <div style={{flex:1}}>
@@ -3640,7 +3754,7 @@ export default function App() {
                             {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
                           </div>
                           <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
-                          <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Egresado</span>
+                          <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Egresado EC</span>
                         </div>
                       ))}
                     </div>
