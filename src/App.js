@@ -516,6 +516,145 @@ function ListaDocente({programas, onSave}) {
   );
 }
 
+// ─── EVALUACIÓN PÚBLICA DE MÓDULO ────────────────────
+function EvaluacionDocente({programas}) {
+  const token = new URLSearchParams(window.location.search).get("eval");
+  let progId, modId;
+  try { const d=JSON.parse(atob(token)); progId=d.progId; modId=d.modId; } catch(e) { return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Enlace inválido.</div>; }
+
+  const prog = (programas||[]).find(p=>p.id===progId);
+  const mod  = prog && mods(prog).find(m=>m.id===modId);
+  if (!prog||!mod) return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Módulo no encontrado.</div>;
+
+  const [resp,setResp]     = useState({q1:null,q2:null,q3:null,q4:null,q5:null,comentarios:""});
+  const [enviado,setEnviado] = useState(false);
+  const [error,setError]   = useState("");
+
+  const completo = [resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].every(v=>v!==null);
+  const promedio = completo ? Math.round([resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].reduce((a,b)=>a+b,0)/5*10)/10 : null;
+  const colorProm = promedio ? (promedio>=4?"#16a34a":promedio>=3?"#d97706":"#dc2626") : "#9ca3af";
+
+  const guardar = () => {
+    if (!completo) { setError("Por favor responde todas las preguntas."); return; }
+    try {
+      const nueva = {
+        id: Math.random().toString(36).slice(2,9),
+        fecha: new Date().toISOString().split("T")[0],
+        progId, modId,
+        docenteId: mod.docenteId||"",
+        docenteNombre: mod.docente||"",
+        prog: prog.nombre,
+        mod: mod.nombre,
+        ...resp,
+        promedio,
+      };
+      const existing = JSON.parse(localStorage.getItem("ibero_nps")||"[]");
+      localStorage.setItem("ibero_nps", JSON.stringify([...existing, nueva]));
+      setEnviado(true);
+    } catch(e) { setError("Error al guardar. Intenta de nuevo."); }
+  };
+
+  const preguntas = [
+    {key:"q1",texto:"¿El módulo cumplió mis expectativas?"},
+    {key:"q2",texto:"¿Los contenidos fueron relevantes para mis objetivos profesionales?"},
+    {key:"q3",texto:"¿Puedo aplicar al menos una herramienta o idea del módulo de manera inmediata?"},
+    {key:"q4",texto:"¿La didáctica del docente (claridad, ritmo, actividades y retroalimentación) facilitó mi aprendizaje?"},
+    {key:"q5",texto:"¿El docente demostró dominio actualizado del tema y resolvió dudas con paciencia?"},
+  ];
+
+  if (enviado) return (
+    <div style={{minHeight:"100vh",background:"#f2f2f2",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",padding:16}}>
+      <div style={{background:"#fff",borderRadius:12,maxWidth:480,width:"100%",padding:40,textAlign:"center",boxShadow:"0 4px 32px rgba(0,0,0,0.08)"}}>
+        <div style={{width:64,height:64,borderRadius:"50%",background:"#f0fdf4",border:"3px solid #16a34a",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
+        <div style={{fontWeight:700,fontSize:20,fontFamily:"Georgia,serif",marginBottom:8}}>¡Gracias por tu evaluación!</div>
+        <div style={{fontSize:14,color:"#6b7280",marginBottom:20,lineHeight:1.6}}>Tu opinión es muy valiosa para mejorar la calidad de nuestros programas de Educación Continua.</div>
+        {promedio!==null&&<div style={{background:"#f9f9f9",borderRadius:8,padding:"14px 20px",display:"inline-block"}}><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,marginBottom:4}}>TU CALIFICACIÓN</div><div style={{fontSize:32,fontWeight:800,color:colorProm}}>{promedio}<span style={{fontSize:16,color:"#9ca3af"}}>/5</span></div></div>}
+        <div style={{marginTop:24,fontSize:13,color:"#9ca3af"}}>IBERO Tijuana · Coordinación de Educación Continua</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f2f2f2",fontFamily:"system-ui"}}>
+      {/* Header */}
+      <div style={{background:RED,padding:"16px 24px",display:"flex",alignItems:"center",gap:16}}>
+        <svg height={40} viewBox="0 0 220 80" xmlns="http://www.w3.org/2000/svg"><rect width="220" height="80" fill="#C8102E"/><text x="12" y="58" fontFamily="Georgia,serif" fontSize="56" fontWeight="900" fill="white" letterSpacing="2">IBERO</text><text x="14" y="74" fontFamily="Arial,sans-serif" fontSize="16" fill="white" letterSpacing="6">TIJUANA</text></svg>
+        <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Evaluación de módulo · Educación Continua</div>
+      </div>
+
+      <div style={{maxWidth:620,margin:"0 auto",padding:"24px 16px"}}>
+        {/* Info del módulo */}
+        <div style={{background:"#fff",borderRadius:8,border:"1px solid #e5e7eb",padding:"20px 24px",marginBottom:20,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+          <div style={{fontSize:11,fontWeight:700,color:RED,letterSpacing:"1px",marginBottom:4}}>EVALUACIÓN DE MÓDULO</div>
+          <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",marginBottom:4}}>{mod.nombre}</div>
+          <div style={{fontSize:13,color:"#6b7280",marginBottom:8}}>{prog.nombre}{prog.generacion?" · "+prog.generacion+" generación":""}</div>
+          {mod.docente&&<div style={{fontSize:13,color:"#374151"}}><span style={{color:"#9ca3af"}}>Docente: </span><strong>{mod.docente}</strong></div>}
+        </div>
+
+        {/* Instrucción */}
+        <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"12px 16px",marginBottom:20,fontSize:13,color:"#92400e",lineHeight:1.6}}>
+          Tu evaluación es <strong>anónima</strong>. Responde con honestidad — tu opinión nos ayuda a mejorar.<br/>
+          <strong>1</strong> = Totalmente en desacuerdo &nbsp;·&nbsp; <strong>5</strong> = Totalmente de acuerdo
+        </div>
+
+        {/* Preguntas */}
+        <div style={{display:"grid",gap:14,marginBottom:20}}>
+          {preguntas.map(({key,texto},i)=>(
+            <div key={key} style={{background:"#fff",borderRadius:8,border:"1px solid "+(resp[key]!==null?"#bfdbfe":"#e5e7eb"),padding:"16px 20px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:12,lineHeight:1.5}}>{i+1}. {texto}</div>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:"#9ca3af",minWidth:60}}>En desacuerdo</span>
+                <div style={{display:"flex",gap:8}}>
+                  {[1,2,3,4,5].map(v=>(
+                    <button key={v} onClick={()=>setResp({...resp,[key]:v})}
+                      style={{width:44,height:44,borderRadius:8,border:"2px solid "+(resp[key]===v?RED:"#e5e7eb"),
+                        background:resp[key]===v?RED:"#fff",color:resp[key]===v?"#fff":"#374151",
+                        fontWeight:800,fontSize:16,cursor:"pointer",transition:"all 0.1s",
+                        boxShadow:resp[key]===v?"0 2px 8px rgba(200,16,46,0.3)":"none"}}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <span style={{fontSize:11,color:"#9ca3af",minWidth:48}}>De acuerdo</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Comentarios */}
+        <div style={{background:"#fff",borderRadius:8,border:"1px solid #e5e7eb",padding:"16px 20px",marginBottom:20,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+          <div style={{fontSize:14,fontWeight:600,color:"#1a1a1a",marginBottom:10}}>Comentarios adicionales <span style={{fontSize:12,color:"#9ca3af",fontWeight:400}}>(opcional)</span></div>
+          <textarea value={resp.comentarios} onChange={e=>setResp({...resp,comentarios:e.target.value})}
+            placeholder="¿Algo que quieras compartir sobre el módulo, el docente o la experiencia en general?"
+            rows={4} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:6,padding:"10px 12px",fontSize:14,boxSizing:"border-box",fontFamily:"system-ui",outline:"none",resize:"vertical",lineHeight:1.6}}/>
+        </div>
+
+        {/* Promedio en tiempo real */}
+        {promedio!==null&&(
+          <div style={{background:"#f9f9f9",border:"1px solid #e5e7eb",borderRadius:8,padding:"12px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:13,color:"#374151",fontWeight:600}}>Calificación general</span>
+            <span style={{fontSize:26,fontWeight:800,color:colorProm,fontFamily:"Georgia,serif"}}>{promedio}<span style={{fontSize:14,color:"#9ca3af"}}>/5</span></span>
+          </div>
+        )}
+
+        {error&&<div style={{background:"#fef2f2",color:"#dc2626",borderRadius:6,padding:"10px 14px",fontSize:13,marginBottom:14}}>{error}</div>}
+
+        <button onClick={guardar} disabled={!completo}
+          style={{width:"100%",border:"none",borderRadius:8,padding:"14px",cursor:completo?"pointer":"default",
+            fontWeight:700,fontSize:15,fontFamily:"system-ui",
+            background:completo?RED:"#e5e7eb",color:completo?"#fff":"#9ca3af",
+            boxShadow:completo?"0 4px 12px rgba(200,16,46,0.3)":"none"}}>
+          {completo?"Enviar evaluación":"Responde todas las preguntas para continuar"}
+        </button>
+
+        <div style={{textAlign:"center",marginTop:20,fontSize:12,color:"#9ca3af"}}>
+          © 2026 IBERO Tijuana · Coordinación de Educación Continua
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── IMPORT MODAL ─────────────────────────────────────
 // ─── MODAL DE PAGO POR ESTUDIANTE ─────────────────────
 const NPS_PREGUNTAS = [
@@ -1621,6 +1760,14 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
               <button onClick={()=>generarLink(prog.id,modActivo.id)} style={S.btn(linkCopiado===prog.id+"_"+modActivo.id?"#f0fdf4":"#f3f4f6",linkCopiado===prog.id+"_"+modActivo.id?"#16a34a":"#374151",{fontSize:12,padding:"6px 14px",border:"1px solid "+(linkCopiado===prog.id+"_"+modActivo.id?"#bbf7d0":"#e5e7eb")})}>
                 {linkCopiado===prog.id+"_"+modActivo.id?"Enlace copiado":"Copiar enlace docente"}
               </button>
+              <button onClick={()=>enviarEvalPorCorreo(prog.id,modActivo.id)}
+                style={S.btn("#f5f3ff","#7c3aed",{fontSize:12,padding:"6px 14px",border:"1px solid #ddd6fe"})}>
+                ✉ Enviar evaluación
+              </button>
+              <button onClick={()=>setNpsModal({prog,mod:modActivo})}
+                style={S.btn("#eff6ff","#2563eb",{fontSize:12,padding:"6px 14px",border:"1px solid #bfdbfe"})}>
+                Registrar respuestas
+              </button>
             </div>
 
             {fechas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin sesiones programadas. Configura las fechas de clase en el módulo.</div>}
@@ -1838,6 +1985,47 @@ export default function App() {
     navigator.clipboard.writeText(url).then(()=>{setLinkCop(progId+"_"+modId);setTimeout(()=>setLinkCop(""),3000);});
   };
 
+  const generarEnlaceEval = (progId, modId) => {
+    const token = btoa(JSON.stringify({progId,modId}));
+    const url   = window.location.href.split("?")[0]+"?eval="+token;
+    navigator.clipboard.writeText(url).then(()=>{
+      setLinkCop("eval_"+progId+"_"+modId);
+      setTimeout(()=>setLinkCop(""),4000);
+    });
+    return url;
+  };
+
+  const enviarEvalPorCorreo = (progId, modId) => {
+    const prog = (programas||[]).find(p=>p.id===progId);
+    const mod  = mods(prog||{}).find(m=>m.id===modId);
+    if (!prog||!mod) return;
+    const token = btoa(JSON.stringify({progId,modId}));
+    const url   = window.location.href.split("?")[0]+"?eval="+token;
+    // Copiar enlace al clipboard también
+    navigator.clipboard.writeText(url);
+    setLinkCop("eval_"+progId+"_"+modId);
+    setTimeout(()=>setLinkCop(""),4000);
+    // Estudiantes del módulo (activos, con email)
+    const estudiantesConEmail = ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo"&&e.email);
+    const cco = estudiantesConEmail.map(e=>e.email).join(",");
+    const gen = prog.generacion ? ` — ${prog.generacion} generación` : "";
+    const subject = `Evaluación del módulo: ${mod.nombre}`;
+    const body = [
+      `Estimados participantes,`,``,
+      `Hemos concluido el módulo "${mod.nombre}" del programa ${prog.nombre}${gen}.`,``,
+      `Nos interesa mucho conocer tu experiencia para seguir mejorando. Por favor dedica 3 minutos a responder esta evaluación anónima:`,``,
+      url,``,
+      `Tu opinión es completamente anónima y muy valiosa para nosotros.`,``,
+      `¡Muchas gracias!`,``,
+      `Coordinación de Educación Continua`,
+      `IBERO Tijuana`,
+      `Tel: 664 630 1577 Ext. 2576`,
+    ].join("\n");
+    // mailto con CCO (bcc)
+    const mailto = `mailto:?bcc=${encodeURIComponent(cco)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailto,"_blank");
+  };
+
   const saveAsistDocente = (progId,modId,updated) => {
     save((programas||[]).map(p=>{
       if(p.id!==progId) return p;
@@ -1846,7 +2034,9 @@ export default function App() {
   };
 
   const isPublic = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
+  const isEval   = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("eval");
   if (!ready) return null;
+  if (isEval)   return <EvaluacionDocente programas={programas}/>;
   if (isPublic) return <ListaDocente programas={programas} onSave={saveAsistDocente}/>;
   if (!session) return <LoginScreen onLogin={u=>setSession(u)}/>;
 
@@ -2404,7 +2594,15 @@ export default function App() {
                             <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:conf?"#f0fdf4":"#fffbeb",color:conf?"#16a34a":"#d97706",fontWeight:700,fontFamily:"system-ui",border:"1px solid "+(conf?"#bbf7d0":"#fde68a")}}>{conf?"Confirmado":"Propuesta"}</span>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                               {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
-                              {m.docente&&<button onClick={()=>setNpsModal({prog,mod:m})} style={S.btn("#eff6ff","#2563eb",{border:"1px solid #bfdbfe",padding:"5px 11px",fontSize:12})}>Registrar evaluación</button>}
+                              {/* Evaluación de módulo */}
+                              <button onClick={()=>generarEnlaceEval(prog.id,m.id)}
+                                style={S.btn(linkCopiado==="eval_"+prog.id+"_"+m.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+m.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+m.id?"#bbf7d0":"#e5e7eb")})}>
+                                {linkCopiado==="eval_"+prog.id+"_"+m.id?"Enlace copiado":"Copiar enlace eval."}
+                              </button>
+                              <button onClick={()=>enviarEvalPorCorreo(prog.id,m.id)}
+                                style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
+                                ✉ Enviar a estudiantes
+                              </button>
                               {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
                             </div>
