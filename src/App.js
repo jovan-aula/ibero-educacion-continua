@@ -1,5 +1,84 @@
 import { useState, useEffect, useRef } from "react";
 
+// ─── SUPABASE ─────────────────────────────────────────
+const SUPA_URL = "https://hwaxdtlngjalhqnmcgnk.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3YXhkdGxuZ2phbGhxbm1jZ25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDY2NjMsImV4cCI6MjA5MDMyMjY2M30.isHtrB4g2qK1CYtlievJxr5kZo4IxOtrpMg1Fir11nI";
+
+const supa = {
+  headers: { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+
+  async get(table, params="") {
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}${params}`, { headers: { ...this.headers, "Prefer": "return=representation" } });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch(e) { console.error("Supabase GET error:", e); return null; }
+  },
+
+  async upsert(table, data) {
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+        method: "POST",
+        headers: { ...this.headers, "Prefer": "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(Array.isArray(data) ? data : [data]),
+      });
+      return r.ok;
+    } catch(e) { console.error("Supabase UPSERT error:", e); return false; }
+  },
+
+  async del(table, id) {
+    try {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=eq.${id}`, { method: "DELETE", headers: this.headers });
+      return r.ok;
+    } catch(e) { console.error("Supabase DELETE error:", e); return false; }
+  },
+};
+
+// Sincronizar programas completos a Supabase (en background)
+const syncToSupabase = async (programas) => {
+  try {
+    // Programas
+    const progs = programas.map(p=>({
+      id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
+      generacion: p.generacion||"", color: p.color||"", descripcion: p.descripcion||"",
+      parcialidades_default: p.parcialidadesDefault||5, estatus: p.estatus||"activo",
+    }));
+    await supa.upsert("programas", progs);
+
+    // Módulos
+    const mods = programas.flatMap(p=>(p.modulos||[]).map(m=>({
+      id: m.id, programa_id: p.id, numero: m.numero||"", nombre: m.nombre||"",
+      docente_id: m.docenteId||null, docente: m.docente||"", email_docente: m.emailDocente||"",
+      clases: m.clases||4, horas_por_clase: m.horasPorClase||4, horario: m.horario||"",
+      fecha_inicio: m.fechaInicio||"", fecha_fin: m.fechaFin||"",
+      dias: m.dias||[], fechas_clase: m.fechasClase||[], estatus: m.estatus||"propuesta",
+    })));
+    if(mods.length) await supa.upsert("modulos", mods);
+
+    // Estudiantes + Pagos
+    const ests = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
+      id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
+      telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
+      carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
+      requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
+      fuente: e.fuente||"", programa_interes: e.programa_interes||"",
+      forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+      estatus: e.estatus||"activo", asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
+    })));
+    if(ests.length) await supa.upsert("estudiantes", ests);
+
+    // Pagos
+    const pagos = programas.flatMap(p=>(p.estudiantes||[]).filter(e=>e.pago?.monto_acordado>0).map(e=>({
+      id: e.id+"_pago", estudiante_id: e.id, programa_id: p.id,
+      tipo: e.pago.tipo||"parcialidades", monto_acordado: e.pago.monto_acordado||0,
+      descuento_pct: e.pago.descuento_pct||0, promocion_id: e.pago.promocion_id||"",
+      parcialidades: e.pago.parcialidades||[], notas: e.pago.notas||"",
+    })));
+    if(pagos.length) await supa.upsert("pagos", pagos);
+
+  } catch(e) { console.error("Sync error:", e); }
+};
+
 // ─── CONSTANTES ───────────────────────────────────────
 const SK  = "ibero_programas";
 const RK  = "ibero_responsables";
@@ -1059,44 +1138,54 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     };
 
     // Detecta tipo de pago según monto y genera parcialidades
-    const buildPago = (monto, parcDefault) => {
+    // buildPago ahora recibe la forma de pago del CRM si existe
+    const buildPago = (monto, parcDefault, formaPago) => {
       const n = parcDefault||5;
-      if (!monto||monto===0) {
-        return {tipo:"parcialidades",monto_acordado:0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
-      }
-      if (monto > 10000) {
-        // Pago único — ya cubierto
-        return {
-          tipo:"unico",
-          monto_acordado:monto,
-          descuento_pct:0,
-          promocion_id:"",
-          parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}],
-          notas:"Pago único — cubierto al inscribirse",
-        };
-      }
-      // Parcialidades (monto < 5000 o entre 5000-10000)
       const fechas = calcVencimientosImport(n, fechaInicioPrograma);
-      const parcialidades = Array.from({length:n},(_,i)=>({
-        id:newId(),
-        numero:i+1,
-        pagado:i===0,               // primera ya pagada
-        fecha_pago:i===0?today():"",
-        fecha_vencimiento:fechas[i],
-      }));
-      return {
+      const mkParcialidades = (montoFinal, descuento=0, notas="") => ({
         tipo:"parcialidades",
-        monto_acordado:monto,
-        descuento_pct:0,
+        monto_acordado:montoFinal,
+        descuento_pct:descuento,
         promocion_id:"",
-        parcialidades,
-        notas:monto<5000?"Parcialidades — primer pago cubierto al inscribirse":"",
-      };
+        parcialidades:Array.from({length:n},(_,i)=>({
+          id:newId(), numero:i+1,
+          pagado:i===0, fecha_pago:i===0?today():"",
+          fecha_vencimiento:fechas[i],
+        })),
+        notas,
+      });
+      const mkUnico = (montoFinal, descuento=0, notas="") => ({
+        tipo:"unico",
+        monto_acordado:montoFinal,
+        descuento_pct:descuento,
+        promocion_id:"",
+        parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}],
+        notas,
+      });
+
+      // 1. Usar forma de pago del CRM si viene definida
+      if (formaPago) {
+        const fp = formaPago.toLowerCase();
+        if (fp.includes("único") || fp.includes("unico") || fp.includes("contado")) {
+          // "Pago único (25% descuento)" → detectar si incluye descuento
+          const descuento = fp.includes("25%") ? 25 : fp.includes("30%") ? 30 : fp.includes("20%") ? 20 : 0;
+          return mkUnico(monto, descuento, formaPago);
+        }
+        if (fp.includes("parcialidades")) {
+          return mkParcialidades(monto, 0, formaPago);
+        }
+      }
+
+      // 2. Fallback: detección automática por monto
+      if (!monto||monto===0) return mkParcialidades(0,0,"");
+      if (monto > 10000)    return mkUnico(monto, 0, "Pago único — cubierto al inscribirse");
+      return mkParcialidades(monto, 0, "Parcialidades — primer pago cubierto al inscribirse");
     };
 
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const cf = c.customFields||[];
       const monto = c.monetaryValue||c.opportunityValue||0;
+      const formaPago = getCF(cf,"LUUHSIlkWr1eFS7LzZ4T","contact.forma_de_pago");
       return {
         id:               c.id,
         nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
@@ -1110,12 +1199,13 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         programa_interes: getCF(cf,"rWoFzI5aT07JEzAuUhTe","contact.programa_de_intersz"),
         fuente:           getCF(cf,"zGLvQcNfeatO2c4GyxCi","source")||c.source||"",
         requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura"),
+        forma_pago_crm:   formaPago,
         csf_url:          getCSFUrl(cf),
         estatus:          "activo",
         asistencia:       {},
         campos_extra:     {},
         monto_ghl:        monto,
-        pago:             buildPago(monto, prog.parcialidadesDefault),
+        pago:             buildPago(monto, prog.parcialidadesDefault, formaPago),
       };
     });
     onImport([...existing,...toAdd]);
@@ -1494,7 +1584,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                   {(()=>{
                     const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
                     if(!evals.length)return null;
-                    const prom=Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10;
+                    const prom=evals.length?Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10:0;
                     const cp=prom>=4?"#16a34a":prom>=3?"#d97706":"#dc2626";
                     const dimLabels=["Expect.","Relevancia","Aplicación","Didáctica","Dominio"];
                     return(
@@ -1509,7 +1599,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                         <div style={{display:"flex",gap:10,flexWrap:"wrap",flex:1}}>
                           {dimLabels.map((l,i)=>{
                             const key="q"+(i+1);
-                            const dim=Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10;
+                            const dim=evals.length?Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10:0;
                             const cd=dim>=4?"#16a34a":dim>=3?"#d97706":"#dc2626";
                             return(
                               <div key={key} style={{textAlign:"center"}}>
@@ -2062,32 +2152,87 @@ export default function App() {
     const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
     const d=localStorage.getItem(DK);  setDocentes(d?JSON.parse(d):[]);
 
-    // Cargar programas y migrar módulos sin fechasClase
-    const rawP = localStorage.getItem(SK);
-    const programasRaw = rawP ? JSON.parse(rawP) : INIT_DATA;
-    let migrado = false;
-    const programasMigrados = programasRaw.map(prog=>({
-      ...prog,
-      modulos: (prog.modulos||[]).map(mod=>{
-        if(mod.fechasClase&&mod.fechasClase.length>0) return mod; // ya tiene fechas
-        if(!mod.fechaInicio||!mod.fechaFin) return mod; // sin datos suficientes
-        const fechasClase = generarFechasClase(mod.fechaInicio, mod.fechaFin, mod.dias, mod.clases);
-        if(!fechasClase.length) return mod;
-        migrado = true;
-        return {
-          ...mod,
-          fechasClase,
-          fechaInicio: fechasClase[0],
-          fechaFin:    fechasClase[fechasClase.length-1],
-        };
-      })
-    }));
-    if(migrado){
-      // Guardar la versión migrada
-      localStorage.setItem(SK, JSON.stringify(programasMigrados));
-    }
-    setProgramas(programasMigrados);
-    setReady(true);
+    // Cargar programas: intentar Supabase primero, caer a localStorage
+    const cargarProgramas = async () => {
+      let programasRaw = null;
+
+      try {
+        // Intentar cargar desde Supabase
+        const [progs, mods, ests, pagos] = await Promise.all([
+          supa.get("programas", "?order=created_at"),
+          supa.get("modulos",   "?order=created_at"),
+          supa.get("estudiantes","?order=created_at"),
+          supa.get("pagos",      "?order=created_at"),
+        ]);
+
+        if (progs && progs.length > 0) {
+          // Reconstruir estructura anidada desde Supabase
+          programasRaw = progs.map(p => {
+            const progMods = (mods||[]).filter(m=>m.programa_id===p.id).map(m=>({
+              id: m.id, numero: m.numero, nombre: m.nombre,
+              docenteId: m.docente_id||"", docente: m.docente||"",
+              emailDocente: m.email_docente||"", clases: m.clases||4,
+              horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
+              fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
+              dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
+            }));
+            const progEsts = (ests||[]).filter(e=>e.programa_id===p.id).map(e=>{
+              const pago = (pagos||[]).find(pg=>pg.estudiante_id===e.id);
+              return {
+                id: e.id, nombre: e.nombre, email: e.email||"", telefono: e.telefono||"",
+                empresa: e.empresa||"", puesto: e.puesto||"", carrera: e.carrera||"",
+                grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
+                requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
+                fuente: e.fuente||"", programa_interes: e.programa_interes||"",
+                forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+                estatus: e.estatus||"activo", asistencia: e.asistencia||{},
+                campos_extra: e.campos_extra||{},
+                pago: pago ? {
+                  tipo: pago.tipo, monto_acordado: pago.monto_acordado,
+                  descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
+                  parcialidades: pago.parcialidades||[], notas: pago.notas||"",
+                } : { tipo:"parcialidades", monto_acordado:0, descuento_pct:0, promocion_id:"", parcialidades:[], notas:"" },
+              };
+            });
+            return {
+              id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
+              generacion: p.generacion||"", color: p.color||"", descripcion: p.descripcion||"",
+              parcialidadesDefault: p.parcialidades_default||5, estatus: p.estatus||"activo",
+              modulos: progMods, estudiantes: progEsts,
+            };
+          });
+          // Actualizar localStorage con los datos de Supabase
+          localStorage.setItem(SK, JSON.stringify(programasRaw));
+        }
+      } catch(e) {
+        console.warn("No se pudo cargar desde Supabase, usando localStorage:", e);
+      }
+
+      // Fallback a localStorage si Supabase no devolvió datos
+      if (!programasRaw) {
+        const rawP = localStorage.getItem(SK);
+        programasRaw = rawP ? JSON.parse(rawP) : INIT_DATA;
+      }
+
+      // Migrar módulos sin fechasClase
+      let migrado = false;
+      const programasMigrados = programasRaw.map(prog=>({
+        ...prog,
+        modulos: (prog.modulos||[]).map(mod=>{
+          if(mod.fechasClase&&mod.fechasClase.length>0) return mod;
+          if(!mod.fechaInicio||!mod.fechaFin) return mod;
+          const fechasClase = generarFechasClase(mod.fechaInicio, mod.fechaFin, mod.dias, mod.clases);
+          if(!fechasClase.length) return mod;
+          migrado = true;
+          return { ...mod, fechasClase, fechaInicio: fechasClase[0], fechaFin: fechasClase[fechasClase.length-1] };
+        })
+      }));
+      if(migrado) localStorage.setItem(SK, JSON.stringify(programasMigrados));
+      setProgramas(programasMigrados);
+      setReady(true);
+    };
+
+    cargarProgramas();
   },[]);
 
   useEffect(()=>{
@@ -2096,7 +2241,12 @@ export default function App() {
     return()=>document.removeEventListener("mousedown",h);
   },[]);
 
-  const save      = d=>{setProgramas(d);localStorage.setItem(SK,JSON.stringify(d));};
+  const save = d => {
+    setProgramas(d);
+    localStorage.setItem(SK, JSON.stringify(d));
+    // Sincronizar a Supabase en background (sin bloquear la UI)
+    syncToSupabase(d).catch(e => console.error("Sync background error:", e));
+  };
   const saveResp  = d=>{setResp(d);localStorage.setItem(RK,JSON.stringify(d));};
   const saveUsers = d=>{setUsers(d);localStorage.setItem(UK,JSON.stringify(d));};
   const saveFM    = d=>{setFieldMap(d);localStorage.setItem(FK,JSON.stringify(d));};
@@ -3466,7 +3616,7 @@ export default function App() {
             if(!key||docentesVistos.has(key))return;
             docentesVistos.add(key);
             const evalsDoc = (npsData||[]).filter(ev=>ev.docenteId===e.docenteId||ev.docenteNombre===e.docenteNombre);
-            const prom = Math.round(evalsDoc.reduce((a,ev)=>a+(ev.promedio||0),0)/evalsDoc.length*10)/10;
+            const prom = evalsDoc.length?Math.round(evalsDoc.reduce((a,ev)=>a+(ev.promedio||0),0)/evalsDoc.length*10)/10:0;
             docentesConEvals.push({nombre:e.docenteNombre,id:e.docenteId,evals:evalsDoc,prom});
           });
           docentesConEvals.sort((a,b)=>b.prom-a.prom);
