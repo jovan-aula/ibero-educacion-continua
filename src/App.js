@@ -15,10 +15,10 @@ const COLORES = ["#C8102E","#1a1a1a","#7c3aed","#1d4ed8","#0f766e","#b45309","#6
 const MESES_L = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
 const MODALIDADES = [
-  {valor:"Presencial Playas"},
-  {valor:"Presencial Campus Río"},
-  {valor:"Online"},
-  {valor:"Híbrido"},
+  {valor:"Presencial Playas",    },
+  {valor:"Presencial Campus Río",},
+  {valor:"Online",               },
+  {valor:"Híbrido",              },
 ];
 
 const GENERACIONES = ["Primera","Segunda","Tercera","Cuarta","Quinta","Sexta","Séptima","Octava","Novena","Décima"];
@@ -57,6 +57,7 @@ const isFestivo = fecha => {
   return null;
 };
 
+// Genera fechas de clase automáticamente respetando festivos
 const generarFechasClase = (fechaInicio,fechaFin,dias,clases,excepciones=[]) => {
   if(!fechaInicio||!fechaFin||!dias||!dias.length)return[];
   const DIAS_S=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -142,20 +143,20 @@ const progStatus = p => {
   return "activo";
 };
 
-// ─── FIX 2: calcPct corregido para arrays de fechas ──
 const calcPct = (est, modulos) => {
   if (!est || !modulos || !modulos.length) return null;
   const total = modulos.reduce((a,m)=>a+(m.clases||0), 0);
   if (!total) return null;
   const asist = modulos.reduce((a,m)=>{
     const v = est.asistencia && est.asistencia["mod_"+m.id];
-    return a + (Array.isArray(v) ? v.length : (v || 0));
+    return a + (v || 0);
   }, 0);
   return Math.round(asist/total*100);
 };
 
 const RECARGO_PCT = 6;
 
+// Calcula honorarios de un módulo según categoría del docente
 const calcHonorarios = (mod, docentes) => {
   if (!mod.docente&&!mod.docenteId) return 0;
   const doc = docentes.find(d=>d.id===mod.docenteId||d.nombre===mod.docente);
@@ -164,14 +165,19 @@ const calcHonorarios = (mod, docentes) => {
   return horas * cat.tarifa;
 };
 
+// Proyección mensual: por cada parcialidad pendiente o pagada, asigna al mes de vencimiento
 const proyeccionMensual = (programas, docentes) => {
-  const byMes = {};
+  const byMes = {}; // "2025-04" -> {esperado, cobrado, honorarios}
+
   (programas||[]).forEach(prog=>{
+    // Ingresos por parcialidades
     ests(prog).forEach(est=>{
       const p=est.pago;
       if(!p||!p.monto_acordado) return;
       const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
+
       if(p.tipo==="unico"){
+        // Pago único: asignar al mes de inicio del programa
         const mesKey=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
         if(!mesKey)return;
         if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
@@ -179,6 +185,7 @@ const proyeccionMensual = (programas, docentes) => {
         const pagado=(p.parcialidades||[]).some(x=>x.pagado);
         if(pagado)byMes[mesKey].cobrado+=mf;
       } else {
+        // Parcialidades: asignar cada una a su mes de vencimiento
         (p.parcialidades||[]).forEach(parc=>{
           const mesKey=(parc.fecha_vencimiento||parc.fecha_pago||"").substring(0,7);
           if(!mesKey)return;
@@ -189,6 +196,8 @@ const proyeccionMensual = (programas, docentes) => {
         });
       }
     });
+
+    // Honorarios por módulo: asignar al mes de inicio del módulo
     mods(prog).forEach(mod=>{
       if(!mod.fechaInicio)return;
       const mesKey=mod.fechaInicio.substring(0,7);
@@ -196,19 +205,24 @@ const proyeccionMensual = (programas, docentes) => {
       byMes[mesKey].honorarios+=calcHonorarios(mod,docentes);
     });
   });
+
   return byMes;
 };
 
+// Calcula el estado de pagos de un estudiante
 const calcEstadoPagos = (est) => {
   const p = est.pago;
   if (!p||p.tipo!=="parcialidades"||!(p.parcialidades||[]).length) return null;
   const hoy = today();
+  // Vencida: fecha de vencimiento ya pasó y no está pagada
   const vencidas = (p.parcialidades||[]).filter(parc=>
     !parc.pagado && parc.fecha_vencimiento && parc.fecha_vencimiento < hoy
   );
+  // Con recargo: no pagada y ya pasó la fecha de vencimiento (día 15)
+  // A partir del día 16 aplica recargo
   const conRecargo = (p.parcialidades||[]).filter(parc=>{
     if (parc.pagado||!parc.fecha_vencimiento) return false;
-    return parc.fecha_vencimiento < hoy;
+    return parc.fecha_vencimiento < hoy; // si hoy > día 15 del mes → vencida con recargo
   });
   return {vencidas, conRecargo, total:(p.parcialidades||[]).length, pagadas:(p.parcialidades||[]).filter(x=>x.pagado).length};
 };
@@ -226,14 +240,19 @@ const getAlertas = programas => {
       const pct = calcPct(est, mods(prog));
       if (pct !== null && pct < 80 && progStatus(prog)==="activo")
         alerts.push({tipo:"asistencia",prog,est,pct});
+
+      // Alertas de pago
       const ep = calcEstadoPagos(est);
       if (!ep) return;
       const mf = (est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
       const montoParcialidad = ep.total ? mf/ep.total : 0;
       const recargo = montoParcialidad * (RECARGO_PCT/100);
+
       if (ep.conRecargo.length >= 2) {
+        // Alerta roja: 2+ mensualidades sin pagar después del día 15
         alerts.push({tipo:"pago_critico",prog,est,vencidas:ep.conRecargo.length,montoParcialidad,recargo:recargo*ep.conRecargo.length});
       } else if (ep.conRecargo.length === 1) {
+        // Alerta amarilla: 1 mensualidad vencida después del día 15
         alerts.push({tipo:"pago_recargo",prog,est,vencidas:ep.conRecargo,montoParcialidad,recargo});
       }
     });
@@ -255,6 +274,7 @@ const StatusBadge = ({p}) => {
   return <span style={{background:ss.bg,border:"1px solid "+ss.border,color:ss.color,borderRadius:4,padding:"2px 8px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{ss.label}</span>;
 };
 
+// ─── CONFIRMACIÓN SIMPLE ──────────────────────────────
 function ConfirmSimple({titulo,mensaje,onConfirm,onClose}) {
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
@@ -272,6 +292,7 @@ function ConfirmSimple({titulo,mensaje,onConfirm,onClose}) {
   );
 }
 
+// ─── CONFIRMACIÓN CON TEXTO ESCRITO ──────────────────
 function ConfirmEscrita({titulo,subtitulo,mensaje,onConfirm,onClose}) {
   const [texto,setTexto] = useState("");
   const valido = texto === "ELIMINAR";
@@ -300,7 +321,7 @@ function ConfirmEscrita({titulo,subtitulo,mensaje,onConfirm,onClose}) {
   );
 }
 
-const S = {
+const S = { // estilos reutilizables
   inp: {width:"100%",border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontSize:14,boxSizing:"border-box",fontFamily:"system-ui",outline:"none"},
   lbl: {fontSize:11,fontWeight:700,color:"#6b7280",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em",fontFamily:"system-ui"},
   card:{background:"#fff",border:"1px solid #e5e7eb",borderRadius:8,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"},
@@ -347,7 +368,7 @@ function LoginScreen({onLogin}) {
   );
 }
 
-// ─── LISTA PÚBLICA DOCENTE — FIX 5: nombre del docente visible ───
+// ─── LISTA PÚBLICA DOCENTE ────────────────────────────
 function ListaDocente({programas, onSave}) {
   const token = new URLSearchParams(window.location.search).get("lista");
   let progId, modId;
@@ -360,6 +381,7 @@ function ListaDocente({programas, onSave}) {
   const hoy = today();
   const fmtHoy = () => { const d=new Date(); return d.getDate()+" de "+MESES_L[d.getMonth()]+" de "+d.getFullYear(); };
 
+  // Calcular si hoy es día de clase
   const fechasClase = mod.fechasClase&&mod.fechasClase.length
     ? mod.fechasClase
     : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
@@ -371,6 +393,7 @@ function ListaDocente({programas, onSave}) {
   const [local,setLocal] = useState(()=>ests(prog).map(e=>({...e,asistencia:{...(e.asistencia||{})}})));
   const [saved,setSaved] = useState(false);
 
+  // Presente/ausente por fecha — asistencia guardada como array de fechas
   const presenteHoy = e => {
     const v = e.asistencia&&e.asistencia["mod_"+modId];
     return Array.isArray(v) ? v.includes(hoy) : false;
@@ -401,14 +424,11 @@ function ListaDocente({programas, onSave}) {
     <div style={{minHeight:"100vh",background:"#f2f2f2",fontFamily:"system-ui"}}>
       <div style={{background:RED,padding:"16px 24px",display:"flex",alignItems:"center",gap:16}}>
         <IberoLogo h={40}/>
-        {/* FIX 5: nombre del docente en el header del enlace público */}
-        <div>
-          <div style={{color:"#fff",fontSize:14,fontWeight:700}}>{mod.docente||"Docente"}</div>
-          <div style={{color:"rgba(255,255,255,0.75)",fontSize:12}}>Lista de Asistencia · Coordinación de Educación Continua</div>
-        </div>
+        <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Lista de Asistencia · Coordinación de Educación Continua</div>
       </div>
 
       <div style={{maxWidth:680,margin:"0 auto",padding:"24px 16px"}}>
+        {/* Info del módulo */}
         <div style={{...S.card,padding:24,marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:700,color:RED,letterSpacing:"1px",marginBottom:4}}>PROGRAMA</div>
           <div style={{fontWeight:700,fontSize:17,fontFamily:"Georgia,serif",marginBottom:2}}>{prog.nombre}</div>
@@ -420,6 +440,7 @@ function ListaDocente({programas, onSave}) {
           </div>
         </div>
 
+        {/* Estado del día */}
         {festivo&&(
           <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"14px 18px",marginBottom:16}}>
             <div style={{fontWeight:700,fontSize:14,color:"#92400e"}}>Día festivo: {festivo}</div>
@@ -446,6 +467,7 @@ function ListaDocente({programas, onSave}) {
           </div>
         )}
 
+        {/* Lista estudiantes — solo si hay clase hoy */}
         {esHoyClase&&(
           <>
             <div style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Toca el nombre para marcar presente o ausente.</div>
@@ -494,7 +516,8 @@ function ListaDocente({programas, onSave}) {
   );
 }
 
-// ─── MODAL DE EDICIÓN DE ESTUDIANTE ──────────────────
+// ─── IMPORT MODAL ─────────────────────────────────────
+// ─── MODAL DE PAGO POR ESTUDIANTE ─────────────────────
 function EditEstModal({est,prog,onSave,onClose}) {
   const [form,setForm] = useState({...est});
   const guardar = () => { onSave(form); onClose(); };
@@ -525,6 +548,7 @@ function EditEstModal({est,prog,onSave,onClose}) {
 function PagoModal({est,prog,onSave,onClose}) {
   const pago0 = est.pago||{tipo:"unico",monto_acordado:est.monto_ghl||0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
   const [pago,setPago] = useState(pago0);
+  const [newPromo,setNewPromo] = useState({nombre:"",descuento:0});
 
   const precioLista = prog.precioLista||0;
   const parcDefault = prog.parcialidadesDefault||5;
@@ -539,8 +563,11 @@ function PagoModal({est,prog,onSave,onClose}) {
     setPago({...pago,promocion_id:id,descuento_pct:pr?pr.descuento:0});
   };
 
+  // Calcula fecha de vencimiento mensual a partir del mes siguiente al inicio del programa
   const calcFechasVencimiento = (n, fechaInicioProg) => {
     const base = fechaInicioProg ? new Date(fechaInicioProg+"T12:00:00") : new Date();
+    // Primera parcialidad ya está pagada (pago al inscribirse)
+    // Vencen el día 15 del mes siguiente, mes a mes
     return Array.from({length:n},(_,i)=>{
       const d = new Date(base.getFullYear(), base.getMonth()+i+1, 1);
       return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15";
@@ -552,8 +579,11 @@ function PagoModal({est,prog,onSave,onClose}) {
   const generarParcialidades = n => {
     const fechas = calcFechasVencimiento(n, fechaInicioProg);
     const parcs = Array.from({length:n},(_,i)=>({
-      id:newId(),numero:i+1,pagado:i===0,
-      fecha_pago:i===0?today():"",fecha_vencimiento:fechas[i],
+      id:newId(),
+      numero:i+1,
+      pagado:i===0, // primera ya pagada
+      fecha_pago:i===0?today():"",       // fecha real de pago
+      fecha_vencimiento:fechas[i],        // fecha programada de vencimiento
     }));
     setPago({...pago,parcialidades:parcs});
   };
@@ -578,6 +608,8 @@ function PagoModal({est,prog,onSave,onClose}) {
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
         </div>
         <div style={{padding:"20px 24px"}}>
+
+          {/* Referencia GHL */}
           {est.monto_ghl>0&&(
             <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",marginBottom:8,fontFamily:"system-ui",fontSize:13}}>
               <span style={{color:"#92400e"}}>Monto GHL (referencia): </span>
@@ -590,6 +622,8 @@ function PagoModal({est,prog,onSave,onClose}) {
               {est.csf_url&&<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:12,background:"#f0fdf4",borderRadius:6,padding:"4px 12px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Descargar CSF</a>}
             </div>
           )}
+
+          {/* Precio lista y monto acordado */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
             <div>
               <label style={S.lbl}>Precio lista del programa</label>
@@ -600,6 +634,8 @@ function PagoModal({est,prog,onSave,onClose}) {
               <input type="number" min="0" value={pago.monto_acordado||""} onChange={e=>setPago({...pago,monto_acordado:parseFloat(e.target.value)||0})} placeholder="0" style={S.inp}/>
             </div>
           </div>
+
+          {/* Promoción */}
           <div style={{marginBottom:14}}>
             <label style={S.lbl}>Promoción aplicada</label>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
@@ -614,10 +650,14 @@ function PagoModal({est,prog,onSave,onClose}) {
               {pago.descuento_pct>0&&<span style={{fontFamily:"system-ui",fontSize:13,color:"#16a34a",fontWeight:700}}>Ahorro: {fmtMXN(pago.monto_acordado*(pago.descuento_pct/100))}</span>}
             </div>
           </div>
+
+          {/* Monto final */}
           <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"12px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontFamily:"system-ui",fontSize:13,color:"#16a34a",fontWeight:600}}>Monto final a cobrar</span>
             <span style={{fontFamily:"system-ui",fontSize:20,fontWeight:800,color:"#16a34a"}}>{fmtMXN(montoFinal)}</span>
           </div>
+
+          {/* Tipo de pago */}
           <div style={{marginBottom:14}}>
             <label style={S.lbl}>Tipo de pago</label>
             <div style={{display:"flex",gap:8}}>
@@ -629,6 +669,8 @@ function PagoModal({est,prog,onSave,onClose}) {
               ))}
             </div>
           </div>
+
+          {/* Parcialidades */}
           {pago.tipo==="parcialidades"&&(
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -662,13 +704,15 @@ function PagoModal({est,prog,onSave,onClose}) {
                           {p.fecha_vencimiento&&(
                             <div style={{fontSize:11,color:vencido?"#dc2626":proxima?"#d97706":"#9ca3af",fontFamily:"system-ui",marginTop:2}}>
                               Vencimiento: {fmtFecha(p.fecha_vencimiento)}
-                              {vencido&&" — Vencido"}{proxima&&" — Próximo a vencer"}
+                              {vencido&&" — Vencido"}
+                              {proxima&&" — Próximo a vencer"}
                             </div>
                           )}
                         </div>
+                        {/* Editar fecha de vencimiento */}
                         <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
                           {!p.pagado&&(
-                            <input type="date" value={p.fecha_vencimiento||""} onChange={e=>{const parcs=[...(pago.parcialidades||[])];parcs[i]={...parcs[i],fecha_vencimiento:e.target.value};setPago({...pago,parcialidades:parcs});}} style={{border:"1px solid #e5e7eb",borderRadius:4,padding:"3px 8px",fontSize:11,fontFamily:"system-ui",background:"#fff",color:"#6b7280"}}/>
+                            <input type="date" value={p.fecha_vencimiento||""} onChange={e=>{const parcs=[...(pago.parcialidades||[])];parcs[i]={...parcs[i],fecha_vencimiento:e.target.value};setPago({...pago,parcialidades:parcs});}} style={{border:"1px solid #e5e7eb",borderRadius:4,padding:"3px 8px",fontSize:11,fontFamily:"system-ui",background:"#fff",color:"#6b7280"}} title="Fecha de vencimiento"/>
                           )}
                           {p.pagado&&(
                             <div style={{display:"flex",flexDirection:"column",gap:2,alignItems:"flex-end"}}>
@@ -685,10 +729,13 @@ function PagoModal({est,prog,onSave,onClose}) {
               </div>
             </div>
           )}
+
+          {/* Notas */}
           <div style={{marginBottom:20}}>
             <label style={S.lbl}>Notas de pago</label>
             <textarea value={pago.notas||""} onChange={e=>setPago({...pago,notas:e.target.value})} placeholder="Convenios, condiciones especiales..." rows={2} style={{...S.inp,resize:"vertical"}}/>
           </div>
+
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={onClose} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
             <button onClick={()=>{onSave(pago);onClose();}} style={S.btn(RED,"#fff")}>Guardar pago</button>
@@ -743,6 +790,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
           try{
             const cr=await fetch("https://services.leadconnectorhq.com/contacts/"+op.contactId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
             const cd=await cr.json();
+            // Pasamos monetaryValue desde la oportunidad al contacto
             const contact={...cd.contact,opportunityStatus:op.status,monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0};
             if(cd.contact?.businessId){
               try{
@@ -767,20 +815,28 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
   const doImport = () => {
     const existing = ests(prog);
     const existIds = new Set(existing.map(e=>e.id));
+
     const getCF = (customFields, id, fieldKey) => {
       const cf = (customFields||[]).find(f=>f.id===id||f.fieldKey===fieldKey||f.fieldKey==="contact."+fieldKey);
       const val = cf ? cf.value||cf.fieldValue||"" : "";
       return typeof val === "string" ? val.trim() : "";
     };
+
+    // Extrae la URL del campo CSF (es un objeto anidado con url)
     const getCSFUrl = (customFields) => {
       const cf = (customFields||[]).find(f=>f.id==="aPGkrDmlbph34lrEyDmc");
       if (!cf||!cf.value) return "";
       if (typeof cf.value === "string") return cf.value;
+      // El valor es un objeto con UUIDs como keys, cada uno tiene {url, documentId}
       const entries = Object.values(cf.value||{});
       if (entries.length>0) return entries[0].url||"";
       return "";
     };
+
+    // Fecha de inicio del primer módulo del programa
     const fechaInicioPrograma = (prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"";
+
+    // Genera fechas de vencimiento mensuales a partir del mes siguiente al inicio
     const calcVencimientosImport = (n, fechaBase) => {
       const base = fechaBase ? new Date(fechaBase+"T12:00:00") : new Date();
       return Array.from({length:n},(_,i)=>{
@@ -788,29 +844,65 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15";
       });
     };
+
+    // Detecta tipo de pago según monto y genera parcialidades
     const buildPago = (monto, parcDefault) => {
       const n = parcDefault||5;
-      if (!monto||monto===0) return {tipo:"parcialidades",monto_acordado:0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
-      if (monto > 10000) return {tipo:"unico",monto_acordado:monto,descuento_pct:0,promocion_id:"",parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}],notas:"Pago único — cubierto al inscribirse"};
+      if (!monto||monto===0) {
+        return {tipo:"parcialidades",monto_acordado:0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
+      }
+      if (monto > 10000) {
+        // Pago único — ya cubierto
+        return {
+          tipo:"unico",
+          monto_acordado:monto,
+          descuento_pct:0,
+          promocion_id:"",
+          parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}],
+          notas:"Pago único — cubierto al inscribirse",
+        };
+      }
+      // Parcialidades (monto < 5000 o entre 5000-10000)
       const fechas = calcVencimientosImport(n, fechaInicioPrograma);
-      const parcialidades = Array.from({length:n},(_,i)=>({id:newId(),numero:i+1,pagado:i===0,fecha_pago:i===0?today():"",fecha_vencimiento:fechas[i]}));
-      return {tipo:"parcialidades",monto_acordado:monto,descuento_pct:0,promocion_id:"",parcialidades,notas:monto<5000?"Parcialidades — primer pago cubierto al inscribirse":""};
+      const parcialidades = Array.from({length:n},(_,i)=>({
+        id:newId(),
+        numero:i+1,
+        pagado:i===0,               // primera ya pagada
+        fecha_pago:i===0?today():"",
+        fecha_vencimiento:fechas[i],
+      }));
+      return {
+        tipo:"parcialidades",
+        monto_acordado:monto,
+        descuento_pct:0,
+        promocion_id:"",
+        parcialidades,
+        notas:monto<5000?"Parcialidades — primer pago cubierto al inscribirse":"",
+      };
     };
+
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const cf = c.customFields||[];
       const monto = c.monetaryValue||c.opportunityValue||0;
       return {
-        id:c.id,nombre:c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),email:c.email||"",telefono:c.phone||"",
-        empresa:c._empresaNombre||c.company||c.company_name||"",
-        puesto:getCF(cf,"Bh2QzKI7oWxAlK61XJLA","contact.puesto_que_desempeas"),
-        carrera:getCF(cf,"jvN3GJ9rxhrXdfcpI1zS","contact.cul_es_tu_carrera_profesional"),
-        grado:getCF(cf,"e7xQs2aAb5UpEwemgShB","contact.ltimo_grado_de_estudios"),
-        egresado_ibero:getCF(cf,"6yYRPsode1sse8Vir7tK","contact.eres_egresada_o_egresado_ibero"),
-        programa_interes:getCF(cf,"rWoFzI5aT07JEzAuUhTe","contact.programa_de_intersz"),
-        fuente:getCF(cf,"zGLvQcNfeatO2c4GyxCi","source")||c.source||"",
-        requiere_factura:getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura"),
-        csf_url:getCSFUrl(cf),estatus:"activo",asistencia:{},campos_extra:{},monto_ghl:monto,
-        pago:buildPago(monto, prog.parcialidadesDefault),
+        id:               c.id,
+        nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
+        email:            c.email||"",
+        telefono:         c.phone||"",
+        empresa:          c._empresaNombre||c.company||c.company_name||"",
+        puesto:           getCF(cf,"Bh2QzKI7oWxAlK61XJLA","contact.puesto_que_desempeas"),
+        carrera:          getCF(cf,"jvN3GJ9rxhrXdfcpI1zS","contact.cul_es_tu_carrera_profesional"),
+        grado:            getCF(cf,"e7xQs2aAb5UpEwemgShB","contact.ltimo_grado_de_estudios"),
+        egresado_ibero:   getCF(cf,"6yYRPsode1sse8Vir7tK","contact.eres_egresada_o_egresado_ibero"),
+        programa_interes: getCF(cf,"rWoFzI5aT07JEzAuUhTe","contact.programa_de_intersz"),
+        fuente:           getCF(cf,"zGLvQcNfeatO2c4GyxCi","source")||c.source||"",
+        requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura"),
+        csf_url:          getCSFUrl(cf),
+        estatus:          "activo",
+        asistencia:       {},
+        campos_extra:     {},
+        monto_ghl:        monto,
+        pago:             buildPago(monto, prog.parcialidadesDefault),
       };
     });
     onImport([...existing,...toAdd]);
@@ -879,7 +971,10 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
               </div>
               <div style={{marginBottom:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",fontFamily:"system-ui",fontSize:12,color:"#92400e"}}>
                 <strong>Pago asignado automáticamente:</strong><br/>
-                Menor de $5,000 → Parcialidades · Mayor de $10,000 → Pago único cubierto · Entre ambos → Parcialidades
+                Menor de $5,000 → Parcialidades ({prog.parcialidadesDefault||5}, primera cubierta) · Mayor de $10,000 → Pago único cubierto · Entre ambos → Parcialidades
+                {(prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]&&(
+                  <span> · Vencimientos desde {MESES_L[parseInt(((prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").split("-")[1]||1)-1]}</span>
+                )}
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between"}}>
                 <button onClick={()=>{setStep("filter");setContacts([]);setSelected([]);}} style={S.btn("#f3f4f6","#374151")}>← Volver</button>
@@ -924,6 +1019,7 @@ function CalendarioView({programas}) {
   };
 
   const iniSem = () => { const d=new Date(anio,mes,dia); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d; };
+
   const nav = dir => {
     if (modo==="dia"){const d=new Date(anio,mes,dia+dir);setDia(d.getDate());setMes(d.getMonth());setAnio(d.getFullYear());}
     else if(modo==="semana"){const d=new Date(anio,mes,dia+dir*7);setDia(d.getDate());setMes(d.getMonth());setAnio(d.getFullYear());}
@@ -1105,8 +1201,8 @@ function CalendarioView({programas}) {
   );
 }
 
-// ─── DOCENTES — FIX 1: setCS recibido como prop ──────
-function DocentesView({docentes, saveDocentes, programas, setCS}) {
+// ─── DOCENTES ─────────────────────────────────────────
+function DocentesView({docentes,saveDocentes,programas}) {
   const [showM,setShowM]   = useState(false);
   const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""});
   const [editId,setEditId] = useState(null);
@@ -1183,7 +1279,6 @@ function DocentesView({docentes, saveDocentes, programas, setCS}) {
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0}}>
                   <button onClick={()=>openEdit(doc)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>
-                  {/* FIX 1: setCS ahora viene como prop y funciona */}
                   <button onClick={()=>setCS({titulo:"Eliminar docente",mensaje:`¿Estás seguro de que deseas eliminar a "${doc.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delDoc(doc.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>
                 </div>
               </div>
@@ -1263,16 +1358,15 @@ function DocentesView({docentes, saveDocentes, programas, setCS}) {
   );
 }
 
-// ─── ASISTENCIA GLOBAL — FIX 4: buscador de estudiantes ──
+// ─── ASISTENCIA GLOBAL ────────────────────────────────
 function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) {
   const [selProgId, setSelProgId] = useState(null);
   const [selModId,  setSelModId]  = useState(null);
-  // FIX 4: estado del buscador
-  const [busqEst, setBusqEst] = useState("");
   const hoy = today();
 
   const prog = selProgId ? (programas||[]).find(p=>p.id===selProgId) : null;
 
+  // ── Lista de programas ──────────────────────────────
   if (!selProgId) return (
     <div>
       <div style={{marginBottom:20}}>
@@ -1312,6 +1406,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
     </div>
   );
 
+  // ── Detalle del programa: todos los módulos y sesiones ──
   const modulos = mods(prog);
   const estudiantes = ests(prog);
 
@@ -1337,13 +1432,15 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
 
   return(
     <div>
+      {/* Header con breadcrumb */}
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        <button onClick={()=>{setSelProgId(null);setSelModId(null);setBusqEst("");}} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",padding:0}}>← Programas</button>
-        {selModId&&<><span style={{color:"#d1d5db"}}>›</span><button onClick={()=>{setSelModId(null);setBusqEst("");}} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",padding:0}}>{prog.nombre}</button></>}
+        <button onClick={()=>{setSelProgId(null);setSelModId(null);}} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",padding:0}}>← Programas</button>
+        {selModId&&<><span style={{color:"#d1d5db"}}>›</span><button onClick={()=>setSelModId(null)} style={{background:"none",border:"none",color:RED,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",padding:0}}>{prog.nombre}</button></>}
         {!selModId&&<><span style={{color:"#d1d5db"}}>›</span><span style={{fontSize:13,color:"#374151",fontFamily:"system-ui",fontWeight:700}}>{prog.nombre}</span></>}
         {selModId&&<><span style={{color:"#d1d5db"}}>›</span><span style={{fontSize:13,color:"#374151",fontFamily:"system-ui",fontWeight:700}}>{modActivo?.nombre}</span></>}
       </div>
 
+      {/* Vista de módulos del programa */}
       {!selModId&&(
         <div>
           <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
@@ -1358,12 +1455,12 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
               const sesionHoy = fechas.includes(hoy);
               const numHoy = fechas.indexOf(hoy)+1;
               const presHoy = sesionHoy ? estudiantes.filter(e=>presenteEnFecha(e,mod.id,hoy)).length : null;
-              const progGrupal = fechas.length>0&&estudiantes.length>0
-                ? Math.round(estudiantes.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+mod.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/(fechas.length*estudiantes.length)*100)
+              const progGrupal = fechas.length>0
+                ? Math.round(estudiantes.reduce((a,e)=>{const v=e.asistencia&&e.asistencia["mod_"+mod.id];return a+(Array.isArray(v)?v.length:(v||0));},0)/(fechas.length*estudiantes.length||1)*100)
                 : null;
               return(
                 <div key={mod.id} style={{...S.card,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+(sesionHoy?"#16a34a":mod.estatus==="confirmado"?"#2563eb":"#e5e7eb")}}
-                  onClick={()=>{setSelModId(mod.id);setBusqEst("");}}>
+                  onClick={()=>setSelModId(mod.id)}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 9px",fontSize:12,fontWeight:800,fontFamily:"system-ui",flexShrink:0}}>{mod.numero}</span>
                     <div style={{flex:1}}>
@@ -1372,7 +1469,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
                         {mod.docente&&<span>{mod.docente}</span>}
                         {mod.horario&&<span>{mod.horario}</span>}
                         <span>{fechas.length} sesiones</span>
-                        {progGrupal!==null&&<span style={{fontWeight:700,color:progGrupal>=80?"#16a34a":"#dc2626"}}>{progGrupal}% grupal</span>}
+                        {progGrupal!==null&&estudiantes.length>0&&<span style={{fontWeight:700,color:progGrupal>=80?"#16a34a":"#dc2626"}}>{progGrupal}% grupal</span>}
                       </div>
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
@@ -1390,20 +1487,10 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
         </div>
       )}
 
+      {/* Vista de sesiones de un módulo */}
       {selModId&&modActivo&&(()=>{
         const fechas = getFechas(modActivo);
         const activos = estudiantes.filter(e=>e.estatus!=="baja");
-
-        // FIX 4: filtrar por búsqueda
-        const activosFiltrados = busqEst
-          ? activos.filter(e=>{
-              const q = busqEst.toLowerCase();
-              return (e.nombre&&e.nombre.toLowerCase().includes(q))||
-                     (e.empresa&&e.empresa.toLowerCase().includes(q))||
-                     (e.email&&e.email.toLowerCase().includes(q));
-            })
-          : activos;
-
         return(
           <div>
             <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
@@ -1423,18 +1510,6 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
               </button>
             </div>
 
-            {/* FIX 4: buscador con autoFocus */}
-            <div style={{marginBottom:16,display:"flex",gap:8}}>
-              <input
-                autoFocus
-                placeholder="Buscar estudiante por nombre, empresa o correo..."
-                value={busqEst}
-                onChange={e=>setBusqEst(e.target.value)}
-                style={{...S.inp,flex:1}}
-              />
-              {busqEst&&<button onClick={()=>setBusqEst("")} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
-            </div>
-
             {fechas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin sesiones programadas. Configura las fechas de clase en el módulo.</div>}
 
             {fechas.length>0&&(
@@ -1443,9 +1518,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
                   <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
                     <thead>
                       <tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
-                        <th style={{textAlign:"left",padding:"10px 16px",fontSize:12,fontWeight:700,color:"#6b7280",minWidth:160,position:"sticky",left:0,background:"#f9f9f9",zIndex:1}}>
-                          Estudiante {busqEst&&<span style={{color:RED,fontWeight:400}}>({activosFiltrados.length} de {activos.length})</span>}
-                        </th>
+                        <th style={{textAlign:"left",padding:"10px 16px",fontSize:12,fontWeight:700,color:"#6b7280",minWidth:160,position:"sticky",left:0,background:"#f9f9f9",zIndex:1}}>Estudiante</th>
                         {fechas.map((f,i)=>{
                           const esHoy=f===hoy;
                           const fest=isFestivo(f);
@@ -1461,7 +1534,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
                       </tr>
                     </thead>
                     <tbody>
-                      {activosFiltrados.map((e,ri)=>{
+                      {activos.map((e,ri)=>{
                         const pct = pctEst(e,modActivo);
                         return(
                           <tr key={e.id} style={{borderBottom:"1px solid #f3f4f6",background:ri%2===0?"#fff":"#fafafa"}}>
@@ -1494,9 +1567,6 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist}) 
                           </tr>
                         );
                       })}
-                      {activosFiltrados.length===0&&(
-                        <tr><td colSpan={fechas.length+2} style={{padding:32,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados para "{busqEst}".</td></tr>
-                      )}
                       {/* Fila de totales por sesión */}
                       <tr style={{borderTop:"2px solid #e5e7eb",background:"#f9f9f9",fontWeight:700}}>
                         <td style={{padding:"8px 16px",fontSize:12,color:"#6b7280",position:"sticky",left:0,background:"#f9f9f9"}}>TOTAL</td>
@@ -1543,10 +1613,10 @@ export default function App() {
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
-  const [pagoModal,setPagoModal] = useState(null);
+  const [pagoModal,setPagoModal] = useState(null); // {est, prog}
   const [notif,setNotif]         = useState(null);
-  const [confirmSimple,setCS]    = useState(null);
-  const [confirmEscrita,setCE]   = useState(null);
+  const [confirmSimple,setCS]    = useState(null); // {titulo,mensaje,onConfirm}
+  const [confirmEscrita,setCE]   = useState(null); // {titulo,subtitulo,mensaje,onConfirm}
   const [sending,setSending]     = useState(null);
   const [newResp,setNewResp]     = useState({nombre:"",email:""});
   const [users,setUsers]         = useState([]);
@@ -1561,9 +1631,7 @@ export default function App() {
   const [busqPagos,setBusqPagos]     = useState("");
   const [progPagos,setProgPagos]     = useState("");
   const [filtroPagos,setFiltroPagos] = useState("");
-  // FIX 6: dos estados separados para expandibles en pagos
-  const [expandidoProg,setExpandidoProg] = useState(null);  // prog.id
-  const [expandidoEst,setExpandidoEst]   = useState(null);  // "progId_estId"
+  const [expandido,setExpandido]     = useState(null);
   const [editEstModal,setEditEstModal] = useState(null);
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
@@ -1634,7 +1702,9 @@ export default function App() {
   const bajas     = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="baja"));
   const inactivos = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="inactivo").map(e=>({...e,programa:p.nombre})));
   const porConf   = (programas||[]).reduce((a,p)=>a+mods(p).filter(m=>m.estatus==="propuesta"&&m.docente).length,0);
+  // Egresados IBERO: activos en programa vigente con egresado_ibero="Sí"
   const egresadosIberoActivos  = (programas||[]).flatMap(p=>ests(p).filter(e=>e.egresado_ibero==="Sí"&&progStatus(p)==="activo").map(e=>({...e,programa:p.nombre,estatus_prog:"activo"})));
+  // Egresados IBERO que concluyeron: estatus egresado O en programa finalizado
   const egresadosIberoConcluyeron = (programas||[]).flatMap(p=>ests(p).filter(e=>e.egresado_ibero==="Sí"&&(e.estatus==="egresado"||progStatus(p)==="finalizado")).map(e=>({...e,programa:p.nombre,estatus_prog:"finalizado"})));
 
   const updateEst = (progId,est)=>{save((programas||[]).map(p=>p.id===progId?{...p,estudiantes:est}:p));notify("Estudiantes importados.");};
@@ -1660,6 +1730,7 @@ export default function App() {
     }));
   };
 
+  // Toggle asistencia por fecha específica (nueva vista admin)
   const toggleAsistFecha = (progId,modId,estId,fecha)=>{
     save((programas||[]).map(p=>{
       if(p.id!==progId)return p;
@@ -1675,17 +1746,11 @@ export default function App() {
     }));
   };
 
-  // FIX 3: exportCSV corregido para arrays de fechas
   const exportCSV = prog=>{
     const rows=ests(prog).map(e=>{
       const base={Nombre:e.nombre||"",Correo:e.email||"",Teléfono:e.telefono||"",Empresa:e.empresa||"",Puesto:e.puesto||"",Carrera:e.carrera||"","Grado de estudios":e.grado||"","Programa de interés":e.programa_interes||"","Egresado IBERO":e.egresado_ibero||"",Fuente:e.fuente||"",Estatus:e.estatus||"activo"};
       (fieldMap||[]).forEach(fm=>{base[fm.label]=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label]||""});
-      mods(prog).forEach(m=>{
-        const v = e.asistencia&&e.asistencia["mod_"+m.id];
-        // FIX 3: contar correctamente si es array o número
-        const asist = Array.isArray(v) ? v.length : (v||0);
-        base["Asist."+m.numero] = asist+"/"+m.clases;
-      });
+      mods(prog).forEach(m=>{base["Asist."+m.numero]=((e.asistencia&&e.asistencia["mod_"+m.id])||0)+"/"+m.clases;});
       return base;
     });
     if(!rows.length)return;
@@ -1702,12 +1767,19 @@ export default function App() {
 
   const exportPDF = prog => {
     const ms = mods(prog);
+    const DIAS_S = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+    // Recopilar todas las fechas de clase por módulo
     const todasFechas = [];
     ms.forEach(mod => {
-      const fechas = mod.fechasClase&&mod.fechasClase.length ? mod.fechasClase : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+      const fechas = mod.fechasClase&&mod.fechasClase.length
+        ? mod.fechasClase
+        : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
       fechas.forEach(f=>todasFechas.push({fecha:f,mod}));
     });
     todasFechas.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+
+    // Agrupar por mes para el calendario visual
     const byMes = {};
     todasFechas.forEach(({fecha,mod})=>{
       const [y,m] = fecha.split("-");
@@ -1715,9 +1787,12 @@ export default function App() {
       if(!byMes[key]) byMes[key]={anio:parseInt(y),mes:parseInt(m)-1,clases:[]};
       byMes[key].clases.push({fecha,mod});
     });
+
     const colores = ["#C8102E","#1d4ed8","#0f766e","#7c3aed","#b45309","#6b2d2d"];
     const modColor = {};
     ms.forEach((m,i)=>modColor[m.id]=colores[i%colores.length]);
+
+    // Construir HTML del PDF
     let html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <style>
       body{font-family:Georgia,serif;margin:0;padding:0;color:#1a1a1a;}
@@ -1750,12 +1825,15 @@ export default function App() {
     <div class="header"><h1>IBERO</h1><p>TIJUANA &nbsp;·&nbsp; COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div>
     <div class="prog-title">${prog.nombre}</div>
     <div class="prog-meta">${prog.tipo}${prog.modalidad?" · "+prog.modalidad:""}${prog.generacion?" · "+prog.generacion+" generación":""}</div>`;
+
+    // Tabla de módulos
     html += `<div class="section-title">Módulos del programa</div>
     <table class="modulos"><thead><tr>
       <th>Módulo</th><th>Nombre</th><th>Docente</th><th>Fechas</th><th>Días</th><th>Horas</th>
     </tr></thead><tbody>`;
     ms.forEach(m=>{
       const totalH=(m.clases||0)*(m.horasPorClase||0);
+      const fechas=m.fechasClase&&m.fechasClase.length?m.fechasClase:generarFechasClase(m.fechaInicio,m.fechaFin,m.dias,m.clases);
       html+=`<tr>
         <td><span class="badge" style="background:${modColor[m.id]};color:#fff">${m.numero}</span></td>
         <td style="font-weight:600">${m.nombre}</td>
@@ -1766,16 +1844,21 @@ export default function App() {
       </tr>`;
     });
     html += `</tbody></table>`;
+
+    // Leyenda
     html += `<div class="section-title" style="margin-top:20px">Calendario de clases</div>
     <div class="leyenda">
       ${ms.map(m=>`<div class="leyenda-item"><div class="leyenda-dot" style="background:${modColor[m.id]}"></div><span>${m.numero} · ${m.nombre.split(" ").slice(0,4).join(" ")}</span></div>`).join("")}
       <div class="leyenda-item"><div class="leyenda-dot" style="background:#fde68a;border:1px solid #d97706"></div><span>Festivo</span></div>
     </div>`;
+
+    // Calendarios por mes
     Object.values(byMes).forEach(({anio,mes,clases})=>{
       const pD=new Date(anio,mes,1),uD=new Date(anio,mes+1,0),off=(pD.getDay()+6)%7;
       const tot=Math.ceil((off+uD.getDate())/7)*7;
       const byD={};
       clases.forEach(({fecha,mod})=>{const d=parseInt(fecha.split("-")[2]);if(!byD[d])byD[d]=[];byD[d].push(mod);});
+
       html+=`<div class="mes-grid"><div class="mes-titulo">${MESES_L[mes]} ${anio}</div><div class="cal">`;
       DIAS_S.forEach(d=>{html+=`<div class="cal-head">${d}</div>`;});
       for(let i=0;i<tot;i++){
@@ -1791,10 +1874,13 @@ export default function App() {
       }
       html+=`</div></div>`;
     });
+
     html+=`<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#9ca3af;text-align:center">
       Coordinación de Educación Continua · IBERO Tijuana · Av. Centro Universitario #2501, Playas de Tijuana<br/>
       Tel: 664 630 1577 Ext. 2576 · info@tijuana.ibero.mx · © ${new Date().getFullYear()} IBERO Tijuana
     </div></div></body></html>`;
+
+    // Abrir en nueva ventana para imprimir/guardar como PDF
     const win=window.open("","_blank");
     win.document.write(html);
     win.document.close();
@@ -1820,15 +1906,32 @@ export default function App() {
           <div style='color:rgba(255,255,255,0.7);font-size:11px;margin-top:6px;font-family:system-ui'>Coordinación de Educación Continua</div>
         </div>
         <div style='padding:32px 36px;border:1px solid #e5e7eb;border-top:none'>
-          <h2 style='font-size:20px;color:#1a1a1a;margin:0 0 20px'>${m.nombre}</h2>
+          <div style='display:inline-block;background:#fef2f2;color:#C8102E;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;margin-bottom:20px;font-family:system-ui'>DOCENTE CONFIRMADO</div>
+          <h2 style='font-size:20px;color:#1a1a1a;margin:0 0 20px;font-family:Georgia,serif'>${m.nombre}</h2>
           <table style='width:100%;border-collapse:collapse;font-size:14px;font-family:system-ui'>
             <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280;width:130px'>Programa</td><td style='font-weight:600'>${p.nombre}</td></tr>
+            ${p.generacion?`<tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Generación</td><td>${p.generacion} generación</td></tr>`:""}
+            ${p.modalidad?`<tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Modalidad</td><td>${p.modalidad}</td></tr>`:""}
             <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Docente</td><td style='font-weight:600'>${m.docente}</td></tr>
             <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Período</td><td>${fmtFecha(m.fechaInicio)} — ${fmtFecha(m.fechaFin)}</td></tr>
             ${m.horario?`<tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Horario</td><td>${m.horario}</td></tr>`:""}
+            <tr style='border-bottom:1px solid #f3f4f6'><td style='padding:10px 0;color:#6b7280'>Días</td><td>${(m.dias||[]).join(", ")}</td></tr>
             <tr><td style='padding:10px 0;color:#6b7280'>Horas</td><td>${m.clases} clases · ${m.horasPorClase}h c/u · <strong>${totalH}h total</strong></td></tr>
           </table>
-          <p style='font-family:system-ui;font-size:14px;margin-top:24px'>Estimado/a <strong>${m.docente}</strong>, confirmamos su participación. Atentamente,<br/><strong>Coordinación de Educación Continua · IBERO Tijuana</strong></p>
+          <div style='margin-top:24px;padding-top:20px;border-top:2px solid #C8102E;font-family:system-ui;font-size:14px;color:#374151;line-height:1.8'>
+            <p>Estimado/a <strong>${m.docente}</strong>,</p>
+            <p>Nos complace confirmar su participación como docente en el programa de Educación Continua de IBERO Tijuana. Su colaboración es fundamental para el desarrollo académico y profesional de nuestra comunidad universitaria.</p>
+            <p>Le pedimos de favor confirmar la recepción de este correo y contactarnos si tiene alguna pregunta o necesita información adicional.</p>
+            <p>Agradecemos de antemano su valiosa participación.</p>
+            <p>Atentamente,<br/><strong>Coordinación de Educación Continua</strong><br/>IBERO Tijuana</p>
+          </div>
+        </div>
+        <div style='background:#f9f9f9;padding:20px 36px;border:1px solid #e5e7eb;border-top:none;font-family:system-ui;font-size:12px;color:#6b7280;line-height:1.8'>
+          <strong style='color:#1a1a1a'>Coordinación de Educación Continua · IBERO Tijuana</strong><br/>
+          Av. Centro Universitario #2501, Playas de Tijuana, C.P. 22500<br/>
+          Tel: 664 630 1577 Ext. 2576 · WhatsApp: 664 764 1119<br/>
+          info@tijuana.ibero.mx<br/><br/>
+          <span style='font-size:10px;color:#9ca3af'>© 2026 IBERO Tijuana. Todos los derechos reservados.</span>
         </div>
       </div>`;
       let ok=0;
@@ -1875,6 +1978,7 @@ export default function App() {
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view===v?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>{l}</button>
           ))}
           <div style={{width:1,height:24,background:"rgba(255,255,255,0.25)",margin:"0 6px"}}/>
+          {/* ALERTAS */}
           <div ref={alertRef} style={{position:"relative"}}>
             <button onClick={()=>setShowAl(!showAlertas)} style={{background:alertas.length>0?"#fff":"rgba(255,255,255,0.15)",border:"1px solid "+(alertas.length>0?"#fff":"rgba(255,255,255,0.3)"),borderRadius:6,padding:"6px 14px",cursor:"pointer",color:alertas.length>0?RED:"#fff",fontFamily:"system-ui",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:alertas.length>0?RED:"rgba(255,255,255,0.5)",flexShrink:0}}/>
@@ -1910,26 +2014,32 @@ export default function App() {
       <div style={{maxWidth:980,margin:"0 auto",padding:"32px 20px"}}>
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
-        {/* FIX 1: pasar setCS como prop a DocentesView */}
-        {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas} setCS={setCS}/>}
+        {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas}/>}
         {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado} onToggleAsist={toggleAsistFecha}/>}
 
         {/* VISTA HOY */}
         {view==="hoy"&&(()=>{
           const hoy = today();
           const fmtHoyLargo = () => { const d=new Date(); return d.getDate()+" de "+MESES_L[d.getMonth()]+" de "+d.getFullYear(); };
+
+          // Módulos con clase hoy
           const modulosHoy = [];
           (programas||[]).forEach(prog=>{
             mods(prog).forEach(mod=>{
-              const fechas = mod.fechasClase&&mod.fechasClase.length ? mod.fechasClase : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
+              const fechas = mod.fechasClase&&mod.fechasClase.length
+                ? mod.fechasClase
+                : generarFechasClase(mod.fechaInicio,mod.fechaFin,mod.dias,mod.clases);
               if(fechas.includes(hoy)) modulosHoy.push({prog,mod,fechas});
             });
           });
+
           const toggleHoy = (progId,modId,estId) => toggleAsistFecha(progId,modId,estId,hoy);
+
           const presenteHoy = (e,modId) => {
             const v=e.asistencia&&e.asistencia["mod_"+modId];
             return Array.isArray(v)?v.includes(hoy):false;
           };
+
           return(
             <div>
               <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
@@ -1938,12 +2048,16 @@ export default function App() {
                   <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{fmtHoyLargo()} · {modulosHoy.length} {modulosHoy.length===1?"módulo":"módulos"} con clase</p>
                 </div>
               </div>
+
               {modulosHoy.length===0&&(
                 <div style={{...S.card,padding:48,textAlign:"center"}}>
                   <div style={{fontSize:16,fontWeight:600,color:"#374151",marginBottom:8}}>No hay clases programadas hoy</div>
-                  <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>{isFestivo(hoy)?`Hoy es ${isFestivo(hoy)}. Disfruta el descanso.`:"Consulta el Calendario para ver los próximos días con clase."}</div>
+                  <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>
+                    {isFestivo(hoy)?`Hoy es ${isFestivo(hoy)}. Disfruta el descanso.`:"Consulta el Calendario para ver los próximos días con clase."}
+                  </div>
                 </div>
               )}
+
               <div style={{display:"grid",gap:24}}>
                 {modulosHoy.map(({prog,mod,fechas})=>{
                   const numClase=fechas.indexOf(hoy)+1;
@@ -1952,6 +2066,7 @@ export default function App() {
                   const presentes=estudiantes.filter(e=>presenteHoy(e,mod.id)).length;
                   return(
                     <div key={prog.id+"_"+mod.id} style={{...S.card,overflow:"hidden"}}>
+                      {/* Header del módulo */}
                       <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:prog.color,flexShrink:0}}/>
                         <div style={{flex:1}}>
@@ -1967,7 +2082,11 @@ export default function App() {
                           <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Clase {numClase} de {maxClases}</div>
                         </div>
                       </div>
-                      {estudiantes.length===0&&(<div style={{padding:"24px",textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Sin estudiantes importados.</div>)}
+
+                      {/* Lista de estudiantes */}
+                      {estudiantes.length===0&&(
+                        <div style={{padding:"24px",textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Sin estudiantes importados.</div>
+                      )}
                       <div style={{display:"grid",gap:0}}>
                         {estudiantes.map((e,i)=>{
                           const presente=presenteHoy(e,mod.id);
@@ -1976,13 +2095,17 @@ export default function App() {
                           return(
                             <div key={e.id} onClick={()=>toggleHoy(prog.id,mod.id,e.id)}
                               style={{padding:"12px 20px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",borderBottom:i<estudiantes.length-1?"1px solid #f3f4f6":"none",background:presente?"#f0fdf4":"#fff",transition:"background 0.1s"}}>
-                              <div style={{width:28,height:28,borderRadius:"50%",background:presente?"#16a34a":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700,fontSize:13,color:presente?"#fff":"#9ca3af"}}>{presente?"✓":""}</div>
+                              <div style={{width:28,height:28,borderRadius:"50%",background:presente?"#16a34a":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700,fontSize:13,color:presente?"#fff":"#9ca3af"}}>
+                                {presente?"✓":""}
+                              </div>
                               <div style={{flex:1}}>
                                 <div style={{fontWeight:600,fontSize:14,color:presente?"#16a34a":"#1a1a1a"}}>{e.nombre}</div>
                                 {(e.puesto||e.empresa)&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginTop:1}}>{[e.puesto,e.empresa].filter(Boolean).join(" · ")}</div>}
                               </div>
                               <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                                <div style={{width:48,height:3,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
+                                <div style={{width:48,height:3,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                  <div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#dc2626",borderRadius:4}}/>
+                                </div>
                                 <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",minWidth:36}}>{tot}/{maxClases}</span>
                                 <span style={{fontWeight:700,fontSize:13,color:presente?"#16a34a":"#9ca3af",minWidth:56,textAlign:"right"}}>{presente?"Presente":"Ausente"}</span>
                               </div>
@@ -2039,23 +2162,25 @@ export default function App() {
                         <span>{ests(p).length} estudiantes</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div style={{width:160,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:conf===tot&&tot>0?"#16a34a":RED,borderRadius:4}}/></div>
+                        <div style={{width:160,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                          <div style={{width:pct+"%",height:"100%",background:conf===tot&&tot>0?"#16a34a":RED,borderRadius:4}}/>
+                        </div>
                         <span style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui"}}>{conf}/{tot} docentes confirmados</span>
                       </div>
                     </div>
                     <div style={{display:"flex",gap:8,flexShrink:0}}>
                       <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff")}>Ver</button>
                       {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>Editar</button>}
-                      {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
+                      {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
                     </div>
                   </div>
                 );
               })}
-              {progsF.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>{busqProg||filtroProg||filtroSt?"Sin resultados.":"Sin programas registrados."}</div>}
+              {progsF.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>{busqProg||filtroProg||filtroSt?"Sin resultados. Intenta con otros filtros.":"Sin programas registrados."}</div>}
             </div>
             <div style={{marginTop:48,padding:"22px 28px",...S.card,display:"flex",gap:32,flexWrap:"wrap",justifyContent:"space-between"}}>
               <div><div style={{fontWeight:700,fontSize:11,marginBottom:8,color:RED,letterSpacing:"1px",fontFamily:"system-ui"}}>DIRECCIÓN DE EDUCACIÓN CONTINUA</div><div style={{fontSize:12,color:"#6b7280",lineHeight:1.9,fontFamily:"system-ui"}}>Av. Centro Universitario #2501, Playas de Tijuana, C.P. 22500<br/>Tel: 664 630 1577 Ext. 2576 · WhatsApp: 664 764 1119<br/><a href="mailto:info@tijuana.ibero.mx" style={{color:RED,textDecoration:"none"}}>info@tijuana.ibero.mx</a></div></div>
-              <div style={{maxWidth:260,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",lineHeight:1.7,alignSelf:"flex-end"}}>Pertenecemos a la red universitaria más grande del mundo.<br/>© 2026 IBERO Tijuana.</div>
+              <div style={{maxWidth:260,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",lineHeight:1.7,alignSelf:"flex-end"}}>Pertenecemos a la red universitaria más grande del mundo, con más de 220 instituciones en los 5 continentes.<br/>© 2026 IBERO Tijuana.</div>
             </div>
           </div>
         )}
@@ -2084,6 +2209,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* TABS */}
             <div style={{display:"flex",marginBottom:20,...S.card,overflow:"hidden"}}>
               {[["modulos","Módulos",mods(prog).length],["estudiantes","Estudiantes",ests(prog).length],["asistencia","Asistencia",ests(prog).length],["pagos","Pagos",ests(prog).length]].map(([t,l,cnt])=>(
                 <button key={t} onClick={()=>setProgTab(t)} style={{flex:1,padding:"12px 16px",border:"none",borderBottom:progTab===t?"3px solid "+RED:"3px solid transparent",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui",background:"#fff",color:progTab===t?RED:"#6b7280"}}>
@@ -2118,7 +2244,7 @@ export default function App() {
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                               {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
-                              {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Eliminar el módulo "${m.nombre}"?`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
+                              {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
                             </div>
                           </div>
                         </div>
@@ -2167,6 +2293,22 @@ export default function App() {
                             <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
                               {e.email&&<span>{e.email}</span>}{e.telefono&&<span>{e.telefono}</span>}{e.empresa&&<span>{e.empresa}</span>}
                             </div>
+                            {(e.puesto||e.carrera||e.grado||e.egresado_ibero||e.programa_interes)&&(
+                              <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>
+                                {e.puesto&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Puesto: {e.puesto}</span>}
+                                {e.programa_interes&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Programa: {e.programa_interes}</span>}
+                                {e.carrera&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Carrera: {e.carrera}</span>}
+                                {e.grado&&<span style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>Grado: {e.grado}</span>}
+                                {e.egresado_ibero&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>Egresado IBERO: {e.egresado_ibero}</span>}
+                                {e.requiere_factura&&<span style={{fontSize:11,background:e.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:4,padding:"2px 8px",color:e.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>Factura: {e.requiere_factura}</span>}
+                                {e.csf_url
+                                  ? <a href={e.csf_url} target="_blank" rel="noreferrer" onClick={ev=>ev.stopPropagation()} style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                                  : <button onClick={ev=>{ev.stopPropagation();const url=prompt("Pega la URL del CSF:");if(url&&url.trim())save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,csf_url:url.trim()}:es)}:p));}} style={{fontSize:11,background:"#fffbeb",borderRadius:4,padding:"2px 8px",color:"#d97706",fontFamily:"system-ui",fontWeight:600,border:"1px solid #fde68a",cursor:"pointer"}}>+ Agregar CSF</button>
+                                }
+                              </div>
+                            )}
+                            {(fieldMap||[]).length>0&&<div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>{(fieldMap||[]).map(fm=>{const val=(e.campos_extra&&e.campos_extra[fm.label])||e[fm.label];return val?<span key={fm.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{fm.label+": "+val}</span>:null;})}</div>}
+                            {/* Resumen de pago */}
                             {e.pago&&(e.pago.monto_acordado>0)&&(()=>{
                               const p=e.pago;
                               const montoFinal=p.monto_acordado*(1-(p.descuento_pct||0)/100);
@@ -2177,6 +2319,7 @@ export default function App() {
                                 <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                                   <span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>{fmtMXN(montoFinal)}</span>
                                   {p.tipo==="parcialidades"&&<span style={{fontSize:11,background:"#eff6ff",borderRadius:4,padding:"2px 8px",color:"#2563eb",fontFamily:"system-ui"}}>{pagadas}/{total} pagadas</span>}
+                                  {p.tipo==="unico"&&<span style={{fontSize:11,background:cobrado>0?"#f0fdf4":"#fff7ed",borderRadius:4,padding:"2px 8px",color:cobrado>0?"#16a34a":"#d97706",fontFamily:"system-ui",fontWeight:600}}>{cobrado>0?"Pagado":"Pendiente"}</span>}
                                   {p.descuento_pct>0&&<span style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui"}}>Desc. {p.descuento_pct}%</span>}
                                 </div>
                               );
@@ -2188,7 +2331,7 @@ export default function App() {
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
                               <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado</option><option value="baja">Baja</option>
                             </select>
-                            <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Quitar a "${e.nombre}" de este programa?`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
+                            <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
                           </div>
                         </div>
                       </div>
@@ -2228,9 +2371,7 @@ export default function App() {
                                 {e.empresa&&<div style={{fontSize:11,color:"#9ca3af",fontWeight:400}}>{e.empresa}</div>}
                               </td>
                               {mods(prog).map(m=>{
-                                const k="mod_"+m.id, v=e.asistencia&&e.asistencia[k];
-                                const asist=Array.isArray(v)?v.length:(v||0);
-                                const max=m.clases||0, pm=max?Math.round(asist/max*100):0;
+                                const k="mod_"+m.id, asist=(e.asistencia&&e.asistencia[k])||0, max=m.clases||0, pm=max?Math.round(asist/max*100):0;
                                 return(
                                   <td key={m.id} style={{padding:"10px 12px",textAlign:"center"}}>
                                     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
@@ -2257,23 +2398,47 @@ export default function App() {
             {/* PAGOS */}
             {progTab==="pagos"&&(()=>{
               const estudiantes=ests(prog);
-              const totalEsperado=estudiantes.reduce((a,e)=>{const p=e.pago;if(!p||!p.monto_acordado)return a;return a+p.monto_acordado*(1-(p.descuento_pct||0)/100);},0);
-              const totalCobrado=estudiantes.reduce((a,e)=>{const p=e.pago;if(!p)return a;if(p.tipo==="unico"){const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(pagadas>0?p.monto_acordado*(1-(p.descuento_pct||0)/100):0);}const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);const tot=(p.parcialidades||[]).length;const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
-              const totalDescuentos=estudiantes.reduce((a,e)=>{const p=e.pago;if(!p||!p.monto_acordado||!p.descuento_pct)return a;return a+p.monto_acordado*(p.descuento_pct/100);},0);
+              const totalEsperado=estudiantes.reduce((a,e)=>{
+                const p=e.pago;if(!p||!p.monto_acordado)return a;
+                return a+p.monto_acordado*(1-(p.descuento_pct||0)/100);
+              },0);
+              const totalCobrado=estudiantes.reduce((a,e)=>{
+                const p=e.pago;if(!p)return a;
+                if(p.tipo==="unico"){const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;return a+(pagadas>0?p.monto_acordado*(1-(p.descuento_pct||0)/100):0);}
+                const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
+                const tot=(p.parcialidades||[]).length;
+                const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;
+                return a+(tot?mf/tot*pag:0);
+              },0);
+              const totalDescuentos=estudiantes.reduce((a,e)=>{
+                const p=e.pago;if(!p||!p.monto_acordado||!p.descuento_pct)return a;
+                return a+p.monto_acordado*(p.descuento_pct/100);
+              },0);
               const pendiente=totalEsperado-totalCobrado;
               return(
                 <div>
+                  {/* Resumen financiero */}
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
-                    {[["Total esperado",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",pendiente,"#d97706"],["Descuentos",totalDescuentos,RED]].map(([l,v,c])=>(
-                      <div key={l} style={{...S.card,padding:"16px 18px"}}><div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div><div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div></div>
+                    {[[`Total esperado`,totalEsperado,"#1a1a1a"],[`Cobrado`,totalCobrado,"#16a34a"],[`Pendiente`,pendiente,"#d97706"],[`Descuentos`,totalDescuentos,RED]].map(([l,v,c])=>(
+                      <div key={l} style={{...S.card,padding:"16px 18px"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                        <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                      </div>
                     ))}
                   </div>
+                  {/* Barra de progreso */}
                   {totalEsperado>0&&(
                     <div style={{...S.card,padding:"14px 18px",marginBottom:20}}>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontFamily:"system-ui",marginBottom:8}}><span style={{color:"#6b7280"}}>Progreso de cobranza</span><span style={{fontWeight:700,color:"#16a34a"}}>{Math.round(totalCobrado/totalEsperado*100)}%</span></div>
-                      <div style={{height:8,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:Math.round(totalCobrado/totalEsperado*100)+"%",height:"100%",background:"#16a34a",borderRadius:4}}/></div>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontFamily:"system-ui",marginBottom:8}}>
+                        <span style={{color:"#6b7280"}}>Progreso de cobranza</span>
+                        <span style={{fontWeight:700,color:"#16a34a"}}>{Math.round(totalCobrado/totalEsperado*100)}%</span>
+                      </div>
+                      <div style={{height:8,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                        <div style={{width:Math.round(totalCobrado/totalEsperado*100)+"%",height:"100%",background:"#16a34a",borderRadius:4,transition:"width 0.3s"}}/>
+                      </div>
                     </div>
                   )}
+                  {/* Tabla por estudiante */}
                   <div style={{...S.card,overflow:"hidden"}}>
                     <div style={{padding:"14px 18px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Desglose por estudiante</div>
                     {estudiantes.length===0&&<div style={{padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Importa estudiantes primero.</div>}
@@ -2287,13 +2452,30 @@ export default function App() {
                       const sinConfig=!p.monto_acordado;
                       return(
                         <div key={e.id} style={{padding:"14px 18px",borderBottom:i<estudiantes.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                          <div style={{flex:1,minWidth:160}}><div style={{fontWeight:600,fontSize:14}}>{e.nombre}</div>{e.empresa&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{e.empresa}</div>}{sinConfig&&<div style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",marginTop:2}}>Sin configurar</div>}</div>
+                          <div style={{flex:1,minWidth:160}}>
+                            <div style={{fontWeight:600,fontSize:14}}>{e.nombre}</div>
+                            {e.empresa&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{e.empresa}</div>}
+                            {sinConfig&&<div style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",marginTop:2}}>Sin configurar</div>}
+                          </div>
                           {!sinConfig&&(
                             <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,fontFamily:"system-ui"}}>
-                              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>ACORDADO</div><div style={{fontWeight:700}}>{fmtMXN(mf)}</div></div>
-                              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>TIPO</div><div style={{fontWeight:600,fontSize:12}}>{p.tipo==="unico"?"Único":`${tot} parcialidades`}</div></div>
-                              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>COBRADO</div><div style={{fontWeight:700,color:"#16a34a"}}>{fmtMXN(cobrado)}</div></div>
-                              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PENDIENTE</div><div style={{fontWeight:700,color:pendienteEst>0?"#d97706":"#16a34a"}}>{fmtMXN(pendienteEst)}</div></div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>ACORDADO</div>
+                                <div style={{fontWeight:700}}>{fmtMXN(mf)}</div>
+                                {p.descuento_pct>0&&<div style={{fontSize:10,color:RED}}>-{p.descuento_pct}%</div>}
+                              </div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>TIPO</div>
+                                <div style={{fontWeight:600,fontSize:12}}>{p.tipo==="unico"?"Único":`${tot} parcialidades`}</div>
+                              </div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>COBRADO</div>
+                                <div style={{fontWeight:700,color:"#16a34a"}}>{fmtMXN(cobrado)}</div>
+                              </div>
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,color:"#9ca3af",fontWeight:700}}>PENDIENTE</div>
+                                <div style={{fontWeight:700,color:pendienteEst>0?"#d97706":"#16a34a"}}>{fmtMXN(pendienteEst)}</div>
+                              </div>
                             </div>
                           )}
                           <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12,flexShrink:0})}>{sinConfig?"Configurar":"Editar"}</button>
@@ -2315,8 +2497,9 @@ export default function App() {
             const ql=q.toLowerCase();
             (programas||[]).forEach(prog=>{
               ests(prog).forEach(est=>{
-                if(est.nombre?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.telefono?.includes(q))
+                if(est.nombre?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.telefono?.includes(q)){
                   resultados.push({est,prog});
+                }
               });
             });
           }
@@ -2340,11 +2523,17 @@ export default function App() {
                           <span style={{fontSize:11,background:est.estatus==="baja"?"#fef2f2":est.estatus==="egresado"?"#f0fdf4":"#eff6ff",color:est.estatus==="baja"?"#dc2626":est.estatus==="egresado"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",fontWeight:700}}>{est.estatus==="baja"?"Baja":est.estatus==="egresado"?"Egresado":"Activo"}</span>
                         </div>
                         <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
-                          {est.email&&<span>{est.email}</span>}{est.telefono&&<span>{est.telefono}</span>}{est.empresa&&<span>{est.empresa}</span>}
+                          {est.email&&<span>{est.email}</span>}
+                          {est.telefono&&<span>{est.telefono}</span>}
+                          {est.empresa&&<span>{est.empresa}</span>}
                         </div>
                         <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                           <span style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui",fontWeight:600,border:"1px solid #fca5a5"}}>{prog.nombre}</span>
                           {mf>0&&<span style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600}}>{fmtMXN(mf)}{p.tipo==="parcialidades"?` · ${pagadas}/${total} pagadas`:""}</span>}
+                          {est.requiere_factura==="Sí"&&<span style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui",fontWeight:600}}>Factura</span>}
+                          {est.csf_url
+                            ?<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                            :<span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Sin CSF</span>}
                         </div>
                       </div>
                       <button onClick={()=>setPagoModal({est,prog})} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12,flexShrink:0})}>Ver pago</button>
@@ -2356,8 +2545,12 @@ export default function App() {
           );
         })()}
 
-        {/* PAGOS GLOBAL — FIX 6: expandibles separados */}
+        {/* PAGOS GLOBAL */}
         {view==="pagos_global"&&(()=>{
+          const busqP=busqPagos, setBusqP=setBusqPagos;
+          const progSelP=progPagos, setProgSelP=setProgPagos;
+          const filtroEstado=filtroPagos, setFiltroEstado=setFiltroPagos;
+
           const estadoStyle={
             ok:       {bg:"#f0fdf4",color:"#16a34a",label:"Al corriente"},
             pendiente:{bg:"#eff6ff",color:"#2563eb",label:"Pendiente"},
@@ -2383,30 +2576,43 @@ export default function App() {
             return{ep,p,mf,pagadas,total,cobrado,pendiente,estado,pctAsist};
           };
 
+          // Programas que pasan el filtro de programa
           const progsFiltrados=(programas||[]).filter(prog=>{
-            if(progPagos&&prog.id!==progPagos)return false;
-            if(busqPagos){
-              const ql=busqPagos.toLowerCase();
-              return ests(prog).some(e=>(e.estatus!=="baja")&&(e.nombre?.toLowerCase().includes(ql)||e.empresa?.toLowerCase().includes(ql)||e.email?.toLowerCase().includes(ql)));
+            if(progSelP&&prog.id!==progSelP)return false;
+            // Si hay búsqueda de texto, solo mostrar programas que tengan algún estudiante que coincida
+            if(busqP){
+              const ql=busqP.toLowerCase();
+              return ests(prog).some(e=>
+                (e.estatus!=="baja")&&(
+                  e.nombre?.toLowerCase().includes(ql)||
+                  e.empresa?.toLowerCase().includes(ql)||
+                  e.email?.toLowerCase().includes(ql)
+                )
+              );
             }
+            // Por default: solo programas activos
             return progStatus(prog)==="activo";
           });
 
-          const progsVisibles=filtroPagos
-            ? progsFiltrados.filter(prog=>ests(prog).some(e=>{
-                if(e.estatus==="baja"||e.estatus==="inactivo")return filtroPagos==="inactivo"?e.estatus==="inactivo":false;
-                const {estado}=calcInfoEst(e,prog);
-                return estado===filtroPagos;
-              }))
+          // Si hay filtro de estado de pago, filtrar programas que tengan al menos un est con ese estado
+          const progsVisibles=filtroEstado
+            ? progsFiltrados.filter(prog=>
+                ests(prog).some(e=>{
+                  if(e.estatus==="baja"||e.estatus==="inactivo")return filtroEstado==="inactivo"?e.estatus==="inactivo":false;
+                  const {estado}=calcInfoEst(e,prog);
+                  return estado===filtroEstado;
+                })
+              )
             : progsFiltrados;
 
+          // Totales sobre todos los estudiantes visibles (aplicando todos los filtros)
           let totalEsperado=0,totalCobrado=0,totalPendiente=0,cntVencidos=0,cntCriticos=0,cntInactivos=0;
           progsVisibles.forEach(prog=>{
             ests(prog).forEach(est=>{
               if(est.estatus==="baja")return;
               if(est.estatus==="inactivo"){cntInactivos++;return;}
-              const ql=(busqPagos||"").toLowerCase();
-              if(busqPagos&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return;
+              const ql=(busqP||"").toLowerCase();
+              if(busqP&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return;
               const {mf,cobrado,pendiente,estado}=calcInfoEst(est,prog);
               totalEsperado+=mf; totalCobrado+=cobrado; totalPendiente+=pendiente;
               if(estado==="vencido")cntVencidos++;
@@ -2423,9 +2629,12 @@ export default function App() {
             <div>
               <div style={{marginBottom:20}}>
                 <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Control de Pagos</h1>
-                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{busqPagos||progPagos||filtroPagos?"Resultados filtrados":"Programas activos — usa filtros para ver más"}</p>
+                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+                  {busqP||progSelP||filtroEstado?"Resultados filtrados":"Programas activos por default — usa filtros para ver más"}
+                </p>
               </div>
 
+              {/* Resumen */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:16}}>
                 {[["Esperado",totalEsperado,"#1a1a1a",false],["Cobrado",totalCobrado,"#16a34a",false],["Pendiente",totalPendiente,"#d97706",false],["Vencidos",cntVencidos,"#d97706",true],["Críticos",cntCriticos,"#dc2626",true],["Inactivos",cntInactivos,"#9ca3af",true]].map(([l,v,c,esNum])=>(
                   <div key={l} style={{...S.card,padding:"12px 14px",textAlign:"center"}}>
@@ -2435,34 +2644,35 @@ export default function App() {
                 ))}
               </div>
 
+              {/* Filtros */}
               <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-                <input value={busqPagos} onChange={e=>setBusqPagos(e.target.value)} placeholder="Buscar estudiante, empresa o correo..." style={{...S.inp,flex:1,minWidth:180}}/>
-                <select value={progPagos} onChange={e=>setProgPagos(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                <input value={busqP} onChange={e=>setBusqP(e.target.value)} placeholder="Buscar estudiante, empresa o correo..." style={{...S.inp,flex:1,minWidth:180}}/>
+                <select value={progSelP} onChange={e=>setProgSelP(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                   <option value="">Programas activos</option>
                   {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
-                <select value={filtroPagos} onChange={e=>setFiltroPagos(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                   <option value="">Todos los estados</option>
                   {Object.entries(estadoStyle).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
                   <option value="inactivo">Inactivos</option>
                 </select>
-                {(busqPagos||progPagos||filtroPagos)&&<button onClick={()=>{setBusqPagos("");setProgPagos("");setFiltroPagos("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
+                {(busqP||progSelP||filtroEstado)&&<button onClick={()=>{setBusqP("");setProgSelP("");setFiltroEstado("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
               </div>
 
+              {/* LISTA POR PROGRAMA */}
               <div style={{display:"grid",gap:12}}>
                 {progsVisibles.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados. Prueba ajustando los filtros.</div>}
 
                 {progsVisibles.map(prog=>{
-                  // FIX 6: usar expandidoProg para el nivel de programa
-                  const progAbierto = expandidoProg===prog.id;
-
+                  const progAbierto=expandido===prog.id;
+                  // Filtrar estudiantes de este programa
                   const estsFiltrados=ests(prog).filter(est=>{
                     if(est.estatus==="baja")return false;
-                    const ql=(busqPagos||"").toLowerCase();
-                    if(busqPagos&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return false;
-                    if(filtroPagos==="inactivo")return est.estatus==="inactivo";
-                    if(est.estatus==="inactivo"&&filtroPagos!=="inactivo")return false;
-                    if(filtroPagos){const {estado}=calcInfoEst(est,prog);return estado===filtroPagos;}
+                    const ql=(busqP||"").toLowerCase();
+                    if(busqP&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return false;
+                    if(filtroEstado==="inactivo")return est.estatus==="inactivo";
+                    if(est.estatus==="inactivo"&&filtroEstado!=="inactivo")return false;
+                    if(filtroEstado){const {estado}=calcInfoEst(est,prog);return estado===filtroEstado;}
                     return true;
                   });
                   if(estsFiltrados.length===0)return null;
@@ -2473,7 +2683,7 @@ export default function App() {
                   return(
                     <div key={prog.id} style={{...S.card,overflow:"hidden",borderLeft:"4px solid "+prog.color}}>
                       {/* CABECERA DEL PROGRAMA */}
-                      <div onClick={()=>setExpandidoProg(progAbierto?null:prog.id)} style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",background:"#fff"}}>
+                      <div onClick={()=>setExpandido(progAbierto?null:prog.id)} style={{padding:"14px 20px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",background:"#fff"}}>
                         <div style={{flex:1}}>
                           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
                             <span style={{fontWeight:700,fontSize:15}}>{prog.nombre}</span>
@@ -2484,6 +2694,7 @@ export default function App() {
                             <span>{estsFiltrados.length} estudiante{estsFiltrados.length!==1?"s":""}</span>
                             <span style={{color:"#1a1a1a",fontWeight:600}}>{fmtMXN(totalProgEsp)}</span>
                             <span style={{color:"#16a34a"}}>Cobrado: {fmtMXN(totalProgCob)}</span>
+                            {/* Barra de progreso */}
                             <div style={{display:"flex",alignItems:"center",gap:6}}>
                               <div style={{width:64,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:pct>=80?"#16a34a":"#d97706",borderRadius:4}}/></div>
                               <span style={{fontWeight:700,color:pct>=80?"#16a34a":"#d97706"}}>{pct}%</span>
@@ -2493,17 +2704,18 @@ export default function App() {
                         <span style={{color:"#9ca3af",fontSize:18,flexShrink:0}}>{progAbierto?"▲":"▼"}</span>
                       </div>
 
+                      {/* LISTA DE ESTUDIANTES DEL PROGRAMA */}
                       {progAbierto&&(
                         <div style={{borderTop:"1px solid #e5e7eb"}}>
                           {estsFiltrados.map((est,estIdx)=>{
                             const {ep,p,mf,pagadas,total,cobrado,pendiente,estado,pctAsist}=calcInfoEst(est,prog);
                             const st=estadoStyle[estado]||estadoStyle.sinconfig;
                             const recargo=ep&&ep.conRecargo.length>0?(mf/(total||1))*ep.conRecargo.length*(RECARGO_PCT/100):0;
-                            // FIX 6: usar expandidoEst para el nivel de estudiante
                             const estKey=prog.id+"_"+est.id;
-                            const estAbierto = expandidoEst===estKey;
+                            const estAbierto=expandido===estKey;
                             const esInactivo=est.estatus==="inactivo";
 
+                            // Asistencia por módulo
                             const asistPorMod=mods(prog).map(mod=>{
                               const k="mod_"+mod.id;
                               const v=est.asistencia&&est.asistencia[k];
@@ -2518,9 +2730,7 @@ export default function App() {
                             return(
                               <div key={est.id} style={{borderBottom:estIdx<estsFiltrados.length-1?"1px solid #f3f4f6":"none",background:esInactivo?"#fafafa":"#fff"}}>
                                 {/* FILA DEL ESTUDIANTE */}
-                                <div
-                                  onClick={()=>setExpandidoEst(estAbierto?null:estKey)}
-                                  style={{padding:"12px 20px 12px 28px",display:"flex",gap:10,alignItems:"center",cursor:"pointer",opacity:esInactivo?0.65:1}}>
+                                <div onClick={()=>setExpandido(estAbierto?null:estKey)} style={{padding:"12px 20px 12px 28px",display:"flex",gap:10,alignItems:"center",cursor:"pointer",opacity:esInactivo?0.65:1}}>
                                   <div style={{flex:1,minWidth:160}}>
                                     <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2,flexWrap:"wrap"}}>
                                       <span style={{fontWeight:600,fontSize:13}}>{est.nombre}</span>
@@ -2535,12 +2745,14 @@ export default function App() {
                                       {est.email&&<span>{est.email}</span>}
                                     </div>
                                   </div>
+                                  {/* Asistencia rápida */}
                                   {totalSesiones>0&&(
                                     <div style={{textAlign:"center",flexShrink:0}}>
                                       <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>SESIONES</div>
                                       <div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",color:pctAsist>=80?"#16a34a":"#dc2626"}}>{totalAsistidas}/{totalSesiones}</div>
                                     </div>
                                   )}
+                                  {/* Pago rápido */}
                                   {mf>0&&!esInactivo&&<>
                                     <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>ACORDADO</div><div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div></div>
                                     <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>COBRADO</div><div style={{fontWeight:700,fontSize:13,color:"#16a34a",fontFamily:"system-ui"}}>{fmtMXN(cobrado)}</div></div>
@@ -2553,9 +2765,11 @@ export default function App() {
                                 {/* PANEL DETALLE DEL ESTUDIANTE */}
                                 {estAbierto&&(
                                   <div style={{background:"#f9f9f9",borderTop:"1px solid #f3f4f6"}}>
+                                    {/* Acciones */}
                                     <div style={{padding:"10px 28px",display:"flex",gap:8,flexWrap:"wrap",borderBottom:"1px solid #f3f4f6",alignItems:"center"}}>
                                       <button onClick={e=>{e.stopPropagation();setEditEstModal({est,prog});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar datos</button>
                                       {!esInactivo&&<button onClick={e=>{e.stopPropagation();setPagoModal({est,prog});}} style={S.btn(estado==="critico"||estado==="vencido"?RED:"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"5px 12px",fontSize:12})}>{mf===0?"Configurar pago":"Editar pago"}</button>}
+                                      {/* Botón Activo / Inactivo */}
                                       {esInactivo
                                         ?<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"activo");}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
                                         :<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"inactivo");}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
@@ -2565,6 +2779,7 @@ export default function App() {
                                     </div>
 
                                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                                      {/* COL IZQ: Datos personales + Asistencia */}
                                       <div style={{padding:"14px 20px 14px 28px",borderRight:"1px solid #f3f4f6"}}>
                                         <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>DATOS</div>
                                         <div style={{display:"grid",gap:5,fontFamily:"system-ui",fontSize:12,marginBottom:10}}>
@@ -2572,4 +2787,846 @@ export default function App() {
                                           {est.puesto&&<div><span style={{color:"#9ca3af"}}>Puesto: </span>{est.puesto}</div>}
                                           {est.carrera&&<div><span style={{color:"#9ca3af"}}>Carrera: </span>{est.carrera}</div>}
                                           {est.grado&&<div><span style={{color:"#9ca3af"}}>Grado: </span>{est.grado}</div>}
-                                          {est.egresado_ibero&&<div><span style={{color:"#9ca3af"}}>Eg. IBERO: </span><span style={{color:"#2563eb
+                                          {est.egresado_ibero&&<div><span style={{color:"#9ca3af"}}>Eg. IBERO: </span><span style={{color:"#2563eb",fontWeight:600}}>{est.egresado_ibero}</span></div>}
+                                        </div>
+                                        {/* Factura / CSF */}
+                                        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+                                          <span style={{fontSize:11,background:est.requiere_factura==="Sí"?"#fef2f2":"#f3f4f6",borderRadius:4,padding:"2px 9px",color:est.requiere_factura==="Sí"?RED:"#6b7280",fontFamily:"system-ui",fontWeight:700,border:"1px solid "+(est.requiere_factura==="Sí"?"#fca5a5":"#e5e7eb")}}>
+                                            {est.requiere_factura==="Sí"?"Requiere factura":"Sin factura"}
+                                          </span>
+                                          {est.csf_url
+                                            ?<a href={est.csf_url} target="_blank" rel="noreferrer" style={{fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 9px",color:"#16a34a",fontFamily:"system-ui",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                                            :<span style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Sin CSF</span>
+                                          }
+                                        </div>
+                                        {/* Asistencia por módulo + global */}
+                                        {asistPorMod.length>0&&(
+                                          <div>
+                                            <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>ASISTENCIA</div>
+                                            {/* Global */}
+                                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                                              <div style={{flex:1,height:5,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:(pctAsist||0)+"%",height:"100%",background:pctAsist>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
+                                              <span style={{fontWeight:800,fontSize:14,color:pctAsist>=80?"#16a34a":"#dc2626",fontFamily:"system-ui",minWidth:36}}>{pctAsist??0}%</span>
+                                              <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{totalAsistidas}/{totalSesiones} sesiones</span>
+                                            </div>
+                                            {/* Por módulo */}
+                                            {asistPorMod.map(({mod,asist,totalSes})=>{
+                                              const pm=totalSes?Math.round(asist/totalSes*100):0;
+                                              return(
+                                                <div key={mod.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                                                  <span style={{fontSize:10,background:prog.color,color:"#fff",borderRadius:3,padding:"1px 5px",fontWeight:700,fontFamily:"system-ui",flexShrink:0}}>{mod.numero}</span>
+                                                  <div style={{flex:1,height:3,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pm+"%",height:"100%",background:pm>=80?"#16a34a":"#dc2626",borderRadius:4}}/></div>
+                                                  <span style={{fontSize:11,fontFamily:"system-ui",color:pm>=80?"#16a34a":"#dc2626",fontWeight:600,minWidth:32}}>{asist}/{totalSes}</span>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* COL DER: Parcialidades */}
+                                      <div style={{padding:"14px 20px"}}>
+                                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>
+                                          {p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}
+                                          {mf>0&&<span style={{marginLeft:6,color:"#374151",fontWeight:400}}>· {fmtMXN(mf)}{p.descuento_pct>0?` (−${p.descuento_pct}%)`:""}</span>}
+                                        </div>
+                                        {!mf&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>Sin configurar</div>}
+                                        {p.tipo==="unico"&&mf>0&&(
+                                          <div style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0"}}>
+                                            <div style={{width:18,height:18,borderRadius:"50%",background:(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:9,fontWeight:700}}>{(p.parcialidades||[]).some(x=>x.pagado)?"✓":""}</span></div>
+                                            <span style={{fontFamily:"system-ui",fontSize:12,fontWeight:600,color:(p.parcialidades||[]).some(x=>x.pagado)?"#16a34a":"#d97706"}}>{(p.parcialidades||[]).some(x=>x.pagado)?"Cubierto — "+fmtMXN(mf):"Pendiente — "+fmtMXN(mf)}</span>
+                                          </div>
+                                        )}
+                                        {p.tipo==="parcialidades"&&(p.parcialidades||[]).map((parc,j)=>{
+                                          const vencido=!parc.pagado&&parc.fecha_vencimiento&&parc.fecha_vencimiento<today();
+                                          return(
+                                            <div key={parc.id} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 0",borderBottom:j<(p.parcialidades||[]).length-1?"1px solid #f3f4f6":"none"}}>
+                                              <div style={{width:16,height:16,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:8,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
+                                              <span style={{fontFamily:"system-ui",fontSize:11,flex:1,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
+                                              <span style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</span>
+                                              <span style={{fontSize:9,fontWeight:700,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#9ca3af",fontFamily:"system-ui",minWidth:44,textAlign:"right"}}>{parc.pagado?"Pagado":vencido?"Vencido":"Pendiente"}</span>
+                                            </div>
+                                          );
+                                        })}
+                                        {recargo>0&&(
+                                          <div style={{marginTop:6,padding:"6px 10px",background:"#fef2f2",borderRadius:6,fontFamily:"system-ui",fontSize:11,color:"#dc2626",display:"flex",justifyContent:"space-between"}}>
+                                            <span>Recargo acumulado (6%)</span>
+                                            <strong>{fmtMXN(recargo)}</strong>
+                                          </div>
+                                        )}
+                                        {p.notas&&<div style={{marginTop:8,fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic"}}>{p.notas}</div>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* REPORTES */}
+        {view==="reportes"&&can(session,"verReportes")&&(
+          <div>
+            <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 24px",letterSpacing:"-0.5px"}}>Reportes y estadísticas</h1>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
+              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Eg. IBERO cursando",egresadosIberoActivos.length],["Eg. IBERO concluyeron",egresadosIberoConcluyeron.length]].map(([l,v])=>(
+                <div key={l} style={{...S.card,padding:"20px 22px"}}>
+                  <div style={{fontSize:28,fontWeight:800,color:RED,fontFamily:"system-ui"}}>{v}</div>
+                  <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{...S.card,marginBottom:16}}>
+              <button onClick={()=>setRepExp(repExp==="egresados"?null:"egresados")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                <span style={{fontWeight:700,fontSize:14}}>{"Egresados ("+egresados.length+")"}</span>
+                <span style={{color:"#9ca3af"}}>{repExp==="egresados"?"▲":"▼"}</span>
+              </button>
+              {repExp==="egresados"&&<div style={{borderTop:"1px solid #e5e7eb",padding:"0 20px 16px"}}>
+                {egresados.length===0?<div style={{color:"#9ca3af",padding:"20px 0",fontFamily:"system-ui",textAlign:"center"}}>Sin egresados registrados.</div>:egresados.map((e,i)=>(
+                  <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13}}>
+                    <div style={{flex:1}}><span style={{fontWeight:600}}>{e.nombre}</span>{e.empresa&&<span style={{color:"#9ca3af",marginLeft:8}}>{e.empresa}</span>}</div>
+                    <div style={{color:"#6b7280"}}>{e.programa}</div>
+                  </div>
+                ))}
+              </div>}
+            </div>
+
+            {/* EGRESADOS IBERO */}
+            <div style={{...S.card,marginBottom:16,border:"1px solid #bfdbfe"}}>
+              <button onClick={()=>setRepExp(repExp==="egresadosIbero"?null:"egresadosIbero")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                  <span style={{fontWeight:700,fontSize:14}}>Egresados IBERO</span>
+                  <span style={{background:"#eff6ff",color:"#2563eb",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>Cursando: {egresadosIberoActivos.length}</span>
+                  <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>Concluyeron: {egresadosIberoConcluyeron.length}</span>
+                </div>
+                <span style={{color:"#9ca3af"}}>{repExp==="egresadosIbero"?"▲":"▼"}</span>
+              </button>
+              {repExp==="egresadosIbero"&&(
+                <div style={{borderTop:"1px solid #e5e7eb",padding:"0 20px 16px"}}>
+                  {egresadosIberoActivos.length===0&&egresadosIberoConcluyeron.length===0&&(
+                    <div style={{color:"#9ca3af",padding:"20px 0",fontFamily:"system-ui",textAlign:"center"}}>Sin egresados IBERO registrados.</div>
+                  )}
+                  {egresadosIberoActivos.length>0&&(
+                    <div style={{marginTop:16}}>
+                      <div style={{fontWeight:700,fontSize:11,color:"#2563eb",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CURSANDO ACTUALMENTE ({egresadosIberoActivos.length})</div>
+                      {egresadosIberoActivos.map((e,i)=>(
+                        <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
+                          <div style={{flex:1}}>
+                            <span style={{fontWeight:600}}>{e.nombre}</span>
+                            {e.puesto&&<span style={{color:"#6b7280",marginLeft:8,fontSize:12}}>{e.puesto}</span>}
+                            {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                          </div>
+                          <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                          <span style={{background:"#eff6ff",color:"#2563eb",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Activo</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {egresadosIberoConcluyeron.length>0&&(
+                    <div style={{marginTop:16}}>
+                      <div style={{fontWeight:700,fontSize:11,color:"#16a34a",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:8}}>CONCLUYERON ({egresadosIberoConcluyeron.length})</div>
+                      {egresadosIberoConcluyeron.map((e,i)=>(
+                        <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #f3f4f6",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
+                          <div style={{flex:1}}>
+                            <span style={{fontWeight:600}}>{e.nombre}</span>
+                            {e.puesto&&<span style={{color:"#6b7280",marginLeft:8,fontSize:12}}>{e.puesto}</span>}
+                            {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                          </div>
+                          <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                          <span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Egresado</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* TASA DE DESERCIÓN */}
+            {inactivos.length>0&&(
+              <div style={{...S.card,marginBottom:16,border:"1px solid #fde68a"}}>
+                <button onClick={()=>setRepExp(repExp==="desercion"?null:"desercion")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                  <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                    <span style={{fontWeight:700,fontSize:14}}>Tasa de deserción</span>
+                    <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>
+                      {inactivos.length} inactivo{inactivos.length!==1?"s":""}
+                    </span>
+                    {(()=>{
+                      const totalEst=(programas||[]).reduce((a,p)=>a+ests(p).filter(e=>e.estatus!=="baja").length,0);
+                      const pctDeserc=totalEst>0?Math.round(inactivos.length/totalEst*100):0;
+                      return<span style={{background:pctDeserc>=20?"#fef2f2":"#fffbeb",color:pctDeserc>=20?"#dc2626":"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>{pctDeserc}% de deserción</span>;
+                    })()}
+                  </div>
+                  <span style={{color:"#9ca3af"}}>{repExp==="desercion"?"▲":"▼"}</span>
+                </button>
+                {repExp==="desercion"&&(
+                  <div style={{borderTop:"1px solid #fde68a",padding:"0 20px 16px"}}>
+                    <div style={{fontSize:12,color:"#92400e",fontFamily:"system-ui",padding:"10px 0 8px",fontStyle:"italic"}}>Estudiantes marcados como inactivos por falta de pago. Se recomienda seguimiento antes de dar de baja definitiva.</div>
+                    {inactivos.map((e,i)=>(
+                      <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #fef3c7",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
+                        <div style={{flex:1}}>
+                          <span style={{fontWeight:600}}>{e.nombre}</span>
+                          {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                        </div>
+                        <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                        <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Inactivo</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{...S.card,padding:24}}>
+              <div style={{fontWeight:700,fontSize:12,marginBottom:16,color:RED,fontFamily:"system-ui",letterSpacing:"0.5px"}}>DETALLE POR PROGRAMA</div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                  <thead><tr style={{borderBottom:"2px solid #e5e7eb"}}>{["Programa","Tipo","Estatus","Módulos","Confirmados","Estudiantes","Horas"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {(programas||[]).map(p=>{
+                      const c=mods(p).filter(m=>m.estatus==="confirmado").length, t=mods(p).length, h=mods(p).reduce((a,m)=>a+(m.clases||0)*(m.horasPorClase||0),0), ss=ST_STYLE[progStatus(p)];
+                      return(<tr key={p.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                        <td style={{padding:"10px 12px",fontWeight:600}}>{p.nombre}</td>
+                        <td style={{padding:"10px 12px",color:"#6b7280"}}>{p.tipo}</td>
+                        <td style={{padding:"10px 12px"}}><span style={{background:ss.bg,color:ss.color,border:"1px solid "+ss.border,borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>{ss.label}</span></td>
+                        <td style={{padding:"10px 12px"}}>{t}</td>
+                        <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{c}</td>
+                        <td style={{padding:"10px 12px",fontWeight:600}}>{ests(p).length}</td>
+                        <td style={{padding:"10px 12px",fontWeight:600}}>{h}h</td>
+                      </tr>);
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* REPORTE FINANCIERO */}
+            {(()=>{
+              const [repVista,setRepVista] = [repVistaFin,setRepVistaFin];
+              const [repMes,setRepMes]     = [repMesFin,setRepMesFin];
+
+              const calcFinProg = p => {
+                const es=ests(p);
+                const esperado=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado)return a;return a+pg.monto_acordado*(1-(pg.descuento_pct||0)/100);},0);
+                const cobrado=es.reduce((a,e)=>{const pg=e.pago;if(!pg)return a;if(pg.tipo==="unico"){const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(pag>0?pg.monto_acordado*(1-(pg.descuento_pct||0)/100):0);}const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);const tot=(pg.parcialidades||[]).length;const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
+                const descuentos=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado||!pg.descuento_pct)return a;return a+pg.monto_acordado*(pg.descuento_pct/100);},0);
+                const honorarios=mods(p).reduce((a,m)=>a+calcHonorarios(m,docentes),0);
+                return{esperado,cobrado,pendiente:esperado-cobrado,descuentos,honorarios,margen:esperado-honorarios};
+              };
+
+              const proyMens = proyeccionMensual(programas,docentes);
+              const mesesDisp = Object.keys(proyMens).sort();
+              const aniosDisp  = [...new Set(mesesDisp.map(m=>m.substring(0,4)))].sort();
+
+              const totalEsperado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).esperado,0);
+              const totalCobrado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).cobrado,0);
+              const totalHonorarios=(programas||[]).reduce((a,p)=>a+calcFinProg(p).honorarios,0);
+              const totalMargen=totalEsperado-totalHonorarios;
+
+              return(
+                <div style={{marginTop:16}}>
+                  {/* Selector de vista */}
+                  <div style={{...S.card,padding:"16px 20px",marginBottom:12}}>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginRight:4}}>VER POR</span>
+                      {[["global","Todo el período"],["mes","Mes"],["programa","Programa"],["anual","Año"]].map(([v,l])=>(
+                        <button key={v} onClick={()=>setRepVista(v)} style={{border:"2px solid "+(repVista===v?RED:"#e5e7eb"),borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:repVista===v?700:400,background:repVista===v?"#fef2f2":"#fff",color:repVista===v?RED:"#6b7280"}}>{l}</button>
+                      ))}
+                      {repVista==="mes"&&(
+                        <select value={repMes} onChange={e=>setRepMes(e.target.value)} style={{...S.inp,width:"auto",marginLeft:8}}>
+                          {mesesDisp.map(m=><option key={m} value={m}>{MESES_L[parseInt(m.split("-")[1])-1]} {m.split("-")[0]}</option>)}
+                        </select>
+                      )}
+                      {repVista==="anual"&&(
+                        <select value={repMes} onChange={e=>setRepMes(e.target.value)} style={{...S.inp,width:"auto",marginLeft:8}}>
+                          {aniosDisp.map(a=><option key={a} value={a}>{a}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* VISTA GLOBAL */}
+                  {repVista==="global"&&(
+                    <div style={{...S.card}}>
+                      <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Resumen global</div>
+                      <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
+                        {[["Ingresos esperados",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalEsperado-totalCobrado,"#d97706"],["Honorarios docentes",totalHonorarios,RED],["Margen neto estimado",totalMargen,"#7c3aed"]].map(([l,v,c])=>(
+                          <div key={l} style={{textAlign:"center",padding:"8px 0"}}>
+                            <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                            <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{overflowX:"auto"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                          <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>{["Programa","Estudiantes","Esperado","Cobrado","Honorarios","Margen neto","Avance"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {(programas||[]).map(p=>{
+                              const {esperado,cobrado,honorarios,margen}=calcFinProg(p);
+                              const pct=esperado?Math.round(cobrado/esperado*100):0;
+                              return(<tr key={p.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                                <td style={{padding:"10px 12px",fontWeight:600}}>{p.nombre}</td>
+                                <td style={{padding:"10px 12px",color:"#6b7280"}}>{ests(p).length}</td>
+                                <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(esperado)}</td>
+                                <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(cobrado)}</td>
+                                <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(honorarios)}</td>
+                                <td style={{padding:"10px 12px",color:margen>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margen)}</td>
+                                <td style={{padding:"10px 12px"}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                    <div style={{width:60,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:pct>=100?"#16a34a":pct>=50?"#d97706":RED,borderRadius:4}}/></div>
+                                    <span style={{fontSize:12,fontWeight:700,color:pct>=100?"#16a34a":pct>=50?"#d97706":RED}}>{pct}%</span>
+                                  </div>
+                                </td>
+                              </tr>);
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* VISTA MES */}
+                  {repVista==="mes"&&(()=>{
+                    const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
+                    const margen=d.esperado-d.honorarios;
+                    // Programas activos ese mes
+                    const progsDelMes=(programas||[]).filter(p=>
+                      mods(p).some(m=>m.fechaInicio&&m.fechaInicio.substring(0,7)===repMes)||
+                      ests(p).some(e=>(e.pago?.parcialidades||[]).some(pa=>pa.fecha_vencimiento?.substring(0,7)===repMes))
+                    );
+                    return(
+                      <div style={{...S.card}}>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
+                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
+                          {[["Ingresos esperados",d.esperado,"#1a1a1a"],["Cobrado",d.cobrado,"#16a34a"],["Pendiente",d.esperado-d.cobrado,"#d97706"],["Honorarios",d.honorarios,RED],["Margen neto",margen,"#7c3aed"]].map(([l,v,c])=>(
+                            <div key={l} style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                              <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {progsDelMes.length>0&&(
+                          <div style={{padding:"14px 20px"}}>
+                            <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:10}}>PROGRAMAS ACTIVOS ESTE MES</div>
+                            {progsDelMes.map(p=>{
+                              const modsDelMes=mods(p).filter(m=>m.fechaInicio?.substring(0,7)===repMes);
+                              const honMes=modsDelMes.reduce((a,m)=>a+calcHonorarios(m,docentes),0);
+                              const ingMes=ests(p).reduce((a,e)=>{
+                                const pg=e.pago;if(!pg)return a;
+                                if(pg.tipo==="parcialidades"){
+                                  return a+(pg.parcialidades||[]).filter(pa=>pa.fecha_vencimiento?.substring(0,7)===repMes).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);
+                                }
+                                return a;
+                              },0);
+                              return(
+                                <div key={p.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap",alignItems:"center"}}>
+                                  <div style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
+                                  <span style={{flex:1,fontWeight:600,fontSize:13}}>{p.nombre}</span>
+                                  {ingMes>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#16a34a"}}>Cobros: {fmtMXN(ingMes)}</span>}
+                                  {honMes>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:RED}}>Honorarios: {fmtMXN(honMes)}</span>}
+                                  {modsDelMes.map(m=><span key={m.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",color:"#6b7280"}}>{m.numero} · {m.docente||"Sin docente"} · {(m.clases||0)*(m.horasPorClase||0)}h</span>)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* VISTA ANUAL */}
+                  {repVista==="anual"&&(()=>{
+                    const anio=repMes||aniosDisp[0]||new Date().getFullYear().toString();
+                    const mesesAnio=Array.from({length:12},(_,i)=>anio+"-"+String(i+1).padStart(2,"0"));
+                    return(
+                      <div style={{...S.card}}>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Proyección anual {anio}</div>
+                        <div style={{overflowX:"auto"}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13,minWidth:700}}>
+                            <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
+                              {["Mes","Esperado","Cobrado","Pendiente","Honorarios","Margen"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}
+                            </tr></thead>
+                            <tbody>
+                              {mesesAnio.map(m=>{
+                                const d=proyMens[m]||{esperado:0,cobrado:0,honorarios:0};
+                                if(d.esperado===0&&d.honorarios===0)return null;
+                                const margen=d.esperado-d.honorarios;
+                                return(<tr key={m} style={{borderBottom:"1px solid #f3f4f6",background:m===today().substring(0,7)?"#fef2f2":"#fff"}}>
+                                  <td style={{padding:"10px 12px",fontWeight:600}}>{MESES_L[parseInt(m.split("-")[1])-1]}</td>
+                                  <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(d.esperado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(d.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#d97706"}}>{fmtMXN(d.esperado-d.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(d.honorarios)}</td>
+                                  <td style={{padding:"10px 12px",color:margen>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margen)}</td>
+                                </tr>);
+                              })}
+                              {/* Totales */}
+                              {(()=>{
+                                const tot=mesesAnio.reduce((a,m)=>{const d=proyMens[m]||{esperado:0,cobrado:0,honorarios:0};return{esperado:a.esperado+d.esperado,cobrado:a.cobrado+d.cobrado,honorarios:a.honorarios+d.honorarios};},{esperado:0,cobrado:0,honorarios:0});
+                                return(<tr style={{borderTop:"2px solid #e5e7eb",background:"#f9f9f9",fontWeight:700}}>
+                                  <td style={{padding:"10px 12px"}}>TOTAL {anio}</td>
+                                  <td style={{padding:"10px 12px"}}>{fmtMXN(tot.esperado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#16a34a"}}>{fmtMXN(tot.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:"#d97706"}}>{fmtMXN(tot.esperado-tot.cobrado)}</td>
+                                  <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(tot.honorarios)}</td>
+                                  <td style={{padding:"10px 12px",color:"#7c3aed"}}>{fmtMXN(tot.esperado-tot.honorarios)}</td>
+                                </tr>);
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* VISTA POR PROGRAMA */}
+                  {repVista==="programa"&&(
+                    <div style={{display:"grid",gap:12}}>
+                      {(programas||[]).map(p=>{
+                        const {esperado,cobrado,honorarios,margen,descuentos}=calcFinProg(p);
+                        const pct=esperado?Math.round(cobrado/esperado*100):0;
+                        // Meses de este programa
+                        const mesesProg=[...new Set([
+                          ...mods(p).map(m=>m.fechaInicio?.substring(0,7)).filter(Boolean),
+                          ...ests(p).flatMap(e=>(e.pago?.parcialidades||[]).map(pa=>pa.fecha_vencimiento?.substring(0,7)).filter(Boolean))
+                        ])].sort();
+                        return(
+                          <div key={p.id} style={{...S.card,overflow:"hidden"}}>
+                            <div style={{padding:"14px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",gap:10,alignItems:"center",background:"#f9f9f9"}}>
+                              <div style={{width:10,height:10,borderRadius:"50%",background:p.color}}/>
+                              <span style={{fontWeight:700,fontSize:14,flex:1}}>{p.nombre}</span>
+                              <span style={{fontSize:12,fontFamily:"system-ui",color:"#6b7280"}}>{ests(p).length} estudiantes</span>
+                            </div>
+                            <div style={{padding:"14px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,borderBottom:mesesProg.length?"1px solid #e5e7eb":"none"}}>
+                              {[["Esperado",esperado,"#1a1a1a"],["Cobrado",cobrado,"#16a34a"],["Pendiente",esperado-cobrado,"#d97706"],["Honorarios",honorarios,RED],["Margen",margen,"#7c3aed"]].map(([l,v,c])=>(
+                                <div key={l} style={{textAlign:"center"}}>
+                                  <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui",fontWeight:700,marginBottom:2}}>{l.toUpperCase()}</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {mesesProg.length>0&&(
+                              <div style={{overflowX:"auto"}}>
+                                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:12,minWidth:500}}>
+                                  <thead><tr style={{borderBottom:"1px solid #e5e7eb"}}>{["Mes","Ingresos","Cobrado","Honorarios","Margen"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 14px",fontSize:10,fontWeight:700,color:"#9ca3af",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                                  <tbody>
+                                    {mesesProg.map(m=>{
+                                      const d=proyMens[m]||{esperado:0,cobrado:0,honorarios:0};
+                                      // Filtrar solo ingresos de este programa en este mes
+                                      const ingEst=ests(p).reduce((a,e)=>{
+                                        const pg=e.pago;if(!pg)return a;
+                                        if(pg.tipo==="parcialidades"){return a+(pg.parcialidades||[]).filter(pa=>pa.fecha_vencimiento?.substring(0,7)===m).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);}
+                                        if(pg.tipo==="unico"&&mods(p).some(mod=>mod.fechaInicio?.substring(0,7)===m)){const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);return a+mf;}
+                                        return a;
+                                      },0);
+                                      const ingCob=ests(p).reduce((a,e)=>{
+                                        const pg=e.pago;if(!pg)return a;
+                                        if(pg.tipo==="parcialidades"){return a+(pg.parcialidades||[]).filter(pa=>pa.pagado&&pa.fecha_vencimiento?.substring(0,7)===m).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);}
+                                        return a;
+                                      },0);
+                                      const honMes=mods(p).filter(mod=>mod.fechaInicio?.substring(0,7)===m).reduce((a,mod)=>a+calcHonorarios(mod,docentes),0);
+                                      if(ingEst===0&&honMes===0)return null;
+                                      const margenMes=ingEst-honMes;
+                                      return(<tr key={m} style={{borderBottom:"1px solid #f3f4f6",background:m===today().substring(0,7)?"#fef9ff":"#fff"}}>
+                                        <td style={{padding:"8px 14px",fontWeight:600}}>{MESES_L[parseInt(m.split("-")[1])-1]} {m.split("-")[0]}</td>
+                                        <td style={{padding:"8px 14px"}}>{fmtMXN(ingEst)}</td>
+                                        <td style={{padding:"8px 14px",color:"#16a34a"}}>{fmtMXN(ingCob)}</td>
+                                        <td style={{padding:"8px 14px",color:RED}}>{fmtMXN(honMes)}</td>
+                                        <td style={{padding:"8px 14px",color:margenMes>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margenMes)}</td>
+                                      </tr>);
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* TABLA DE MOROSIDAD */}
+                  {(()=>{
+                    const morosos=[];
+                    (programas||[]).forEach(prog=>{
+                      ests(prog).forEach(est=>{
+                        const ep=calcEstadoPagos(est);
+                        if(!ep||ep.conRecargo.length===0)return;
+                        const mf=(est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
+                        const montoParcialidad=ep.total?mf/ep.total:0;
+                        const recargo=montoParcialidad*ep.conRecargo.length*(RECARGO_PCT/100);
+                        morosos.push({est,prog,ep,montoParcialidad,recargo,critico:ep.conRecargo.length>=2});
+                      });
+                    });
+                    if(!morosos.length)return null;
+                    return(
+                      <div style={{...S.card,marginTop:16}}>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif",color:"#dc2626"}}>Cartera vencida — {morosos.length} estudiante{morosos.length!==1?"s":""}</div>
+                          <div style={{fontSize:13,fontFamily:"system-ui",color:"#6b7280"}}>Recargo total: <strong style={{color:"#dc2626"}}>{fmtMXN(morosos.reduce((a,m)=>a+m.recargo,0))}</strong></div>
+                        </div>
+                        <div style={{overflowX:"auto"}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
+                            <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#fef2f2"}}>{["Estudiante","Programa","Pagos vencidos","Monto/parcialidad","Recargo (6%)","Total a cobrar","Acción"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                            <tbody>
+                              {morosos.map(({est,prog,ep,montoParcialidad,recargo,critico},i)=>(
+                                <tr key={i} style={{borderBottom:"1px solid #f3f4f6",background:critico?"#fff5f5":"#fff"}}>
+                                  <td style={{padding:"10px 12px"}}><div style={{fontWeight:600}}>{est.nombre}</div>{est.empresa&&<div style={{fontSize:11,color:"#9ca3af"}}>{est.empresa}</div>}</td>
+                                  <td style={{padding:"10px 12px",color:"#6b7280"}}>{prog.nombre}</td>
+                                  <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{background:critico?"#fef2f2":"#fffbeb",color:critico?"#dc2626":"#d97706",border:"1px solid "+(critico?"#fca5a5":"#fde68a"),borderRadius:4,padding:"2px 8px",fontWeight:700}}>{ep.conRecargo.length}</span></td>
+                                  <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(montoParcialidad)}</td>
+                                  <td style={{padding:"10px 12px",color:"#dc2626",fontWeight:700}}>{fmtMXN(recargo)}</td>
+                                  <td style={{padding:"10px 12px",fontWeight:700}}>{fmtMXN(montoParcialidad*ep.conRecargo.length+recargo)}</td>
+                                  <td style={{padding:"10px 12px"}}>{critico?<span style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Dar de baja</span>:<span style={{fontSize:11,background:"#fffbeb",color:"#d97706",border:"1px solid #fde68a",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Contactar</span>}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* CONFIG */}
+        {view==="config"&&(
+          <div>
+            <h1 style={{fontSize:24,fontWeight:700,marginBottom:24,letterSpacing:"-0.3px"}}>Configuración</h1>
+            {can(session,"gestionarUsuarios")&&(
+              <div style={{...S.card,padding:24,marginBottom:20}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>USUARIOS CON ACCESO</div>
+                <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Gestiona accesos y permisos por usuario.</p>
+                {(users||[]).map((u,i)=>(
+                  <div key={i} style={{marginBottom:12,padding:"14px 16px",background:"#f9f9f9",borderRadius:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                      <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14,fontFamily:"system-ui"}}>{u.nombre}</div><div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{u.email}</div></div>
+                      {u.email!==session.email&&<button onClick={()=>setCS({titulo:"Eliminar usuario",mensaje:`¿Estás seguro de que deseas eliminar al usuario "${u.nombre}"? Perderá acceso al sistema.`,onConfirm:()=>saveUsers((users||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {ALL_PERMISOS.map(p=>(
+                        <label key={p.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:u.email===session.email?"default":"pointer",background:u.permisos&&u.permisos[p.key]?"#fef2f2":"#f3f4f6",padding:"3px 10px",borderRadius:4,border:"1px solid "+(u.permisos&&u.permisos[p.key]?"#fca5a5":"#e5e7eb"),color:u.permisos&&u.permisos[p.key]?"#1a1a1a":"#9ca3af",fontFamily:"system-ui"}}>
+                          <input type="checkbox" checked={!!(u.permisos&&u.permisos[p.key])} disabled={u.email===session.email} onChange={e=>saveUsers((users||[]).map((uu,j)=>j===i?{...uu,permisos:{...(uu.permisos||{}),[p.key]:e.target.checked}}:uu))} style={{margin:0}}/>
+                          {p.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginTop:8}}>
+                  <div style={{fontWeight:600,fontSize:13,marginBottom:12,fontFamily:"system-ui"}}>Agregar usuario</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    {[["Nombre","nombre"],["Correo","email"]].map(([l,k])=><div key={k}><label style={S.lbl}>{l}</label><input value={newUser[k]||""} onChange={e=>setNewUser({...newUser,[k]:e.target.value})} style={S.inp}/></div>)}
+                  </div>
+                  <div style={{marginBottom:12}}><label style={S.lbl}>Contraseña</label><div style={{position:"relative"}}><input type={showUP?"text":"password"} value={newUser.password||""} onChange={e=>setNewUser({...newUser,password:e.target.value})} style={{...S.inp,paddingRight:72}}/><button onClick={()=>setShowUP(!showUP)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:12,fontFamily:"system-ui"}}>{showUP?"Ocultar":"Mostrar"}</button></div></div>
+                  <div style={{marginBottom:14}}>
+                    <label style={S.lbl}>Permisos</label>
+                    <div style={{display:"flex",gap:8,marginBottom:8}}>
+                      <button onClick={()=>setNewUser({...newUser,permisos:{...VIEWER_P}})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Solo lectura</button>
+                      <button onClick={()=>setNewUser({...newUser,permisos:{...ADMIN_P}})} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12})}>Administrador</button>
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {ALL_PERMISOS.map(p=>(
+                        <label key={p.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:"pointer",background:newUser.permisos&&newUser.permisos[p.key]?"#fef2f2":"#f3f4f6",padding:"3px 10px",borderRadius:4,border:"1px solid "+(newUser.permisos&&newUser.permisos[p.key]?"#fca5a5":"#e5e7eb"),color:newUser.permisos&&newUser.permisos[p.key]?"#1a1a1a":"#9ca3af",fontFamily:"system-ui"}}>
+                          <input type="checkbox" checked={!!(newUser.permisos&&newUser.permisos[p.key])} onChange={e=>setNewUser({...newUser,permisos:{...(newUser.permisos||{}),[p.key]:e.target.checked}})} style={{margin:0}}/>{p.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={()=>{if(!newUser.nombre||!newUser.email||!newUser.password){notify("Completa todos los campos","error");return;}saveUsers([...(users||[]),{...newUser}]);setNewUser({nombre:"",email:"",password:"",permisos:{...VIEWER_P}});notify("Usuario agregado");}} style={S.btn(RED,"#fff")}>Agregar usuario</button>
+                </div>
+              </div>
+            )}
+            {can(session,"configurarNotif")&&(<>
+              <div style={{...S.card,padding:24,marginBottom:20}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>CONFIGURACIÓN DE NOTIFICACIONES Y CRM</div>
+                <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Credenciales para envío de correos e importación de estudiantes.</p>
+                {[["API Key","apiKey"],["Account ID","locationId"]].map(([l,k])=>(
+                  <div key={k} style={{marginBottom:14}}><label style={S.lbl}>{l}</label><div style={{position:"relative"}}><input type={k==="apiKey"&&!showApiKey?"password":"text"} value={notifCfg[k]||""} onChange={e=>setNotifCfg({...notifCfg,[k]:e.target.value})} placeholder={k==="apiKey"?"••••••••":"ID de cuenta"} style={{...S.inp,paddingRight:k==="apiKey"?80:12}}/>{k==="apiKey"&&<button onClick={()=>setShowAK(!showApiKey)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:12,fontFamily:"system-ui"}}>{showApiKey?"Ocultar":"Mostrar"}</button>}</div></div>
+                ))}
+                <button onClick={()=>{localStorage.setItem(NK,JSON.stringify(notifCfg));notify("Configuración guardada");}} style={S.btn(RED,"#fff")}>Guardar</button>
+              </div>
+              <div style={{...S.card,padding:24,marginBottom:20}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>CAMPOS PERSONALIZADOS A IMPORTAR</div>
+                <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Pega la Clave Única del campo en GHL y asígnale una etiqueta.</p>
+                {(fieldMap||[]).map((f,i)=>(
+                  <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,fontFamily:"system-ui"}}>
+                    <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{f.label}</div><div style={{fontSize:12,color:"#9ca3af",fontFamily:"monospace"}}>{f.id}</div></div>
+                    <button onClick={()=>saveFM((fieldMap||[]).filter((_,j)=>j!==i))} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Eliminar</button>
+                  </div>
+                ))}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:10,marginTop:12,alignItems:"flex-end"}}>
+                  <div><label style={S.lbl}>Clave única (merge tag)</label><input placeholder="contact.programa_de_intersz" value={newFM.id} onChange={e=>setNewFM({...newFM,id:e.target.value.replace(/\{|\}/g,"").trim()})} style={{...S.inp,fontFamily:"monospace",fontSize:12}}/></div>
+                  <div><label style={S.lbl}>Etiqueta a mostrar</label><input placeholder="Programa de interés" value={newFM.label} onChange={e=>setNewFM({...newFM,label:e.target.value})} style={S.inp}/></div>
+                  <button onClick={()=>{if(!newFM.id||!newFM.label){notify("Completa clave y etiqueta","error");return;}saveFM([...(fieldMap||[]),{...newFM}]);setNewFM({id:"",label:""});notify("Campo agregado");}} style={S.btn(RED,"#fff",{whiteSpace:"nowrap"})}>Agregar</button>
+                </div>
+              </div>
+              <div style={{...S.card,padding:24}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>RESPONSABLES</div>
+                <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Reciben copia al confirmar un docente.</p>
+                {(responsables||[]).map((r,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,fontFamily:"system-ui"}}>
+                    <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14}}>{r.nombre}</div><div style={{fontSize:13,color:"#6b7280"}}>{r.email}</div></div>
+                    <button onClick={()=>setCS({titulo:"Eliminar responsable",mensaje:`¿Estás seguro de que deseas eliminar a "${r.nombre}" de los responsables? Dejará de recibir notificaciones.`,onConfirm:()=>saveResp((responsables||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
+                  <input placeholder="Nombre" value={newResp.nombre} onChange={e=>setNewResp({...newResp,nombre:e.target.value})} style={{...S.inp,flex:1,minWidth:120}}/>
+                  <input placeholder="Correo" value={newResp.email} onChange={e=>setNewResp({...newResp,email:e.target.value})} style={{...S.inp,flex:2,minWidth:160}}/>
+                  <button onClick={()=>{if(newResp.nombre&&newResp.email){saveResp([...(responsables||[]),newResp]);setNewResp({nombre:"",email:""});notify("Responsable agregado");}}} style={S.btn(RED,"#fff",{whiteSpace:"nowrap"})}>Agregar</button>
+                </div>
+              </div>
+            </>)}
+          </div>
+        )}
+      </div>
+
+      {/* MODALES */}
+      {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)}/>}
+      {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
+      {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
+      {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
+      {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
+
+      {showModM&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:540,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+            <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>{editMod?"Editar módulo":"Nuevo módulo"}</span>
+              <button onClick={()=>setShowModM(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
+            </div>
+            <div style={{padding:"20px 24px"}}>
+              {/* Número de módulo — selector romano */}
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Número del módulo</label>
+                <div style={{overflowX:"auto",paddingBottom:4}}>
+                  <div style={{display:"flex",gap:6,width:"max-content"}}>
+                    {NUMEROS_MOD.map(n=>(
+                      <button key={n} onClick={()=>setModForm({...modForm,numero:n})} style={{width:42,height:42,border:"2px solid "+(modForm.numero===n?RED:"#e5e7eb"),borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:13,fontFamily:"Georgia,serif",background:modForm.numero===n?"#fef2f2":"#fff",color:modForm.numero===n?RED:"#374151",flexShrink:0}}>{n}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {[["Nombre del módulo","nombre","text",""],["Correo del docente","emailDocente","email",""]].map(([l,k,t,ph])=>(
+                <div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input type={t} placeholder={ph} value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value})} style={S.inp}/></div>
+              ))}
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Docente</label>
+                <select value={modForm.docenteId||"__manual__"} onChange={e=>{if(e.target.value==="__manual__"){setModForm({...modForm,docenteId:"",docente:""});}else{const d=(docentes||[]).find(d=>d.id===e.target.value);if(d)setModForm({...modForm,docenteId:d.id,docente:d.nombre,emailDocente:d.email||modForm.emailDocente});}}} style={S.inp}>
+                  <option value="__manual__">Escribir manualmente...</option>
+                  {(docentes||[]).map(d=><option key={d.id} value={d.id}>{d.nombre+" ("+d.grado+")"}</option>)}
+                </select>
+                {!modForm.docenteId&&<input placeholder="Nombre del docente" value={modForm.docente||""} onChange={e=>setModForm({...modForm,docente:e.target.value})} style={{...S.inp,marginTop:8}}/>}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:13}}>
+                {[["Clases","clases","1"],["Horas por clase","horasPorClase","0.5"]].map(([l,k,step])=>(
+                  <div key={k}><label style={S.lbl}>{l}</label><input type="number" min="0.5" step={step} value={modForm[k]} onChange={e=>setModForm({...modForm,[k]:parseFloat(e.target.value)||0})} style={S.inp}/></div>
+                ))}
+                <div><label style={S.lbl}>Total horas</label><div style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontSize:15,background:"#fef2f2",color:RED,fontWeight:800,fontFamily:"system-ui",textAlign:"center"}}>{((modForm.clases||0)*(modForm.horasPorClase||0)).toFixed(1)+"h"}</div></div>
+              </div>
+              {/* Selector de horario */}
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Horario</label>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {HORARIOS_PRE.map(h=>(
+                    <button key={h} onClick={()=>setModForm({...modForm,horario:h==="Otro"?"":h})} style={{border:"2px solid "+(modForm.horario===h?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"system-ui",background:modForm.horario===h?"#fef2f2":"#fff",color:modForm.horario===h?RED:"#6b7280"}}>{h}</button>
+                  ))}
+                </div>
+                <input placeholder="Escribe un horario personalizado..." value={modForm.horario||""} onChange={e=>setModForm({...modForm,horario:e.target.value})} style={S.inp}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
+                {[["Fecha inicio","fechaInicio"],["Fecha fin","fechaFin"]].map(([l,k])=>(
+                  <div key={k}><label style={S.lbl}>{l}</label><input type="date" value={modForm[k]||""} onChange={e=>setModForm({...modForm,[k]:e.target.value,fechasClase:[]})} style={S.inp}/></div>
+                ))}
+              </div>
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Días de clase</label>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {DIAS.map(d=><button key={d} onClick={()=>{
+                    const cur=modForm.dias||[];
+                    const nuevo=cur.includes(d)?cur.filter(x=>x!==d):[...cur,d];
+                    const tieneSab=nuevo.includes("Sáb");
+                    const tieneEntresemana=nuevo.some(x=>["Lun","Mar","Mié","Jue","Vie"].includes(x));
+                    let horario=modForm.horario;
+                    if(tieneSab&&!tieneEntresemana)horario="09:00 – 13:00";
+                    else if(tieneEntresemana&&!tieneSab)horario="18:00 – 22:00";
+                    else if(nuevo.length===0)horario="";
+                    setModForm({...modForm,dias:nuevo,horario,fechasClase:[]});
+                  }} style={{border:"none",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui",background:(modForm.dias||[]).includes(d)?RED:"#f3f4f6",color:(modForm.dias||[]).includes(d)?"#fff":"#6b7280"}}>{d}</button>)}
+                </div>
+              </div>
+
+              {/* FECHAS DE CLASE AUTOMÁTICAS */}
+              {modForm.fechaInicio&&modForm.fechaFin&&(modForm.dias||[]).length>0&&(()=>{
+                const propuesta=generarFechasClase(modForm.fechaInicio,modForm.fechaFin,modForm.dias,modForm.clases);
+                const fechas=modForm.fechasClase&&modForm.fechasClase.length?modForm.fechasClase:propuesta;
+                const isPropuesta=!modForm.fechasClase||modForm.fechasClase.length===0;
+                return(
+                  <div style={{marginBottom:13,background:"#f9f9f9",borderRadius:8,padding:"14px 16px",border:"1px solid #e5e7eb"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                      <label style={{...S.lbl,margin:0}}>Fechas de clase ({fechas.length})</label>
+                      <div style={{display:"flex",gap:6}}>
+                        {!isPropuesta&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={S.btn("#f3f4f6","#374151",{padding:"3px 10px",fontSize:11})}>Recalcular</button>}
+                        {isPropuesta&&<button onClick={()=>setModForm({...modForm,fechasClase:propuesta})} style={S.btn("#fffbeb","#d97706",{padding:"3px 10px",fontSize:11,border:"1px solid #fde68a"})}>Confirmar fechas</button>}
+                      </div>
+                    </div>
+                    {isPropuesta&&<div style={{fontSize:12,color:"#d97706",marginBottom:8,fontFamily:"system-ui"}}>Propuesta automática — excluye festivos. Confirma o ajusta.</div>}
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {fechas.map((f,i)=>{
+                        const fest=isFestivo(f);
+                        return(
+                          <div key={f} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                            <div style={{position:"relative"}}>
+                              <div style={{width:44,height:44,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:fest?"#fffbeb":"#fff",border:fest?"2px solid #fde68a":"1px solid #e5e7eb",padding:2,cursor:"default"}}>
+                                <span style={{fontSize:11,fontWeight:700,color:fest?"#d97706":"#374151",fontFamily:"system-ui"}}>{i+1}</span>
+                                <span style={{fontSize:9,color:fest?"#d97706":"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{f.slice(5).replace("-","/")}</span>
+                              </div>
+                              <button onClick={()=>setModForm({...modForm,fechasClase:fechas.filter((_,j)=>j!==i)})} style={{position:"absolute",top:-6,right:-6,width:16,height:16,borderRadius:"50%",background:"#dc2626",border:"none",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>×</button>
+                            </div>
+                            {fest&&<span style={{fontSize:8,color:"#d97706",fontFamily:"system-ui",fontWeight:700}}>festivo</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Agregar fecha manual — input visible */}
+                    <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center"}}>
+                      <input type="date" id="fecha_manual_input" min={modForm.fechaInicio||undefined} max={modForm.fechaFin||undefined} style={{...S.inp,flex:1,fontSize:13}}/>
+                      <button onClick={()=>{
+                        const inp=document.getElementById("fecha_manual_input");
+                        const v=inp?inp.value:"";
+                        if(v&&!fechas.includes(v)){const nuevo=[...fechas,v].sort();setModForm({...modForm,fechasClase:nuevo});}
+                        if(inp)inp.value="";
+                      }} style={S.btn(RED,"#fff",{whiteSpace:"nowrap",padding:"8px 14px",fontSize:12})}>Agregar fecha</button>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div style={{marginBottom:22}}>
+                <label style={S.lbl}>Estatus del docente</label>
+                <div style={{display:"flex",gap:8}}>
+                  {[["propuesta","Propuesta","#fffbeb","#d97706"],["confirmado","Confirmado","#f0fdf4","#16a34a"]].map(([s,l,bg,color])=>(
+                    <button key={s} onClick={()=>setModForm({...modForm,estatus:s})} style={{border:"2px solid "+(modForm.estatus===s?color:"#e5e7eb"),borderRadius:6,padding:"8px 18px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:modForm.estatus===s?bg:"#fff",color:modForm.estatus===s?color:"#9ca3af"}}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button onClick={()=>setShowModM(false)} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
+                <button onClick={saveMod} style={S.btn(RED,"#fff")}>Guardar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showProgM&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+            <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>{editProgId?"Editar programa":"Nuevo programa"}</span>
+              <button onClick={()=>setShowProgM(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
+            </div>
+            <div style={{padding:"20px 24px"}}>
+              <div style={{marginBottom:14}}><label style={S.lbl}>Nombre del programa</label><input value={progForm.nombre||""} onChange={e=>setProgForm({...progForm,nombre:e.target.value})} style={S.inp}/></div>
+              <div style={{marginBottom:14}}>
+                <label style={S.lbl}>Tipo de programa</label>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:progForm.tipo==="Otro"?8:0}}>
+                  {TIPOS_PROG.map(t=>(
+                    <button key={t.valor} onClick={()=>setProgForm({...progForm,tipo:t.valor,tipoCustom:""})} style={{border:"2px solid "+(progForm.tipo===t.valor?RED:"#e5e7eb"),borderRadius:8,padding:"10px 12px",cursor:"pointer",fontFamily:"system-ui",background:progForm.tipo===t.valor?"#fef2f2":"#fff",textAlign:"left"}}>
+                      <div style={{fontWeight:700,fontSize:13,color:progForm.tipo===t.valor?RED:"#1a1a1a"}}>{t.valor}</div>
+                      <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{t.desc}</div>
+                    </button>
+                  ))}
+                </div>
+                {progForm.tipo==="Otro"&&<input placeholder="Especifica el tipo..." value={progForm.tipoCustom||""} onChange={e=>setProgForm({...progForm,tipoCustom:e.target.value})} style={{...S.inp,marginTop:4}}/>}
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={S.lbl}>Modalidad</label>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  {MODALIDADES.map(m=>(
+                    <button key={m.valor} onClick={()=>setProgForm({...progForm,modalidad:m.valor})} style={{border:"2px solid "+(progForm.modalidad===m.valor?RED:"#e5e7eb"),borderRadius:8,padding:"10px 12px",cursor:"pointer",fontFamily:"system-ui",background:progForm.modalidad===m.valor?"#fef2f2":"#fff",textAlign:"left"}}>
+                      <span style={{fontWeight:700,fontSize:13,color:progForm.modalidad===m.valor?RED:"#1a1a1a"}}>{m.valor}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={S.lbl}>Generación</label>
+                <div style={{overflowX:"auto",paddingBottom:4}}>
+                  <div style={{display:"flex",gap:8,width:"max-content"}}>
+                    {GENERACIONES.map((g,i)=>(
+                      <button key={g} onClick={()=>setProgForm({...progForm,generacion:g})} style={{border:"2px solid "+(progForm.generacion===g?RED:"#e5e7eb"),borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"system-ui",background:progForm.generacion===g?"#fef2f2":"#fff",whiteSpace:"nowrap",flexShrink:0}}>
+                        <div style={{fontWeight:700,fontSize:13,color:progForm.generacion===g?RED:"#1a1a1a"}}>{g}</div>
+                        <div style={{fontSize:10,color:"#9ca3af",marginTop:1}}>{i+1}ª gen.</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={{marginBottom:22}}>
+                <label style={S.lbl}>Color identificador</label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {COLORES.map(c=><button key={c} onClick={()=>setProgForm({...progForm,color:c})} style={{width:30,height:30,borderRadius:"50%",background:c,border:progForm.color===c?"3px solid #1a1a1a":"3px solid transparent",cursor:"pointer"}}/>)}
+                </div>
+              </div>
+
+              {/* SECCIÓN FINANCIERA */}
+              <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:11,color:RED,letterSpacing:"1px",fontFamily:"system-ui",marginBottom:14}}>INFORMACIÓN FINANCIERA</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                  <div>
+                    <label style={S.lbl}>Precio lista (MXN)</label>
+                    <input type="number" min="0" value={progForm.precioLista||""} onChange={e=>setProgForm({...progForm,precioLista:parseFloat(e.target.value)||0})} placeholder="0" style={S.inp}/>
+                  </div>
+                  <div>
+                    <label style={S.lbl}>Parcialidades default</label>
+                    <input type="number" min="1" max="24" value={progForm.parcialidadesDefault||5} onChange={e=>setProgForm({...progForm,parcialidadesDefault:parseInt(e.target.value)||5})} style={S.inp}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={S.lbl}>Promociones / descuentos disponibles</label>
+                  <div style={{display:"grid",gap:6,marginBottom:10}}>
+                    {(progForm.promociones||[]).map((pr,i)=>(
+                      <div key={pr.id||i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",background:pr.editable?"#fffbeb":"#f9f9f9",borderRadius:6,border:"1px solid "+(pr.editable?"#fde68a":"#e5e7eb")}}>
+                        {/* Nombre — solo editable si es beca especial o personalizada */}
+                        <input value={pr.nombre}
+                          onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],nombre:e.target.value};setProgForm({...progForm,promociones:p});}}
+                          readOnly={!pr.editable&&pr.id&&pr.id.startsWith("promo_")&&pr.nombre!==""}
+                          style={{...S.inp,flex:2,background:(!pr.editable&&pr.id?.startsWith("promo_"))?"#f3f4f6":"#fff",color:"#1a1a1a"}}/>
+                        {/* Descuento */}
+                        <div style={{display:"flex",alignItems:"center",gap:4,width:80}}>
+                          <input type="number" min="0" max="100" value={pr.descuento}
+                            onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],descuento:parseFloat(e.target.value)||0};setProgForm({...progForm,promociones:p});}}
+                            style={{...S.inp,textAlign:"center",padding:"8px 4px"}}/>
+                          <span style={{fontFamily:"system-ui",fontSize:13,color:"#6b7280",flexShrink:0}}>%</span>
+                        </div>
+                        {pr.editable&&<span style={{fontSize:10,color:"#d97706",fontFamily:"system-ui",fontWeight:700,flexShrink:0}}>EDITABLE</span>}
+                        <button onClick={()=>setProgForm({...progForm,promociones:(progForm.promociones||[]).filter((_,j)=>j!==i)})}
+                          style={{background:"none",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#dc2626",fontWeight:700,flexShrink:0,fontSize:16}}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={()=>setProgForm({...progForm,promociones:[...(progForm.promociones||[]),{id:newId(),nombre:"",descuento:0,editable:true}]})}
+                    style={{...S.btn("#f3f4f6","#374151",{fontSize:12})}}>+ Agregar promoción especial</button>
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button onClick={()=>setShowProgM(false)} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
+                <button onClick={saveProg} style={S.btn(RED,"#fff")}>{editProgId?"Guardar cambios":"Crear programa"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
