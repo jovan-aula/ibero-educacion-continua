@@ -2195,6 +2195,31 @@ export default function App() {
     const n=localStorage.getItem(NK);  setNotifCfg(n?JSON.parse(n):{apiKey:"",locationId:""});
     const u=localStorage.getItem(UK);  setUsers(u?JSON.parse(u):DEFAULT_USERS);
     const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
+
+    // Cargar usuarios desde Supabase
+    try {
+      const usuariosSupa = await supa.get("usuarios","?activo=eq.true&order=nombre");
+      if(usuariosSupa&&usuariosSupa.length>0){
+        const usersMap = usuariosSupa.map(u=>({
+          id:u.id, nombre:u.nombre, email:u.email,
+          password:u.password_hash||"", rol:u.rol||"auxiliar",
+          permisos:u.permisos||{}, activo:u.activo!==false,
+        }));
+        setUsers(usersMap);
+        localStorage.setItem(UK,JSON.stringify(usersMap));
+      }
+    } catch(e){}
+
+    // Cargar configuracion (fieldMap y notif) desde Supabase
+    try {
+      const cfgs = await supa.get("configuracion","?select=*");
+      if(cfgs&&cfgs.length>0){
+        const fm = cfgs.find(c=>c.clave==="fieldmap");
+        const nf = cfgs.find(c=>c.clave==="notif");
+        if(fm?.valor){ setFieldMap(fm.valor); localStorage.setItem(FK,JSON.stringify(fm.valor)); }
+        if(nf?.valor){ setNotifCfg(nf.valor); localStorage.setItem(NK,JSON.stringify(nf.valor)); }
+      }
+    } catch(e){}
     // Cargar evaluaciones NPS desde Supabase
     try {
       const npsSupabase = await supa.get("evaluaciones_nps","?order=created_at");
@@ -2339,9 +2364,35 @@ export default function App() {
       }))).catch(e=>console.error("Sync responsables:",e));
     }
   };
-  const saveUsers = d=>{setUsers(d);localStorage.setItem(UK,JSON.stringify(d));};
-  const saveFM    = d=>{setFieldMap(d);localStorage.setItem(FK,JSON.stringify(d));};
+  const saveUsers = d=>{
+    setUsers(d);
+    localStorage.setItem(UK,JSON.stringify(d));
+    // Sync a Supabase tabla usuarios
+    if(d&&d.length){
+      supa.upsert("usuarios", d.map(u=>({
+        id: u.id||u.email.replace(/[^a-z0-9]/gi,"_"),
+        nombre: u.nombre||"", email: u.email||"",
+        password_hash: u.password||"",
+        rol: u.rol||"auxiliar",
+        permisos: u.permisos||{},
+        activo: u.activo!==false,
+      }))).catch(e=>console.error("Sync usuarios:",e));
+    }
+  };
+  const saveFM = d=>{
+    setFieldMap(d);
+    localStorage.setItem(FK,JSON.stringify(d));
+    // Sync a Supabase tabla configuracion
+    supa.upsert("configuracion",[{id:"fieldmap",clave:"fieldmap",valor:d}])
+      .catch(e=>console.error("Sync fieldmap:",e));
+  };
   const saveDoc   = d=>{setDocentes(d);localStorage.setItem(DK,JSON.stringify(d));syncDocentesToSupabase(d).catch(e=>console.error("Sync docentes error:",e));};
+  const saveNotif = n=>{
+    setNotifCfg(n);
+    localStorage.setItem(NK,JSON.stringify(n));
+    supa.upsert("configuracion",[{id:"notif",clave:"notif",valor:n}])
+      .catch(e=>console.error("Sync notif:",e));
+  };
   const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),4500);};
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
   const logout    = ()=>{localStorage.removeItem(SK2);setSession(null);setView("lista");};
@@ -2463,6 +2514,23 @@ export default function App() {
       if(p.id!==progId) return p;
       return{...p,estudiantes:ests(p).map(e=>{const u=updated.find(eu=>eu.id===e.id);return u?{...e,asistencia:{...(e.asistencia||{}),...(u.asistencia||{})}}:e;})};
     }));
+    // Sincronizar asistencia a Supabase
+    const k = "mod_"+modId;
+    const rows = [];
+    updated.forEach(e=>{
+      const fechas = e.asistencia&&e.asistencia[k];
+      if(Array.isArray(fechas)){
+        fechas.forEach(fecha=>{
+          rows.push({
+            id: e.id+"_"+modId+"_"+fecha,
+            estudiante_id: e.id,
+            modulo_id: modId,
+            fecha,
+          });
+        });
+      }
+    });
+    if(rows.length) supa.upsert("asistencia",rows).catch(e=>console.error("Sync asist docente:",e));
   };
 
   const isPublic = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
@@ -4613,7 +4681,7 @@ export default function App() {
                 {[["API Key","apiKey"],["Account ID","locationId"]].map(([l,k])=>(
                   <div key={k} style={{marginBottom:14}}><label style={S.lbl}>{l}</label><div style={{position:"relative"}}><input type={k==="apiKey"&&!showApiKey?"password":"text"} value={notifCfg[k]||""} onChange={e=>setNotifCfg({...notifCfg,[k]:e.target.value})} placeholder={k==="apiKey"?"••••••••":"ID de cuenta"} style={{...S.inp,paddingRight:k==="apiKey"?80:12}}/>{k==="apiKey"&&<button onClick={()=>setShowAK(!showApiKey)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:12,fontFamily:"system-ui"}}>{showApiKey?"Ocultar":"Mostrar"}</button>}</div></div>
                 ))}
-                <button onClick={()=>{localStorage.setItem(NK,JSON.stringify(notifCfg));notify("Configuración guardada");}} style={S.btn(RED,"#fff")}>Guardar</button>
+                <button onClick={()=>saveNotif(notifCfg)} style={S.btn(RED,"#fff")}>Guardar</button>
               </div>
               <div style={{...S.card,padding:24,marginBottom:20}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>CAMPOS PERSONALIZADOS A IMPORTAR</div>
