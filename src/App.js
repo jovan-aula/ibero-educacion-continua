@@ -438,15 +438,37 @@ function LoginScreen({onLogin}) {
   const [err,setErr]     = useState("");
   const [busy,setBusy]   = useState(false);
 
-  const go = () => {
+  const go = async () => {
+    if(!email||!pw){setErr("Ingresa tu correo y contraseña.");return;}
     setBusy(true); setErr("");
-    setTimeout(()=>{
+    try {
+      // Buscar usuario en Supabase
+      const res = await supa.get("usuarios", `?email=eq.${encodeURIComponent(email.toLowerCase())}&activo=eq.true&select=*`);
+      if(res&&res.length>0){
+        const u = res[0];
+        // Comparar contraseña (texto plano por ahora, Supabase Auth después)
+        if(u.password_hash===pw){
+          const sesion = {
+            id:u.id, nombre:u.nombre, email:u.email,
+            rol:u.rol||"auxiliar", permisos:u.permisos||{},
+          };
+          localStorage.setItem(SK2, JSON.stringify(sesion));
+          onLogin(sesion);
+          return;
+        }
+      }
+      // Fallback: usuarios locales DEFAULT (solo admin de emergencia)
+      const fallback = JSON.parse(localStorage.getItem(UK)||JSON.stringify(DEFAULT_USERS));
+      const uf = fallback.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pw);
+      if(uf){ localStorage.setItem(SK2,JSON.stringify(uf)); onLogin(uf); return; }
+      setErr("Correo o contraseña incorrectos.");
+    } catch(e){
+      // Si Supabase falla, intentar localmente
       const users = JSON.parse(localStorage.getItem(UK)||JSON.stringify(DEFAULT_USERS));
       const u = users.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pw);
-      if (u) { localStorage.setItem(SK2,JSON.stringify(u)); onLogin(u); }
+      if(u){ localStorage.setItem(SK2,JSON.stringify(u)); onLogin(u); }
       else setErr("Correo o contraseña incorrectos.");
-      setBusy(false);
-    },500);
+    } finally { setBusy(false); }
   };
 
   return (
@@ -2162,6 +2184,11 @@ export default function App() {
     const init = async () => {
     const s=localStorage.getItem(SK2); if(s) setSession(JSON.parse(s));
     const r=localStorage.getItem(RK);  setResp(r?JSON.parse(r):[]);
+    // Cargar responsables desde Supabase
+    try {
+      const respSupa = await supa.get("responsables","?order=nombre");
+      if(respSupa&&respSupa.length>0) setResp(respSupa.map(r=>({id:r.id,nombre:r.nombre,email:r.email||"",telefono:r.telefono||""})));
+    } catch(e) {}
     const n=localStorage.getItem(NK);  setNotifCfg(n?JSON.parse(n):{apiKey:"",locationId:""});
     const u=localStorage.getItem(UK);  setUsers(u?JSON.parse(u):DEFAULT_USERS);
     const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
@@ -2203,11 +2230,12 @@ export default function App() {
 
       try {
         // Supabase es la fuente de verdad
-        const [progs, supaModulos, supaEsts, supaPagos] = await Promise.all([
+        const [progs, supaModulos, supaEsts, supaPagos, supaAsist] = await Promise.all([
           supa.get("programas",   "?order=created_at"),
           supa.get("modulos",     "?order=created_at"),
           supa.get("estudiantes", "?order=created_at"),
           supa.get("pagos",       "?order=created_at"),
+          supa.get("asistencia",  "?order=fecha"),
         ]);
 
         if (progs && progs.length > 0) {
@@ -2227,6 +2255,14 @@ export default function App() {
             })),
             estudiantes: (supaEsts||[]).filter(e=>e.programa_id===p.id).map(e=>{
               const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
+              // Reconstruir asistencia desde tabla asistencia
+              const asistRows = (supaAsist||[]).filter(a=>a.estudiante_id===e.id);
+              const asistencia = {};
+              asistRows.forEach(a=>{
+                const k="mod_"+a.modulo_id;
+                if(!asistencia[k]) asistencia[k]=[];
+                asistencia[k].push(a.fecha);
+              });
               return {
                 id: e.id, nombre: e.nombre, email: e.email||"", telefono: e.telefono||"",
                 empresa: e.empresa||"", puesto: e.puesto||"", carrera: e.carrera||"",
@@ -2235,7 +2271,8 @@ export default function App() {
                 fuente: e.fuente||"", programa_interes: e.programa_interes||"",
                 forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
                 estatus: e.estatus||"activo",
-                asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
+                asistencia: Object.keys(asistencia).length>0 ? asistencia : (e.asistencia||{}),
+                campos_extra: e.campos_extra||{},
                 pago: pago ? {
                   tipo: pago.tipo, monto_acordado: pago.monto_acordado,
                   descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
@@ -2289,7 +2326,16 @@ export default function App() {
     // Sincronizar a Supabase en background (sin bloquear la UI)
     syncToSupabase(d).catch(e => console.error("Sync background error:", e));
   };
-  const saveResp  = d=>{setResp(d);localStorage.setItem(RK,JSON.stringify(d));};
+  const saveResp  = d=>{
+    setResp(d);
+    localStorage.setItem(RK,JSON.stringify(d));
+    // Sincronizar responsables a Supabase
+    if(d&&d.length){
+      supa.upsert("responsables", d.map(r=>({
+        id:r.id||newId(), nombre:r.nombre||"", email:r.email||"", telefono:r.telefono||"",
+      }))).catch(e=>console.error("Sync responsables:",e));
+    }
+  };
   const saveUsers = d=>{setUsers(d);localStorage.setItem(UK,JSON.stringify(d));};
   const saveFM    = d=>{setFieldMap(d);localStorage.setItem(FK,JSON.stringify(d));};
   const saveDoc   = d=>{setDocentes(d);localStorage.setItem(DK,JSON.stringify(d));syncDocentesToSupabase(d).catch(e=>console.error("Sync docentes error:",e));};
@@ -2494,8 +2540,23 @@ export default function App() {
         const k="mod_"+modId;
         const cur=e.asistencia&&e.asistencia[k];
         let fechas=Array.isArray(cur)?[...cur]:[];
-        if(fechas.includes(fecha))fechas=fechas.filter(f=>f!==fecha);
+        const presente = fechas.includes(fecha);
+        if(presente) fechas=fechas.filter(f=>f!==fecha);
         else fechas=[...fechas,fecha];
+        // Sincronizar a Supabase tabla asistencia
+        if(!presente){
+          // Marcar presente — insertar
+          supa.upsert("asistencia",[{
+            id: estId+"_"+modId+"_"+fecha,
+            estudiante_id: estId,
+            modulo_id: modId,
+            fecha: fecha,
+          }]).catch(e=>console.error("Sync asistencia:",e));
+        } else {
+          // Desmarcar — eliminar
+          supa.del("asistencia", estId+"_"+modId+"_"+fecha)
+            .catch(e=>console.error("Del asistencia:",e));
+        }
         return{...e,asistencia:{...(e.asistencia||{}),[k]:fechas}};
       })};
     }));
