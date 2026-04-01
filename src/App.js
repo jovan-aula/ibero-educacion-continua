@@ -1548,7 +1548,10 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => { if(!form.nombre)return; editId?saveDocentes((docentes||[]).map(d=>d.id===editId?form:d)):saveDocentes([...(docentes||[]),form]); setShowM(false); };
-  const delDoc  = id => saveDocentes((docentes||[]).filter(d=>d.id!==id));
+  const delDoc  = id => {
+    saveDocentes((docentes||[]).filter(d=>d.id!==id));
+    supa.del("docentes",id).catch(e=>console.error("Del doc:",e));
+  };
 
   const historial = doc => {
     const r=[];
@@ -2790,7 +2793,11 @@ export default function App() {
     setShowModM(false);
     notify((editMod?"Módulo actualizado":"Módulo agregado")+(modFinal.fechasClase?.length?" · "+modFinal.fechasClase.length+" fechas confirmadas":""));
   };
-  const delMod  = id=>{save((programas||[]).map(p=>p.id===selProg?{...p,modulos:mods(p).filter(m=>m.id!==id)}:p));notify("Módulo eliminado","warning");};
+  const delMod  = id=>{
+    save((programas||[]).map(p=>p.id===selProg?{...p,modulos:mods(p).filter(m=>m.id!==id)}:p));
+    supa.del("modulos",id).catch(e=>console.error("Del mod:",e));
+    notify("Módulo eliminado","warning");
+  };
   const openNewProg=()=>{setProgForm({...eProg,id:newId()});setEditProgId(null);setShowProgM(true);};
   const openEditProg=p=>{setProgForm({...p});setEditProgId(p.id);setShowProgM(true);};
   const saveProg=()=>{
@@ -2803,7 +2810,12 @@ export default function App() {
       save([...(programas||[]),{...progForm,tipo}]);setShowProgM(false);notify("Programa agregado");
     }
   };
-  const delProg = id=>{save((programas||[]).filter(p=>p.id!==id));notify("Programa eliminado","warning");};
+  const delProg = id=>{
+    save((programas||[]).filter(p=>p.id!==id));
+    // Eliminar de Supabase — CASCADE borra módulos, estudiantes, pagos y asistencia
+    supa.del("programas",id).catch(e=>console.error("Del prog:",e));
+    notify("Programa eliminado","warning");
+  };
 
   return(
     <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:"#f2f2f2",color:"#1a1a1a"}}>
