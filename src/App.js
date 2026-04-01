@@ -2106,6 +2106,9 @@ export default function App() {
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
+  const [alertasDesc,setAlertasDesc] = useState(()=>{
+    try{return JSON.parse(localStorage.getItem("ibero_alertas_desc")||"[]");}catch(e){return[];}
+  });
   const [pagoModal,setPagoModal] = useState(null); // {est, prog}
   const [notif,setNotif]         = useState(null);
   const [confirmSimple,setCS]    = useState(null); // {titulo,mensaje,onConfirm}
@@ -2362,7 +2365,28 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={u=>setSession(u)}/>;
 
   const prog    = getProg();
-  const alertas = getAlertas(programas);
+  const alertaKey = a => {
+    if(a.tipo==="sin_docente")  return `sin_docente_${a.mod.id}`;
+    if(a.tipo==="asistencia")   return `asistencia_${a.est.id}_${a.prog.id}`;
+    if(a.tipo==="pago_recargo") return `pago_recargo_${a.est.id}`;
+    if(a.tipo==="pago_critico") return `pago_critico_${a.est.id}`;
+    return `alerta_${Math.random()}`;
+  };
+  const descartarAlerta = key => {
+    const nuevas = [...alertasDesc, key];
+    setAlertasDesc(nuevas);
+    localStorage.setItem("ibero_alertas_desc", JSON.stringify(nuevas));
+  };
+  const descartarTodas = () => {
+    const keys = alertasVisible.map(alertaKey);
+    const nuevas = [...new Set([...alertasDesc, ...keys])];
+    setAlertasDesc(nuevas);
+    localStorage.setItem("ibero_alertas_desc", JSON.stringify(nuevas));
+    setShowAl(false);
+  };
+  const alertasTodas  = getAlertas(programas);
+  const alertasVisible = alertasTodas.filter(a=>!alertasDesc.includes(alertaKey(a)));
+  const alertas = alertasVisible;
 
   const progsF = (programas||[]).filter(p=>{
     const q=busqProg.toLowerCase();
@@ -2679,13 +2703,28 @@ export default function App() {
           {/* ALERTAS */}
           <div ref={alertRef} style={{position:"relative"}}>
             <button onClick={()=>setShowAl(!showAlertas)} style={{background:alertas.length>0?"#fff":"rgba(255,255,255,0.15)",border:"1px solid "+(alertas.length>0?"#fff":"rgba(255,255,255,0.3)"),borderRadius:6,padding:"6px 14px",cursor:"pointer",color:alertas.length>0?RED:"#fff",fontFamily:"system-ui",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:alertas.length>0?RED:"rgba(255,255,255,0.5)",flexShrink:0}}/>
-              {alertas.length>0?"Alertas ("+alertas.length+")":"Sin alertas"}
-            </button>
-            {showAlertas&&alertas.length>0&&(
-              <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",width:340,zIndex:999,overflow:"hidden"}}>
-                <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Alertas activas</div>
-                <div style={{maxHeight:320,overflowY:"auto"}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:alertas.length>0?RED:"rgba(255,255,255,0.5)",flexShrink:0}}/>
+                {alertas.length>0?"Alertas ("+alertas.length+")":"Sin alertas"}
+              </button>
+            {showAlertas&&(
+              <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",width:360,zIndex:999,overflow:"hidden"}}>
+                <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>
+                    {alertas.length>0?"Alertas activas":"Sin alertas pendientes"}
+                  </span>
+                  {alertas.length>0&&(
+                    <button onClick={descartarTodas}
+                      style={{fontSize:11,color:"#6b7280",background:"none",border:"1px solid #e5e7eb",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontFamily:"system-ui"}}>
+                      Borrar todas
+                    </button>
+                  )}
+                </div>
+                {alertas.length===0&&(
+                  <div style={{padding:24,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>
+                    Todo en orden ✓
+                  </div>
+                )}
+                <div style={{maxHeight:360,overflowY:"auto"}}>
                   {alertas.map((a,i)=>(
                     <div key={i} style={{padding:"12px 16px",borderBottom:"1px solid #f3f4f6",display:"flex",gap:10,alignItems:"flex-start"}}>
                       <div style={{width:8,height:8,borderRadius:"50%",background:a.tipo==="sin_docente"?"#f59e0b":a.tipo==="pago_recargo"?"#d97706":"#dc2626",marginTop:5,flexShrink:0}}/>
@@ -2695,6 +2734,11 @@ export default function App() {
                         {a.tipo==="pago_recargo"&&<><div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>Pago vencido — recargo {RECARGO_PCT}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo: {fmtMXN(a.recargo)}</div></>}
                         {a.tipo==="pago_critico"&&<><div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>Acción requerida — {a.vencidas} pagos sin cubrir</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div></>}
                       </div>
+                      <button onClick={()=>descartarAlerta(alertaKey(a))}
+                        title="Descartar alerta"
+                        style={{background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:16,padding:"0 2px",flexShrink:0,lineHeight:1}}>
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -3648,73 +3692,158 @@ export default function App() {
               </div>
 
               {/* ── PESTAÑA MÓDULOS ── */}
-              {evalTab==="modulos"&&(
-                <div style={{display:"grid",gap:10}}>
-                  {todosModulos.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin módulos registrados.</div>}
-                  {todosModulos.map(({prog,mod,evals:evMod,prom},i)=>(
-                    <div key={mod.id} style={{...S.card,padding:"16px 20px",borderLeft:"4px solid "+prog.color}}>
-                      <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                        <div style={{flex:1,minWidth:200}}>
-                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
-                            <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:800,fontFamily:"system-ui"}}>{mod.numero}</span>
-                            <span style={{fontWeight:700,fontSize:14}}>{mod.nombre}</span>
-                          </div>
-                          <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
-                            <span>{prog.nombre}{prog.generacion?" · "+prog.generacion+" gen.":""}</span>
-                            {mod.docente&&<span>· {mod.docente}</span>}
-                          </div>
+              {evalTab==="modulos"&&(()=>{
+                const hoy = today();
+
+                // Clasificar módulos por estado
+                const pendientes  = []; // terminaron, 0 respuestas
+                const enCurso     = []; // activos o próximos (clase hoy o en los últimos/próximos 14 días)
+                const completadas = []; // tienen al menos 1 respuesta
+
+                todosModulos.forEach(item=>{
+                  const {mod, evals:evMod} = item;
+                  const fechas = getFechasMod(mod);
+                  const ultimaFecha = fechas.length ? fechas[fechas.length-1] : mod.fechaFin||"";
+                  const primeraFecha = fechas.length ? fechas[0] : mod.fechaInicio||"";
+                  const termino = ultimaFecha && ultimaFecha < hoy;
+                  const activo  = primeraFecha <= hoy && (!ultimaFecha || ultimaFecha >= hoy);
+                  const proximo = primeraFecha > hoy;
+
+                  if(evMod.length > 0) completadas.push({...item, ultimaFecha, termino});
+                  else if(termino)     pendientes.push({...item, ultimaFecha});
+                  else                 enCurso.push({...item, ultimaFecha, activo, proximo});
+                });
+
+                // Filtro por programa
+                const filtrarProg = lista => filtroProgEval
+                  ? lista.filter(({prog})=>prog.id===filtroProgEval)
+                  : lista;
+
+                const tarjeta = ({prog, mod, evals:evMod, prom, ultimaFecha, estado}) => (
+                  <div key={mod.id} style={{...S.card,padding:"16px 20px",
+                    borderLeft:"4px solid "+(estado==="pendiente"?"#dc2626":estado==="completada"?"#16a34a":prog.color)}}>
+                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
+                          <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:800,fontFamily:"system-ui"}}>{mod.numero}</span>
+                          <span style={{fontWeight:700,fontSize:14}}>{mod.nombre}</span>
+                          {estado==="pendiente"&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>Sin evaluar</span>}
+                          {estado==="completada"&&<span style={{fontSize:10,background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>✓ {evMod.length} respuesta{evMod.length!==1?"s":""}</span>}
                         </div>
-                        {/* Respuestas recibidas */}
-                        <div style={{textAlign:"center",flexShrink:0}}>
-                          <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>RESPUESTAS</div>
-                          <div style={{fontSize:22,fontWeight:800,color:evMod.length>0?"#1a1a1a":"#d1d5db",fontFamily:"system-ui"}}>{evMod.length}</div>
-                        </div>
-                        {/* Promedio */}
-                        {prom!==null&&(
-                          <div style={{textAlign:"center",flexShrink:0}}>
-                            <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PROMEDIO</div>
-                            <div style={{fontSize:22,fontWeight:800,color:colorVal(prom),fontFamily:"system-ui"}}>{prom}<span style={{fontSize:12,color:"#9ca3af"}}>/5</span></div>
-                          </div>
-                        )}
-                        {/* Botones */}
-                        <div style={{display:"flex",gap:6,flexShrink:0}}>
-                          <button onClick={()=>generarEnlaceEval(prog.id,mod.id)}
-                            style={S.btn(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+mod.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#bbf7d0":"#e5e7eb")})}>
-                            {linkCopiado==="eval_"+prog.id+"_"+mod.id?"Copiado":"Copiar enlace"}
-                          </button>
-                          <button onClick={()=>enviarEvalPorCorreo(prog.id,mod.id)}
-                            style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
-                            ✉ Enviar
-                          </button>
-                          <button onClick={()=>setNpsModal({prog,mod})}
-                            style={S.btn("#eff6ff","#2563eb",{padding:"5px 11px",fontSize:12,border:"1px solid #bfdbfe"})}>
-                            + Registrar
-                          </button>
+                        <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
+                          <span>{prog.nombre}{prog.generacion?" · "+prog.generacion+" gen.":""}</span>
+                          {mod.docente&&<span>· {mod.docente}</span>}
+                          {ultimaFecha&&<span>· Terminó {fmtFecha(ultimaFecha)}</span>}
                         </div>
                       </div>
-                      {/* Barras de dimensiones si hay respuestas */}
-                      {evMod.length>0&&(
-                        <div style={{marginTop:12,display:"flex",gap:16,flexWrap:"wrap"}}>
-                          {DIM_KEYS.map((key,i)=>{
-                            const d=dimProm(evMod,key);
-                            return(
-                              <div key={key} style={{flex:1,minWidth:80}}>
-                                <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{DIM_LABELS[i]}</div>
-                                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                  <div style={{flex:1,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
-                                    <div style={{width:(d/5*100)+"%",height:"100%",background:colorVal(d),borderRadius:4}}/>
-                                  </div>
-                                  <span style={{fontSize:11,fontWeight:700,color:colorVal(d),fontFamily:"system-ui",minWidth:20}}>{d}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                      {prom!==null&&(
+                        <div style={{textAlign:"center",flexShrink:0}}>
+                          <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PROMEDIO</div>
+                          <div style={{fontSize:22,fontWeight:800,color:colorVal(prom),fontFamily:"system-ui"}}>{prom}<span style={{fontSize:12,color:"#9ca3af"}}>/5</span></div>
                         </div>
                       )}
+                      <div style={{display:"flex",gap:6,flexShrink:0}}>
+                        <button onClick={()=>generarEnlaceEval(prog.id,mod.id)}
+                          style={S.btn(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+mod.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#bbf7d0":"#e5e7eb")})}>
+                          {linkCopiado==="eval_"+prog.id+"_"+mod.id?"Copiado":"Copiar enlace"}
+                        </button>
+                        <button onClick={()=>enviarEvalPorCorreo(prog.id,mod.id)}
+                          style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
+                          ✉ Enviar
+                        </button>
+                        <button onClick={()=>setNpsModal({prog,mod})}
+                          style={S.btn("#eff6ff","#2563eb",{padding:"5px 11px",fontSize:12,border:"1px solid #bfdbfe"})}>
+                          + Registrar
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {evMod.length>0&&(
+                      <div style={{marginTop:12,display:"flex",gap:16,flexWrap:"wrap"}}>
+                        {DIM_KEYS.map((key,i)=>{
+                          const d=dimProm(evMod,key);
+                          return(
+                            <div key={key} style={{flex:1,minWidth:80}}>
+                              <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{DIM_LABELS[i]}</div>
+                              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                <div style={{flex:1,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                  <div style={{width:(d/5*100)+"%",height:"100%",background:colorVal(d),borderRadius:4}}/>
+                                </div>
+                                <span style={{fontSize:11,fontWeight:700,color:colorVal(d),fontFamily:"system-ui",minWidth:20}}>{d}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+
+                const pendFilt  = filtrarProg(pendientes);
+                const cursoFilt = filtrarProg(enCurso);
+                const compFilt  = filtrarProg(completadas);
+
+                return(
+                  <div>
+                    {/* Filtro por programa */}
+                    <div style={{display:"flex",gap:8,marginBottom:20,alignItems:"center"}}>
+                      <select value={filtroProgEval} onChange={e=>setFiltroProgEval(e.target.value)}
+                        style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 14px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
+                        <option value="">Todos los programas</option>
+                        {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}{p.generacion?" — "+p.generacion+" gen.":""}</option>)}
+                      </select>
+                      {filtroProgEval&&<button onClick={()=>setFiltroProgEval("")} style={S.btn("#f3f4f6","#374151")}>Ver todos</button>}
+                    </div>
+
+                    {/* Pendientes de evaluar */}
+                    {pendFilt.length>0&&(
+                      <div style={{marginBottom:24}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                          <div style={{width:10,height:10,borderRadius:"50%",background:"#dc2626",flexShrink:0}}/>
+                          <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#dc2626"}}>Pendientes de evaluación ({pendFilt.length})</span>
+                          <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>— Módulos terminados sin respuestas</span>
+                        </div>
+                        <div style={{display:"grid",gap:10}}>
+                          {pendFilt.map(item=>tarjeta({...item,estado:"pendiente"}))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* En curso */}
+                    {cursoFilt.length>0&&(
+                      <div style={{marginBottom:24}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                          <div style={{width:10,height:10,borderRadius:"50%",background:"#d97706",flexShrink:0}}/>
+                          <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#d97706"}}>En curso ({cursoFilt.length})</span>
+                          <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>— Módulos activos o próximos</span>
+                        </div>
+                        <div style={{display:"grid",gap:10}}>
+                          {cursoFilt.map(item=>tarjeta({...item,estado:"en_curso"}))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Completadas */}
+                    {compFilt.length>0&&(
+                      <div style={{marginBottom:24}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                          <div style={{width:10,height:10,borderRadius:"50%",background:"#16a34a",flexShrink:0}}/>
+                          <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#16a34a"}}>Evaluadas ({compFilt.length})</span>
+                          <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>— Con respuestas registradas</span>
+                        </div>
+                        <div style={{display:"grid",gap:10}}>
+                          {compFilt.map(item=>tarjeta({...item,estado:"completada"}))}
+                        </div>
+                      </div>
+                    )}
+
+                    {pendFilt.length===0&&cursoFilt.length===0&&compFilt.length===0&&(
+                      <div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>
+                        Sin módulos registrados{filtroProgEval?" en este programa":""}. 
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── PESTAÑA RESULTADOS ── */}
               {evalTab==="resultados"&&(
