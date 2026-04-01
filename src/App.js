@@ -55,7 +55,7 @@ const syncToSupabase = async (programas) => {
     })));
     if(mods.length) await supa.upsert("modulos", mods);
 
-    // Estudiantes + Pagos
+    // Estudiantes
     const ests = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
       id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
       telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
@@ -77,6 +77,19 @@ const syncToSupabase = async (programas) => {
     if(pagos.length) await supa.upsert("pagos", pagos);
 
   } catch(e) { console.error("Sync error:", e); }
+};
+
+const syncDocentesToSupabase = async (docentes) => {
+  try {
+    if(!docentes||!docentes.length) return;
+    const rows = docentes.map(d=>({
+      id: d.id, nombre: d.nombre||"", email: d.email||"",
+      telefono: d.telefono||"", especialidad: d.especialidad||"",
+      honorarios_por_hora: d.honorariosPorHora||d.honorarios_por_hora||0,
+      banco: d.banco||"", clabe: d.clabe||"", rfc: d.rfc||"",
+    }));
+    await supa.upsert("docentes", rows);
+  } catch(e) { console.error("Sync docentes error:", e); }
 };
 
 // ─── CONSTANTES ───────────────────────────────────────
@@ -2153,68 +2166,106 @@ export default function App() {
     const n=localStorage.getItem(NK);  setNotifCfg(n?JSON.parse(n):{apiKey:"",locationId:""});
     const u=localStorage.getItem(UK);  setUsers(u?JSON.parse(u):DEFAULT_USERS);
     const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
-    const d=localStorage.getItem(DK);  setDocentes(d?JSON.parse(d):[]);
+    // Cargar docentes — intentar Supabase primero
+    const docentesSupabase = await supa.get("docentes","?order=nombre");
+    if(docentesSupabase&&docentesSupabase.length>0){
+      const docsMap = docentesSupabase.map(d=>({
+        id:d.id, nombre:d.nombre, email:d.email||"", telefono:d.telefono||"",
+        especialidad:d.especialidad||"", honorariosPorHora:d.honorarios_por_hora||0,
+        banco:d.banco||"", clabe:d.clabe||"", rfc:d.rfc||"",
+      }));
+      setDocentes(docsMap);
+      localStorage.setItem(DK, JSON.stringify(docsMap));
+    } else {
+      const d=localStorage.getItem(DK); setDocentes(d?JSON.parse(d):[]);
+    }
 
     // Cargar programas: intentar Supabase primero, caer a localStorage
     const cargarProgramas = async () => {
       let programasRaw = null;
 
+      // Leer localStorage como base siempre
+      const rawP = localStorage.getItem(SK);
+      const programasLocal = rawP ? JSON.parse(rawP) : null;
+
       try {
-        // Intentar cargar desde Supabase
-        const [progs, mods, ests, pagos] = await Promise.all([
-          supa.get("programas", "?order=created_at"),
-          supa.get("modulos",   "?order=created_at"),
+        const [progs, supaModulos, supaEsts, supaPagos] = await Promise.all([
+          supa.get("programas",  "?order=created_at"),
+          supa.get("modulos",    "?order=created_at"),
           supa.get("estudiantes","?order=created_at"),
           supa.get("pagos",      "?order=created_at"),
         ]);
 
         if (progs && progs.length > 0) {
-          // Reconstruir estructura anidada desde Supabase
           programasRaw = progs.map(p => {
-            const progMods = (mods||[]).filter(m=>m.programa_id===p.id).map(m=>({
-              id: m.id, numero: m.numero, nombre: m.nombre,
-              docenteId: m.docente_id||"", docente: m.docente||"",
-              emailDocente: m.email_docente||"", clases: m.clases||4,
-              horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
-              fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
-              dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
-            }));
-            const progEsts = (ests||[]).filter(e=>e.programa_id===p.id).map(e=>{
-              const pago = (pagos||[]).find(pg=>pg.estudiante_id===e.id);
-              return {
-                id: e.id, nombre: e.nombre, email: e.email||"", telefono: e.telefono||"",
-                empresa: e.empresa||"", puesto: e.puesto||"", carrera: e.carrera||"",
-                grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
-                requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
-                fuente: e.fuente||"", programa_interes: e.programa_interes||"",
-                forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
-                estatus: e.estatus||"activo", asistencia: e.asistencia||{},
-                campos_extra: e.campos_extra||{},
-                pago: pago ? {
-                  tipo: pago.tipo, monto_acordado: pago.monto_acordado,
-                  descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
-                  parcialidades: pago.parcialidades||[], notas: pago.notas||"",
-                } : { tipo:"parcialidades", monto_acordado:0, descuento_pct:0, promocion_id:"", parcialidades:[], notas:"" },
-              };
-            });
+            // Módulos: usar Supabase si tiene, si no usar localStorage
+            const localProg = (programasLocal||[]).find(lp=>lp.id===p.id);
+            const supaProgsModulos = (supaModulos||[]).filter(m=>m.programa_id===p.id);
+            const progMods = supaProgsModulos.length > 0
+              ? supaProgsModulos.map(m=>({
+                  id: m.id, numero: m.numero||"", nombre: m.nombre||"",
+                  docenteId: m.docente_id||"", docente: m.docente||"",
+                  emailDocente: m.email_docente||"", clases: m.clases||4,
+                  horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
+                  fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
+                  dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
+                }))
+              : (localProg?.modulos||[]); // fallback a localStorage
+
+            // Estudiantes: usar Supabase si tiene, si no usar localStorage
+            const supaProgEsts = (supaEsts||[]).filter(e=>e.programa_id===p.id);
+            const progEsts = supaProgEsts.length > 0
+              ? supaProgEsts.map(e=>{
+                  const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
+                  // Preservar asistencia del localStorage si existe
+                  const localEst = (localProg?.estudiantes||[]).find(le=>le.id===e.id);
+                  return {
+                    id: e.id, nombre: e.nombre, email: e.email||"", telefono: e.telefono||"",
+                    empresa: e.empresa||"", puesto: e.puesto||"", carrera: e.carrera||"",
+                    grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
+                    requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
+                    fuente: e.fuente||"", programa_interes: e.programa_interes||"",
+                    forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+                    estatus: e.estatus||"activo",
+                    // Preservar asistencia del localStorage (aún no sincroniza a Supabase)
+                    asistencia: localEst?.asistencia || e.asistencia||{},
+                    campos_extra: e.campos_extra||{},
+                    pago: pago ? {
+                      tipo: pago.tipo, monto_acordado: pago.monto_acordado,
+                      descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
+                      parcialidades: pago.parcialidades||[], notas: pago.notas||"",
+                    } : (localEst?.pago || { tipo:"parcialidades", monto_acordado:0, descuento_pct:0, promocion_id:"", parcialidades:[], notas:"" }),
+                  };
+                })
+              : (localProg?.estudiantes||[]); // fallback a localStorage
+
             return {
               id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
-              generacion: p.generacion||"", color: p.color||"", descripcion: p.descripcion||"",
-              parcialidadesDefault: p.parcialidades_default||5, estatus: p.estatus||"activo",
-              modulos: progMods, estudiantes: progEsts,
+              generacion: p.generacion||"", color: p.color||"#C8102E",
+              descripcion: p.descripcion||"",
+              parcialidadesDefault: p.parcialidades_default||5,
+              estatus: p.estatus||"activo",
+              modulos: progMods,
+              estudiantes: progEsts,
             };
           });
-          // Actualizar localStorage con los datos de Supabase
+
+          // Agregar programas que solo existen en localStorage (no en Supabase todavía)
+          if(programasLocal){
+            programasLocal.forEach(lp=>{
+              if(!programasRaw.find(p=>p.id===lp.id)) programasRaw.push(lp);
+            });
+          }
+
           localStorage.setItem(SK, JSON.stringify(programasRaw));
         }
       } catch(e) {
         console.warn("No se pudo cargar desde Supabase, usando localStorage:", e);
       }
 
-      // Fallback a localStorage si Supabase no devolvió datos
+      // Fallback completo a localStorage
       if (!programasRaw) {
-        const rawP = localStorage.getItem(SK);
-        programasRaw = rawP ? JSON.parse(rawP) : INIT_DATA;
+        programasRaw = programasLocal || INIT_DATA;
       }
 
       // Migrar módulos sin fechasClase
@@ -2253,7 +2304,7 @@ export default function App() {
   const saveResp  = d=>{setResp(d);localStorage.setItem(RK,JSON.stringify(d));};
   const saveUsers = d=>{setUsers(d);localStorage.setItem(UK,JSON.stringify(d));};
   const saveFM    = d=>{setFieldMap(d);localStorage.setItem(FK,JSON.stringify(d));};
-  const saveDoc   = d=>{setDocentes(d);localStorage.setItem(DK,JSON.stringify(d));};
+  const saveDoc   = d=>{setDocentes(d);localStorage.setItem(DK,JSON.stringify(d));syncDocentesToSupabase(d).catch(e=>console.error("Sync docentes error:",e));};
   const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),4500);};
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
   const logout    = ()=>{localStorage.removeItem(SK2);setSession(null);setView("lista");};
