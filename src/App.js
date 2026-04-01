@@ -2184,92 +2184,63 @@ export default function App() {
     const cargarProgramas = async () => {
       let programasRaw = null;
 
-      // Leer localStorage como base siempre
-      const rawP = localStorage.getItem(SK);
-      const programasLocal = rawP ? JSON.parse(rawP) : null;
-
       try {
+        // Supabase es la fuente de verdad
         const [progs, supaModulos, supaEsts, supaPagos] = await Promise.all([
-          supa.get("programas",  "?order=created_at"),
-          supa.get("modulos",    "?order=created_at"),
-          supa.get("estudiantes","?order=created_at"),
-          supa.get("pagos",      "?order=created_at"),
+          supa.get("programas",   "?order=created_at"),
+          supa.get("modulos",     "?order=created_at"),
+          supa.get("estudiantes", "?order=created_at"),
+          supa.get("pagos",       "?order=created_at"),
         ]);
 
         if (progs && progs.length > 0) {
-          programasRaw = progs.map(p => {
-            // Módulos: usar Supabase si tiene, si no usar localStorage
-            const localProg = (programasLocal||[]).find(lp=>lp.id===p.id);
-            const supaProgsModulos = (supaModulos||[]).filter(m=>m.programa_id===p.id);
-            const progMods = supaProgsModulos.length > 0
-              ? supaProgsModulos.map(m=>({
-                  id: m.id, numero: m.numero||"", nombre: m.nombre||"",
-                  docenteId: m.docente_id||"", docente: m.docente||"",
-                  emailDocente: m.email_docente||"", clases: m.clases||4,
-                  horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
-                  fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
-                  dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
-                }))
-              : (localProg?.modulos||[]); // fallback a localStorage
-
-            // Estudiantes: usar Supabase si tiene, si no usar localStorage
-            const supaProgEsts = (supaEsts||[]).filter(e=>e.programa_id===p.id);
-            const progEsts = supaProgEsts.length > 0
-              ? supaProgEsts.map(e=>{
-                  const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
-                  // Preservar asistencia del localStorage si existe
-                  const localEst = (localProg?.estudiantes||[]).find(le=>le.id===e.id);
-                  return {
-                    id: e.id, nombre: e.nombre, email: e.email||"", telefono: e.telefono||"",
-                    empresa: e.empresa||"", puesto: e.puesto||"", carrera: e.carrera||"",
-                    grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
-                    requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
-                    fuente: e.fuente||"", programa_interes: e.programa_interes||"",
-                    forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
-                    estatus: e.estatus||"activo",
-                    // Preservar asistencia del localStorage (aún no sincroniza a Supabase)
-                    asistencia: localEst?.asistencia || e.asistencia||{},
-                    campos_extra: e.campos_extra||{},
-                    pago: pago ? {
-                      tipo: pago.tipo, monto_acordado: pago.monto_acordado,
-                      descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
-                      parcialidades: pago.parcialidades||[], notas: pago.notas||"",
-                    } : (localEst?.pago || { tipo:"parcialidades", monto_acordado:0, descuento_pct:0, promocion_id:"", parcialidades:[], notas:"" }),
-                  };
-                })
-              : (localProg?.estudiantes||[]); // fallback a localStorage
-
-            return {
-              id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
-              generacion: p.generacion||"", color: p.color||"#C8102E",
-              descripcion: p.descripcion||"",
-              parcialidadesDefault: p.parcialidades_default||5,
-              estatus: p.estatus||"activo",
-              modulos: progMods,
-              estudiantes: progEsts,
-            };
-          });
-
-          // Agregar programas que solo existen en localStorage (no en Supabase todavía)
-          if(programasLocal){
-            programasLocal.forEach(lp=>{
-              if(!programasRaw.find(p=>p.id===lp.id)) programasRaw.push(lp);
-            });
-          }
-
+          programasRaw = progs.map(p => ({
+            id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
+            generacion: p.generacion||"", color: p.color||"#C8102E",
+            descripcion: p.descripcion||"",
+            parcialidadesDefault: p.parcialidades_default||5,
+            estatus: p.estatus||"activo",
+            modulos: (supaModulos||[]).filter(m=>m.programa_id===p.id).map(m=>({
+              id: m.id, numero: m.numero||"", nombre: m.nombre||"",
+              docenteId: m.docente_id||"", docente: m.docente||"",
+              emailDocente: m.email_docente||"", clases: m.clases||4,
+              horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
+              fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
+              dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
+            })),
+            estudiantes: (supaEsts||[]).filter(e=>e.programa_id===p.id).map(e=>{
+              const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
+              return {
+                id: e.id, nombre: e.nombre, email: e.email||"", telefono: e.telefono||"",
+                empresa: e.empresa||"", puesto: e.puesto||"", carrera: e.carrera||"",
+                grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
+                requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
+                fuente: e.fuente||"", programa_interes: e.programa_interes||"",
+                forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+                estatus: e.estatus||"activo",
+                asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
+                pago: pago ? {
+                  tipo: pago.tipo, monto_acordado: pago.monto_acordado,
+                  descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
+                  parcialidades: pago.parcialidades||[], notas: pago.notas||"",
+                } : { tipo:"parcialidades", monto_acordado:0, descuento_pct:0, promocion_id:"", parcialidades:[], notas:"" },
+              };
+            }),
+          }));
+          // Actualizar caché local
           localStorage.setItem(SK, JSON.stringify(programasRaw));
         }
       } catch(e) {
-        console.warn("No se pudo cargar desde Supabase, usando localStorage:", e);
+        console.warn("Sin conexión a Supabase, usando caché local:", e);
       }
 
-      // Fallback completo a localStorage
+      // Fallback offline: usar caché local
       if (!programasRaw) {
-        programasRaw = programasLocal || INIT_DATA;
+        const rawP = localStorage.getItem(SK);
+        programasRaw = rawP ? JSON.parse(rawP) : [];
       }
 
       // Migrar módulos sin fechasClase
-      let migrado = false;
       const programasMigrados = programasRaw.map(prog=>({
         ...prog,
         modulos: (prog.modulos||[]).map(mod=>{
@@ -2277,11 +2248,9 @@ export default function App() {
           if(!mod.fechaInicio||!mod.fechaFin) return mod;
           const fechasClase = generarFechasClase(mod.fechaInicio, mod.fechaFin, mod.dias, mod.clases);
           if(!fechasClase.length) return mod;
-          migrado = true;
           return { ...mod, fechasClase, fechaInicio: fechasClase[0], fechaFin: fechasClase[fechasClase.length-1] };
         })
       }));
-      if(migrado) localStorage.setItem(SK, JSON.stringify(programasMigrados));
       setProgramas(programasMigrados);
       setReady(true);
     };
@@ -4445,6 +4414,42 @@ export default function App() {
         {view==="config"&&(
           <div>
             <h1 style={{fontSize:24,fontWeight:700,marginBottom:24,letterSpacing:"-0.3px"}}>Configuración</h1>
+
+            {/* DATOS Y SINCRONIZACIÓN */}
+            {can(session,"gestionarUsuarios")&&(
+              <div style={{...S.card,padding:24,marginBottom:20,borderLeft:"4px solid #7c3aed"}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:"#7c3aed",fontFamily:"system-ui",letterSpacing:"1px"}}>DATOS Y SINCRONIZACIÓN</div>
+                <p style={{fontSize:13,color:"#6b7280",margin:"0 0 16px",fontFamily:"system-ui"}}>
+                  Los datos se guardan en Supabase y se cachean localmente. Si notas inconsistencias entre dispositivos, usa el botón de abajo para limpiar el caché local y recargar todo desde Supabase.
+                </p>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <button onClick={async ()=>{
+                    setCS({
+                      titulo:"Limpiar caché local",
+                      mensaje:"Esto borrará todos los datos guardados en este navegador y los recargará desde Supabase. Los datos en Supabase no se borran. ¿Continuar?",
+                      onConfirm:()=>{
+                        // Limpiar todo el localStorage excepto sesión
+                        const session = localStorage.getItem(SK2);
+                        localStorage.clear();
+                        if(session) localStorage.setItem(SK2, session);
+                        notify("Caché limpiado. Recargando...");
+                        setTimeout(()=>window.location.reload(), 1000);
+                      }
+                    });
+                  }} style={S.btn("#f5f3ff","#7c3aed",{padding:"8px 16px",fontSize:13,border:"1px solid #ddd6fe"})}>
+                    🗑 Limpiar caché local
+                  </button>
+                  <button onClick={async ()=>{
+                    notify("Sincronizando con Supabase...");
+                    await syncToSupabase(programas);
+                    notify("Sincronización completada.");
+                  }} style={S.btn("#f0fdf4","#16a34a",{padding:"8px 16px",fontSize:13,border:"1px solid #bbf7d0"})}>
+                    ↑ Forzar sync a Supabase
+                  </button>
+                </div>
+              </div>
+            )}
+
             {can(session,"gestionarUsuarios")&&(
               <div style={{...S.card,padding:24,marginBottom:20}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:4,color:RED,fontFamily:"system-ui",letterSpacing:"1px"}}>USUARIOS CON ACCESO</div>
