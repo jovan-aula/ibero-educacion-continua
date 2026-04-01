@@ -635,22 +635,20 @@ function EvaluacionDocente({programas}) {
   const promedio = completo ? Math.round([resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].reduce((a,b)=>a+b,0)/5*10)/10 : null;
   const colorProm = promedio ? (promedio>=4?"#16a34a":promedio>=3?"#d97706":"#dc2626") : "#9ca3af";
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!completo) { setError("Por favor responde todas las preguntas."); return; }
     try {
-      const nueva = {
-        id: Math.random().toString(36).slice(2,9),
-        fecha: new Date().toISOString().split("T")[0],
-        progId, modId,
-        docenteId: mod.docenteId||"",
-        docenteNombre: mod.docente||"",
-        prog: prog.nombre,
-        mod: mod.nombre,
-        ...resp,
-        promedio,
-      };
-      const existing = JSON.parse(localStorage.getItem("ibero_nps")||"[]");
-      localStorage.setItem("ibero_nps", JSON.stringify([...existing, nueva]));
+      const id = Math.random().toString(36).slice(2,9);
+      const fecha = new Date().toISOString().split("T")[0];
+      // Guardar en Supabase
+      const ok = await supa.upsert("evaluaciones_nps", [{
+        id, programa_id: progId, modulo_id: modId,
+        docente_id: mod.docenteId||null,
+        docente_nombre: mod.docente||"",
+        q1: resp.q1, q2: resp.q2, q3: resp.q3, q4: resp.q4, q5: resp.q5,
+        promedio, comentarios: resp.comentarios||"", fecha,
+      }]);
+      if(!ok) throw new Error("No se pudo guardar");
       setEnviado(true);
     } catch(e) { setError("Error al guardar. Intenta de nuevo."); }
   };
@@ -2147,7 +2145,7 @@ export default function App() {
   const [filtroProgEval,setFiltroProgEval] = useState("");
   const [editEstModal,setEditEstModal] = useState(null);
   const [npsModal,setNpsModal]         = useState(null);
-  const [npsData,setNpsData]           = useState(()=>{try{return JSON.parse(localStorage.getItem("ibero_nps")||"[]");}catch(e){return[];}});
+  const [npsData,setNpsData] = useState([]);
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -2161,12 +2159,30 @@ export default function App() {
   const [progForm,setProgForm] = useState(eProg);
 
   useEffect(()=>{
+    const init = async () => {
     const s=localStorage.getItem(SK2); if(s) setSession(JSON.parse(s));
     const r=localStorage.getItem(RK);  setResp(r?JSON.parse(r):[]);
     const n=localStorage.getItem(NK);  setNotifCfg(n?JSON.parse(n):{apiKey:"",locationId:""});
     const u=localStorage.getItem(UK);  setUsers(u?JSON.parse(u):DEFAULT_USERS);
     const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
+    // Cargar evaluaciones NPS desde Supabase
+    try {
+      const npsSupabase = await supa.get("evaluaciones_nps","?order=created_at");
+      if(npsSupabase&&npsSupabase.length>0){
+        const npsMap = npsSupabase.map(e=>({
+          id:e.id, fecha:e.fecha||"",
+          progId:e.programa_id, modId:e.modulo_id,
+          docenteId:e.docente_id||"", docenteNombre:e.docente_nombre||"",
+          prog:"", mod:"",
+          q1:e.q1, q2:e.q2, q3:e.q3, q4:e.q4, q5:e.q5,
+          promedio:e.promedio, comentarios:e.comentarios||"",
+        }));
+        setNpsData(npsMap);
+      }
+    } catch(e) { console.warn("No se pudo cargar NPS:", e); }
+
     // Cargar docentes — intentar Supabase primero
+    try {
     const docentesSupabase = await supa.get("docentes","?order=nombre");
     if(docentesSupabase&&docentesSupabase.length>0){
       const docsMap = docentesSupabase.map(d=>({
@@ -2179,6 +2195,7 @@ export default function App() {
     } else {
       const d=localStorage.getItem(DK); setDocentes(d?JSON.parse(d):[]);
     }
+    } catch(e) { const d=localStorage.getItem(DK); setDocentes(d?JSON.parse(d):[]); }
 
     // Cargar programas: intentar Supabase primero, caer a localStorage
     const cargarProgramas = async () => {
@@ -2256,6 +2273,8 @@ export default function App() {
     };
 
     cargarProgramas();
+    }; // fin init
+    init();
   },[]);
 
   useEffect(()=>{
@@ -2312,11 +2331,31 @@ export default function App() {
     window.open(`mailto:${est.email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
   };
 
-  const saveNPS = (progId, modId, docenteId, docenteNombre, respuestas) => {
+  const saveNPS = async (progId, modId, docenteId, docenteNombre, respuestas) => {
     const progObj = (programas||[]).find(p=>p.id===progId);
     const modObj  = mods(progObj||{}).find(m=>m.id===modId);
     const vals = [respuestas.q1,respuestas.q2,respuestas.q3,respuestas.q4,respuestas.q5].filter(Boolean);
-    const nueva = {id:newId(),fecha:today(),progId,modId,docenteId,docenteNombre,prog:progObj?.nombre||"",mod:modObj?.nombre||"",...respuestas,promedio:vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10:0};
+    const nueva = {
+      id:newId(), fecha:today(),
+      progId, modId, docenteId, docenteNombre,
+      prog:progObj?.nombre||"", mod:modObj?.nombre||"",
+      ...respuestas,
+      promedio: vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10 : 0,
+    };
+    // Guardar en Supabase
+    await supa.upsert("evaluaciones_nps", [{
+      id: nueva.id,
+      programa_id: progId,
+      modulo_id: modId,
+      docente_id: docenteId||null,
+      docente_nombre: docenteNombre||"",
+      q1: nueva.q1||null, q2: nueva.q2||null, q3: nueva.q3||null,
+      q4: nueva.q4||null, q5: nueva.q5||null,
+      promedio: nueva.promedio,
+      comentarios: respuestas.comentarios||"",
+      fecha: nueva.fecha,
+    }]);
+    // También actualizar estado local
     const d = [...npsData, nueva];
     localStorage.setItem("ibero_nps", JSON.stringify(d));
     setNpsData(d);
