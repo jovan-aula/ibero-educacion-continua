@@ -1196,23 +1196,14 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         notas,
       });
 
-      // 1. Usar forma de pago del CRM si viene definida
+      // Usar forma de pago del CRM — fallback a parcialidades si no viene el campo
       if (formaPago) {
         const fp = formaPago.toLowerCase();
         if (fp.includes("único") || fp.includes("unico") || fp.includes("contado")) {
-          // "Pago único (25% descuento)" → detectar si incluye descuento
-          const descuento = fp.includes("25%") ? 25 : fp.includes("30%") ? 30 : fp.includes("20%") ? 20 : 0;
-          return mkUnico(monto, descuento, formaPago);
-        }
-        if (fp.includes("parcialidades")) {
-          return mkParcialidades(monto, 0, formaPago);
+          return mkUnico(monto, 0, formaPago);
         }
       }
-
-      // 2. Fallback: detección automática por monto
-      if (!monto||monto===0) return mkParcialidades(0,0,"");
-      if (monto > 10000)    return mkUnico(monto, 0, "Pago único — cubierto al inscribirse");
-      return mkParcialidades(monto, 0, "Parcialidades — primer pago cubierto al inscribirse");
+      return mkParcialidades(monto, 0, formaPago||"");
     };
 
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
@@ -1306,11 +1297,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
                 })}
               </div>
               <div style={{marginBottom:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",fontFamily:"system-ui",fontSize:12,color:"#92400e"}}>
-                <strong>Pago asignado automáticamente:</strong><br/>
-                Menor de $5,000 → Parcialidades ({prog.parcialidadesDefault||5}, primera cubierta) · Mayor de $10,000 → Pago único cubierto · Entre ambos → Parcialidades
-                {(prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]&&(
-                  <span> · Vencimientos desde {MESES_L[parseInt(((prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").split("-")[1]||1)-1]}</span>
-                )}
+                <strong>Pago asignado automáticamente:</strong> la forma de pago (único o parcialidades) y el monto se toman directamente del CRM al importar.
               </div>
               <div style={{display:"flex",gap:10,justifyContent:"space-between"}}>
                 <button onClick={()=>{setStep("filter");setContacts([]);setSelected([]);}} style={S.btn("#f3f4f6","#374151")}>← Volver</button>
