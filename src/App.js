@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
 // ─── SUPABASE ─────────────────────────────────────────
-const SUPA_URL = "https://hwaxdtlngjalhqnmcgnk.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh3YXhkdGxuZ2phbGhxbm1jZ25rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDY2NjMsImV4cCI6MjA5MDMyMjY2M30.isHtrB4g2qK1CYtlievJxr5kZo4IxOtrpMg1Fir11nI";
+const SUPA_URL = process.env.REACT_APP_SUPA_URL;
+const SUPA_KEY = process.env.REACT_APP_SUPA_KEY;
 
 const supa = {
   headers: { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
@@ -1218,7 +1218,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const cf = c.customFields||[];
       const monto = c.monetaryValue||c.opportunityValue||0;
-      const formaPago = getCF(cf,"LUUHSIlkWr1eFS7LzZ4T","contact.forma_de_pago");
+      const formaPago = getCF(cf,"XXeCwvn51VnMm3KvsAhP","contact.forma_de_pago");
       return {
         id:               c.id,
         nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
@@ -2186,29 +2186,25 @@ export default function App() {
   useEffect(()=>{
     const init = async () => {
     const s=localStorage.getItem(SK2); if(s) setSession(JSON.parse(s));
-    const r=localStorage.getItem(RK);  setResp(r?JSON.parse(r):[]);
     // Cargar responsables desde Supabase
     try {
       const respSupa = await supa.get("responsables","?order=nombre");
       if(respSupa&&respSupa.length>0) setResp(respSupa.map(r=>({id:r.id,nombre:r.nombre,email:r.email||"",telefono:r.telefono||""})));
     } catch(e) {}
-    const n=localStorage.getItem(NK);  setNotifCfg(n?JSON.parse(n):{apiKey:"",locationId:""});
-    const u=localStorage.getItem(UK);  setUsers(u?JSON.parse(u):DEFAULT_USERS);
-    const f=localStorage.getItem(FK);  setFieldMap(f?JSON.parse(f):[]);
 
     // Cargar usuarios desde Supabase
     try {
       const usuariosSupa = await supa.get("usuarios","?activo=eq.true&order=nombre");
       if(usuariosSupa&&usuariosSupa.length>0){
-        const usersMap = usuariosSupa.map(u=>({
+        setUsers(usuariosSupa.map(u=>({
           id:u.id, nombre:u.nombre, email:u.email,
           password:u.password_hash||"", rol:u.rol||"auxiliar",
           permisos:u.permisos||{}, activo:u.activo!==false,
-        }));
-        setUsers(usersMap);
-        localStorage.setItem(UK,JSON.stringify(usersMap));
+        })));
+      } else {
+        setUsers(DEFAULT_USERS);
       }
-    } catch(e){}
+    } catch(e){ setUsers(DEFAULT_USERS); }
 
     // Cargar configuracion (fieldMap y notif) desde Supabase
     try {
@@ -2216,8 +2212,8 @@ export default function App() {
       if(cfgs&&cfgs.length>0){
         const fm = cfgs.find(c=>c.clave==="fieldmap");
         const nf = cfgs.find(c=>c.clave==="notif");
-        if(fm?.valor){ setFieldMap(fm.valor); localStorage.setItem(FK,JSON.stringify(fm.valor)); }
-        if(nf?.valor){ setNotifCfg(nf.valor); localStorage.setItem(NK,JSON.stringify(nf.valor)); }
+        if(fm?.valor) setFieldMap(fm.valor);
+        if(nf?.valor) setNotifCfg(nf.valor);
       }
     } catch(e){}
     // Cargar evaluaciones NPS desde Supabase
@@ -2240,17 +2236,15 @@ export default function App() {
     try {
     const docentesSupabase = await supa.get("docentes","?order=nombre");
     if(docentesSupabase&&docentesSupabase.length>0){
-      const docsMap = docentesSupabase.map(d=>({
+      setDocentes(docentesSupabase.map(d=>({
         id:d.id, nombre:d.nombre, email:d.email||"", telefono:d.telefono||"",
         especialidad:d.especialidad||"", honorariosPorHora:d.honorarios_por_hora||0,
         banco:d.banco||"", clabe:d.clabe||"", rfc:d.rfc||"",
-      }));
-      setDocentes(docsMap);
-      localStorage.setItem(DK, JSON.stringify(docsMap));
+      })));
     } else {
-      const d=localStorage.getItem(DK); setDocentes(d?JSON.parse(d):[]);
+      setDocentes([]);
     }
-    } catch(e) { const d=localStorage.getItem(DK); setDocentes(d?JSON.parse(d):[]); }
+    } catch(e) { setDocentes([]); }
 
     // Cargar programas: intentar Supabase primero, caer a localStorage
     const cargarProgramas = async () => {
@@ -2309,18 +2303,12 @@ export default function App() {
               };
             }),
           }));
-          // Actualizar caché local
-          localStorage.setItem(SK, JSON.stringify(programasRaw));
         }
       } catch(e) {
-        console.warn("Sin conexión a Supabase, usando caché local:", e);
+        console.warn("Error al cargar datos de Supabase:", e);
       }
 
-      // Fallback offline: usar caché local
-      if (!programasRaw) {
-        const rawP = localStorage.getItem(SK);
-        programasRaw = rawP ? JSON.parse(rawP) : [];
-      }
+      if (!programasRaw) programasRaw = [];
 
       // Migrar módulos sin fechasClase
       const programasMigrados = programasRaw.map(prog=>({
@@ -2348,50 +2336,50 @@ export default function App() {
     return()=>document.removeEventListener("mousedown",h);
   },[]);
 
-  const save = d => {
-    setProgramas(d);
-    localStorage.setItem(SK, JSON.stringify(d));
-    // Sincronizar a Supabase en background (sin bloquear la UI)
-    syncToSupabase(d).catch(e => console.error("Sync background error:", e));
+  const save = async d => {
+    setProgramas(d); // actualizar UI inmediatamente
+    const ok = await syncToSupabase(d).catch(e => { console.error("Sync error:", e); return false; });
+    if (ok === false) notify("Error al guardar en la base de datos. Verifica tu conexión.", "error");
   };
-  const saveResp  = d=>{
+  const saveResp = async d => {
     setResp(d);
-    localStorage.setItem(RK,JSON.stringify(d));
-    // Sincronizar responsables a Supabase
-    if(d&&d.length){
-      supa.upsert("responsables", d.map(r=>({
+    if (d && d.length) {
+      const ok = await supa.upsert("responsables", d.map(r=>({
         id:r.id||newId(), nombre:r.nombre||"", email:r.email||"", telefono:r.telefono||"",
-      }))).catch(e=>console.error("Sync responsables:",e));
+      }))).catch(e=>{ console.error("Sync responsables:",e); return false; });
+      if (ok === false) notify("Error al guardar responsables.", "error");
     }
   };
-  const saveUsers = d=>{
+  const saveUsers = async d => {
     setUsers(d);
-    localStorage.setItem(UK,JSON.stringify(d));
-    // Sync a Supabase tabla usuarios
-    if(d&&d.length){
-      supa.upsert("usuarios", d.map(u=>({
+    if (d && d.length) {
+      const ok = await supa.upsert("usuarios", d.map(u=>({
         id: u.id||u.email.replace(/[^a-z0-9]/gi,"_"),
         nombre: u.nombre||"", email: u.email||"",
         password_hash: u.password||"",
         rol: u.rol||"auxiliar",
         permisos: u.permisos||{},
         activo: u.activo!==false,
-      }))).catch(e=>console.error("Sync usuarios:",e));
+      }))).catch(e=>{ console.error("Sync usuarios:",e); return false; });
+      if (ok === false) notify("Error al guardar usuarios.", "error");
     }
   };
-  const saveFM = d=>{
+  const saveFM = async d => {
     setFieldMap(d);
-    localStorage.setItem(FK,JSON.stringify(d));
-    // Sync a Supabase tabla configuracion
-    supa.upsert("configuracion",[{id:"fieldmap",clave:"fieldmap",valor:d}])
-      .catch(e=>console.error("Sync fieldmap:",e));
+    const ok = await supa.upsert("configuracion",[{id:"fieldmap",clave:"fieldmap",valor:d}])
+      .catch(e=>{ console.error("Sync fieldmap:",e); return false; });
+    if (ok === false) notify("Error al guardar configuración.", "error");
   };
-  const saveDoc   = d=>{setDocentes(d);localStorage.setItem(DK,JSON.stringify(d));syncDocentesToSupabase(d).catch(e=>console.error("Sync docentes error:",e));};
-  const saveNotif = n=>{
+  const saveDoc = async d => {
+    setDocentes(d);
+    const ok = await syncDocentesToSupabase(d).catch(e=>{ console.error("Sync docentes:",e); return false; });
+    if (ok === false) notify("Error al guardar docentes.", "error");
+  };
+  const saveNotif = async n => {
     setNotifCfg(n);
-    localStorage.setItem(NK,JSON.stringify(n));
-    supa.upsert("configuracion",[{id:"notif",clave:"notif",valor:n}])
-      .catch(e=>console.error("Sync notif:",e));
+    const ok = await supa.upsert("configuracion",[{id:"notif",clave:"notif",valor:n}])
+      .catch(e=>{ console.error("Sync notif:",e); return false; });
+    if (ok === false) notify("Error al guardar notificaciones.", "error");
   };
   const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),4500);};
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
