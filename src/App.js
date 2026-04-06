@@ -32,6 +32,19 @@ const supa = {
       return r.ok;
     } catch(e) { console.error("Supabase DELETE error:", e); return false; }
   },
+
+  async signIn(email, password) {
+    try {
+      const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const d = await r.json();
+      if (!r.ok) return { error: d.error_description || d.msg || "Credenciales incorrectas" };
+      return { user: d.user, token: d.access_token };
+    } catch(e) { return { error: "Error de conexión. Verifica tu internet." }; }
+  },
 };
 
 // Sincronizar programas completos a Supabase
@@ -441,34 +454,22 @@ function LoginScreen({onLogin}) {
   const go = async () => {
     if(!email||!pw){setErr("Ingresa tu correo y contraseña.");return;}
     setBusy(true); setErr("");
-    try {
-      // Buscar usuario en Supabase
-      const res = await supa.get("usuarios", `?email=eq.${encodeURIComponent(email.toLowerCase())}&activo=eq.true&select=*`);
-      if(res&&res.length>0){
-        const u = res[0];
-        // Comparar contraseña (texto plano por ahora, Supabase Auth después)
-        if(u.password_hash===pw){
-          const sesion = {
-            id:u.id, nombre:u.nombre, email:u.email,
-            rol:u.rol||"auxiliar", permisos:u.permisos||{},
-          };
-          localStorage.setItem(SK2, JSON.stringify(sesion));
-          onLogin(sesion);
-          return;
-        }
-      }
-      // Fallback: usuarios locales DEFAULT (solo admin de emergencia)
-      const fallback = JSON.parse(localStorage.getItem(UK)||JSON.stringify(DEFAULT_USERS));
-      const uf = fallback.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pw);
-      if(uf){ localStorage.setItem(SK2,JSON.stringify(uf)); onLogin(uf); return; }
-      setErr("Correo o contraseña incorrectos.");
-    } catch(e){
-      // Si Supabase falla, intentar localmente
-      const users = JSON.parse(localStorage.getItem(UK)||JSON.stringify(DEFAULT_USERS));
-      const u = users.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pw);
-      if(u){ localStorage.setItem(SK2,JSON.stringify(u)); onLogin(u); }
-      else setErr("Correo o contraseña incorrectos.");
-    } finally { setBusy(false); }
+    // 1. Autenticar con Supabase Auth (contraseñas encriptadas)
+    const auth = await supa.signIn(email.toLowerCase(), pw);
+    if(auth.error){ setErr(auth.error); setBusy(false); return; }
+    // 2. Obtener permisos y rol del usuario desde la tabla usuarios
+    const res = await supa.get("usuarios", `?email=eq.${encodeURIComponent(email.toLowerCase())}&activo=eq.true&select=*`);
+    const u = res&&res.length>0 ? res[0] : null;
+    const sesion = {
+      id: auth.user.id,
+      nombre: u?.nombre || auth.user.email,
+      email: auth.user.email,
+      rol: u?.rol || "auxiliar",
+      permisos: u?.permisos || {},
+    };
+    localStorage.setItem(SK2, JSON.stringify(sesion));
+    onLogin(sesion);
+    setBusy(false);
   };
 
   return (
