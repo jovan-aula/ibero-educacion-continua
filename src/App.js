@@ -1115,8 +1115,13 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
           try{
             const cr=await fetch("https://services.leadconnectorhq.com/contacts/"+op.contactId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
             const cd=await cr.json();
-            // Pasamos monetaryValue desde la oportunidad al contacto
-            const contact={...cd.contact,opportunityStatus:op.status,monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0};
+            // Pasamos monetaryValue y customFields de la oportunidad al contacto
+            // Los campos de la oportunidad tienen prioridad sobre los del contacto
+            const mergedCustomFields = [
+              ...(cd.contact?.customFields||[]),
+              ...(op.customFields||[]),
+            ].filter((f,i,arr)=>arr.findIndex(x=>x.id===f.id)===i); // deduplicar por id, oportunidad gana
+            const contact={...cd.contact,opportunityStatus:op.status,monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0,customFields:mergedCustomFields};
             if(cd.contact?.businessId){
               try{
                 const br=await fetch("https://services.leadconnectorhq.com/businesses/"+cd.contact.businessId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
