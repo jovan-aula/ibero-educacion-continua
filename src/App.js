@@ -34,49 +34,49 @@ const supa = {
   },
 };
 
-// Sincronizar programas completos a Supabase (en background)
+// Sincronizar programas completos a Supabase
 const syncToSupabase = async (programas) => {
-  try {
-    // Programas
-    const progs = programas.map(p=>({
-      id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
-      generacion: p.generacion||"", color: p.color||"", descripcion: p.descripcion||"",
-      parcialidades_default: p.parcialidadesDefault||5, estatus: p.estatus||"activo",
-    }));
-    await supa.upsert("programas", progs);
+  // Programas
+  const progs = programas.map(p=>({
+    id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
+    generacion: p.generacion||"", color: p.color||"", descripcion: p.descripcion||"",
+    parcialidades_default: p.parcialidadesDefault||5, estatus: p.estatus||"activo",
+  }));
+  const okProgs = await supa.upsert("programas", progs);
+  if(!okProgs) throw new Error("Error al guardar programas");
 
-    // Módulos
-    const mods = programas.flatMap(p=>(p.modulos||[]).map(m=>({
-      id: m.id, programa_id: p.id, numero: m.numero||"", nombre: m.nombre||"",
-      docente_id: m.docenteId||null, docente: m.docente||"", email_docente: m.emailDocente||"",
-      clases: m.clases||4, horas_por_clase: m.horasPorClase||4, horario: m.horario||"",
-      fecha_inicio: m.fechaInicio||"", fecha_fin: m.fechaFin||"",
-      dias: m.dias||[], fechas_clase: m.fechasClase||[], estatus: m.estatus||"propuesta",
-    })));
-    if(mods.length) await supa.upsert("modulos", mods);
+  // Módulos
+  const modulos = programas.flatMap(p=>(p.modulos||[]).map(m=>({
+    id: m.id, programa_id: p.id, numero: m.numero||"", nombre: m.nombre||"",
+    docente_id: m.docenteId||null, docente: m.docente||"", email_docente: m.emailDocente||"",
+    clases: m.clases||4, horas_por_clase: m.horasPorClase||4, horario: m.horario||"",
+    fecha_inicio: m.fechaInicio||"", fecha_fin: m.fechaFin||"",
+    dias: m.dias||[], fechas_clase: m.fechasClase||[], estatus: m.estatus||"propuesta",
+  })));
+  if(modulos.length){ const ok = await supa.upsert("modulos", modulos); if(!ok) throw new Error("Error al guardar módulos"); }
 
-    // Estudiantes
-    const ests = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
-      id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
-      telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
-      carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
-      requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
-      fuente: e.fuente||"", programa_interes: e.programa_interes||"",
-      forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
-      estatus: e.estatus||"activo", asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
-    })));
-    if(ests.length) await supa.upsert("estudiantes", ests);
+  // Estudiantes
+  const estudiantes = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
+    id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
+    telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
+    carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
+    requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
+    fuente: e.fuente||"", programa_interes: e.programa_interes||"",
+    forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+    estatus: e.estatus||"activo", asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
+  })));
+  if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
-    // Pagos
-    const pagos = programas.flatMap(p=>(p.estudiantes||[]).filter(e=>e.pago?.monto_acordado>0).map(e=>({
-      id: e.id+"_pago", estudiante_id: e.id, programa_id: p.id,
-      tipo: e.pago.tipo||"parcialidades", monto_acordado: e.pago.monto_acordado||0,
-      descuento_pct: e.pago.descuento_pct||0, promocion_id: e.pago.promocion_id||"",
-      parcialidades: e.pago.parcialidades||[], notas: e.pago.notas||"",
-    })));
-    if(pagos.length) await supa.upsert("pagos", pagos);
+  // Pagos — todos los estudiantes con pago definido (aunque monto sea 0)
+  const pagos = programas.flatMap(p=>(p.estudiantes||[]).filter(e=>e.pago).map(e=>({
+    id: e.id+"_pago", estudiante_id: e.id, programa_id: p.id,
+    tipo: e.pago.tipo||"parcialidades", monto_acordado: e.pago.monto_acordado||0,
+    descuento_pct: e.pago.descuento_pct||0, promocion_id: e.pago.promocion_id||"",
+    parcialidades: e.pago.parcialidades||[], notas: e.pago.notas||"",
+  })));
+  if(pagos.length){ const ok = await supa.upsert("pagos", pagos); if(!ok) throw new Error("Error al guardar pagos"); }
 
-  } catch(e) { console.error("Sync error:", e); }
+  return true;
 };
 
 const syncDocentesToSupabase = async (docentes) => {
@@ -2325,8 +2325,12 @@ export default function App() {
 
   const save = async d => {
     setProgramas(d); // actualizar UI inmediatamente
-    const ok = await syncToSupabase(d).catch(e => { console.error("Sync error:", e); return false; });
-    if (ok === false) notify("Error al guardar en la base de datos. Verifica tu conexión.", "error");
+    try {
+      await syncToSupabase(d);
+    } catch(e) {
+      console.error("Sync error:", e);
+      notify("Error al guardar: " + e.message + ". Verifica tu conexión.", "error");
+    }
   };
   const saveResp = async d => {
     setResp(d);
