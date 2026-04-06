@@ -2489,23 +2489,23 @@ export default function App() {
       if(p.id!==progId) return p;
       return{...p,estudiantes:ests(p).map(e=>{const u=updated.find(eu=>eu.id===e.id);return u?{...e,asistencia:{...(e.asistencia||{}),...(u.asistencia||{})}}:e;})};
     }));
-    // Sincronizar asistencia a Supabase
     const k = "mod_"+modId;
-    const rows = [];
+    const hoy = today();
+    const presentes = [];
+    const ausentes  = [];
     updated.forEach(e=>{
       const fechas = e.asistencia&&e.asistencia[k];
-      if(Array.isArray(fechas)){
-        fechas.forEach(fecha=>{
-          rows.push({
-            id: e.id+"_"+modId+"_"+fecha,
-            estudiante_id: e.id,
-            modulo_id: modId,
-            fecha,
-          });
-        });
+      const estaHoy = Array.isArray(fechas) && fechas.includes(hoy);
+      if(estaHoy){
+        presentes.push({ id: e.id+"_"+modId+"_"+hoy, estudiante_id: e.id, modulo_id: modId, fecha: hoy });
+      } else {
+        ausentes.push(e.id+"_"+modId+"_"+hoy);
       }
     });
-    if(rows.length) supa.upsert("asistencia",rows).catch(e=>console.error("Sync asist docente:",e));
+    // Insertar presentes
+    if(presentes.length) supa.upsert("asistencia", presentes).catch(e=>console.error("Sync asist docente:",e));
+    // Borrar ausentes (por si estaban marcados antes)
+    ausentes.forEach(id => supa.del("asistencia", id).catch(e=>console.error("Del asist:",e)));
   };
 
   const isPublic = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
@@ -3246,7 +3246,7 @@ export default function App() {
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
                               <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado EC</option><option value="baja">Baja</option>
                             </select>
-                            <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
+                            <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>{save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p));supa.del("estudiantes",e.id).catch(err=>console.error("Del estudiante:",err));supa.del("pagos",e.id+"_pago").catch(err=>console.error("Del pago:",err));}})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
                           </div>
                         </div>
                       </div>
