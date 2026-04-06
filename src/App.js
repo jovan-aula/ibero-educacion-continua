@@ -1215,6 +1215,8 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       const cf = c.customFields||[];
       const monto = c.monetaryValue||c.opportunityValue||0;
       const formaPago = getCF(cf,"XXeCwvn51VnMm3KvsAhP","contact.forma_de_pago");
+      console.log("DEBUG customFields:", JSON.stringify(cf));
+      console.log("DEBUG formaPago:", formaPago);
       return {
         id:               c.id,
         nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
