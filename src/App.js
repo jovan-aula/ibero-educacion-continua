@@ -956,12 +956,18 @@ function EditEstModal({est,prog,onSave,onClose}) {
 function PagoModal({est,prog,onSave,onClose}) {
   const precioL = prog.precioLista||0;
   const montoGHL = est.monto_ghl||0;
-  // Si el pago aún no tiene monto y tenemos datos del CRM, calcular descuento automático
+  // Si el pago aún no tiene descuento configurado y tenemos datos del CRM, calcular automáticamente
   const pago0 = (()=>{
     const base = est.pago||{tipo:"unico",monto_acordado:montoGHL,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
-    if(base.monto_acordado===montoGHL && base.descuento_pct===0 && precioL>0 && montoGHL>0 && montoGHL<=precioL){
-      const descAuto=Math.round((1-montoGHL/precioL)*100);
-      return {...base, monto_acordado:precioL, descuento_pct:descAuto};
+    if(base.descuento_pct===0 && precioL>0 && montoGHL>0){
+      const numParcs = (base.parcialidades||[]).length || (prog.parcialidadesDefault||5);
+      // Para parcialidades, monto_ghl es UNA parcialidad → total = monto × n
+      // Para pago único, monto_ghl es el total
+      const totalAcordado = base.tipo==="parcialidades" ? montoGHL*numParcs : montoGHL;
+      if(totalAcordado>0 && totalAcordado<=precioL){
+        const descAuto=Math.round((1-totalAcordado/precioL)*100);
+        return {...base, monto_acordado:precioL, descuento_pct:descAuto};
+      }
     }
     return base;
   })();
@@ -1031,12 +1037,19 @@ function PagoModal({est,prog,onSave,onClose}) {
           {montoGHL>0&&(
             <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",marginBottom:8,fontFamily:"system-ui",fontSize:13}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
-                <span style={{color:"#92400e"}}>Monto CRM: <strong>{fmtMXN(montoGHL)}</strong></span>
-                {precioL>0&&montoGHL<=precioL&&(
-                  <span style={{color:"#92400e",fontWeight:700}}>
-                    {montoGHL===precioL?"Sin descuento":Math.round((1-montoGHL/precioL)*100)+"% de descuento sobre precio lista ("+fmtMXN(precioL)+")"}
-                  </span>
-                )}
+                <span style={{color:"#92400e"}}>
+                  {pago.tipo==="parcialidades"
+                    ? <>1ª parcialidad CRM: <strong>{fmtMXN(montoGHL)}</strong> · Total: <strong>{fmtMXN(montoGHL*(pago.parcialidades||[]).length||montoGHL*(prog.parcialidadesDefault||5))}</strong></>
+                    : <>Monto CRM: <strong>{fmtMXN(montoGHL)}</strong></>
+                  }
+                </span>
+                {precioL>0&&(()=>{
+                  const n=(pago.parcialidades||[]).length||(prog.parcialidadesDefault||5);
+                  const total=pago.tipo==="parcialidades"?montoGHL*n:montoGHL;
+                  if(total<=0||total>precioL)return null;
+                  const desc=Math.round((1-total/precioL)*100);
+                  return <span style={{color:"#92400e",fontWeight:700}}>{desc===0?"Sin descuento":desc+"% de descuento sobre precio lista ("+fmtMXN(precioL)+")"}</span>;
+                })()}
               </div>
             </div>
           )}
@@ -1281,12 +1294,22 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       const n = parcDefault||5;
       const fechas = calcVencimientosImport(n, fechaInicioPrograma);
 
-      // Calcular descuento automático si tenemos precio lista
-      let montoBase = monto;   // lo que acordó pagar
+      // Detectar si es pago único o parcialidades
+      const esUnico = formaPago && (formaPago.toLowerCase().includes("único")||formaPago.toLowerCase().includes("unico")||formaPago.toLowerCase().includes("contado"));
+
+      // Calcular el total real:
+      // - Pago único:       monto_ghl = total acordado
+      // - Parcialidades:    monto_ghl = UNA parcialidad → total = monto × n
+      const totalAcordado = (!esUnico && monto > 0) ? monto * n : monto;
+
+      // Calcular descuento automático contra precio lista
+      let montoBase = precioLista > 0 ? precioLista : totalAcordado;
       let descAuto  = 0;
-      if (precioLista > 0 && monto > 0 && monto <= precioLista) {
-        descAuto  = Math.round((1 - monto / precioLista) * 100);
-        montoBase = precioLista; // guardamos precio lista, descuento explica la diferencia
+      if (precioLista > 0 && totalAcordado > 0 && totalAcordado <= precioLista) {
+        descAuto = Math.round((1 - totalAcordado / precioLista) * 100);
+      } else if (precioLista > 0 && totalAcordado > precioLista) {
+        // Monto mayor al precio lista — sin descuento, usar monto real
+        montoBase = totalAcordado;
       }
 
       const mkParcialidades = (montoAcordado, descuento=0, notas="") => ({
@@ -1310,13 +1333,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         notas,
       });
 
-      // Usar forma de pago del CRM — fallback a parcialidades si no viene el campo
-      if (formaPago) {
-        const fp = formaPago.toLowerCase();
-        if (fp.includes("único") || fp.includes("unico") || fp.includes("contado")) {
-          return mkUnico(montoBase, descAuto, formaPago);
-        }
-      }
+      if (esUnico) return mkUnico(montoBase, descAuto, formaPago);
       return mkParcialidades(montoBase, descAuto, formaPago||"");
     };
 
@@ -3828,9 +3845,9 @@ export default function App() {
       {/* ── SIDEBAR ───────────────────────────────────────── */}
       <div style={{position:"fixed",left:0,top:0,bottom:0,width:240,background:"#fff",borderRight:"1px solid #EBEBEB",display:"flex",flexDirection:"column",zIndex:100}}>
         {/* Logo */}
-        <div style={{background:RED,padding:"18px 20px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:6}} onClick={()=>setView("lista")}>
-          <img src="https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png" alt="IBERO Tijuana" style={{height:38,width:"auto"}} onError={e=>{e.target.style.display="none";}}/>
-          <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.7)",letterSpacing:"0.14em",textTransform:"uppercase",fontFamily:FONT_BODY}}>Educación Continua</div>
+        <div style={{background:"#eb1d33",padding:"20px 20px 16px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:8}} onClick={()=>setView("lista")}>
+          <img src="https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png" alt="IBERO Tijuana" style={{height:52,width:"auto"}} onError={e=>{e.target.style.display="none";}}/>
+          <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.75)",letterSpacing:"0.16em",textTransform:"uppercase",fontFamily:FONT_BODY}}>Educación Continua</div>
         </div>
         {/* Nav groups */}
         <div style={{flex:1,padding:"8px 10px",overflowY:"auto"}}>
