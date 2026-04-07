@@ -400,9 +400,15 @@ const getAlertas = programas => {
         alerts.push({tipo:"pago_recargo",prog,est,vencidas:ep.conRecargo,montoParcialidad,recargo});
       }
     });
+    // Recordatorio docente: módulo confirmado que inicia en ≤3 días
+    mods(prog).forEach(mod=>{
+      if(!mod.docente||mod.estatus!=="confirmado"||!mod.fechaInicio)return;
+      const diff=Math.round((new Date(mod.fechaInicio+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));
+      if(diff>=0&&diff<=3) alerts.push({tipo:"recordatorio_docente",prog,mod,dias:diff});
+    });
   });
-  // Ordenar: crítico > recargo > asistencia > sin_confirmar > sin_docente
-  const prioridad = {pago_critico:0,pago_recargo:1,asistencia:2,sin_confirmar:3,sin_docente:4};
+  // Ordenar: crítico > recargo > recordatorio_docente > asistencia > sin_confirmar > sin_docente
+  const prioridad = {pago_critico:0,pago_recargo:1,recordatorio_docente:2,asistencia:3,sin_confirmar:4,sin_docente:5};
   return alerts.sort((a,b)=>(prioridad[a.tipo]??9)-(prioridad[b.tipo]??9));
 };
 
@@ -2236,6 +2242,8 @@ export default function App() {
   const [filtroDocEval,setFiltroDocEval]   = useState("");
   const [filtroProgEval,setFiltroProgEval] = useState("");
   const [editEstModal,setEditEstModal] = useState(null);
+  const [inactivoModal,setInactivoModal] = useState(null); // {est, prog}
+  const [inactivoRazon,setInactivoRazon] = useState("");
   const [npsModal,setNpsModal]         = useState(null);
   const [npsData,setNpsData] = useState([]);
   const [busqProg,setBusqProg]   = useState("");
@@ -2657,12 +2665,65 @@ export default function App() {
 
   const prog    = getProg();
   const alertaKey = a => {
-    if(a.tipo==="sin_docente")   return `sin_docente_${a.mod.id}`;
-    if(a.tipo==="sin_confirmar") return `sin_confirmar_${a.mod.id}`;
-    if(a.tipo==="asistencia")    return `asistencia_${a.est.id}_${a.prog.id}`;
-    if(a.tipo==="pago_recargo")  return `pago_recargo_${a.est.id}`;
-    if(a.tipo==="pago_critico")  return `pago_critico_${a.est.id}`;
+    if(a.tipo==="sin_docente")         return `sin_docente_${a.mod.id}`;
+    if(a.tipo==="sin_confirmar")       return `sin_confirmar_${a.mod.id}`;
+    if(a.tipo==="recordatorio_docente")return `recordatorio_docente_${a.mod.id}`;
+    if(a.tipo==="asistencia")          return `asistencia_${a.est.id}_${a.prog.id}`;
+    if(a.tipo==="pago_recargo")        return `pago_recargo_${a.est.id}`;
+    if(a.tipo==="pago_critico")        return `pago_critico_${a.est.id}`;
     return `alerta_${Math.random()}`;
+  };
+
+  const _buildCalMsg = (mod, prog, tipo) => {
+    const fechas = getFechasMod(mod);
+    const totalH = (mod.clases||0)*(mod.horasPorClase||0);
+    const gen = prog.generacion ? ` (${prog.generacion} generación)` : "";
+    if(tipo==="wa"){
+      return [
+        `Hola ${mod.docente},`,``,
+        `Te compartimos el calendario de tu módulo en *${prog.nombre}${gen}*:`,``,
+        `Módulo ${mod.numero}: ${mod.nombre}`,
+        `Período: ${fmtFecha(mod.fechaInicio)} — ${fmtFecha(mod.fechaFin)}`,
+        mod.horario?`Horario: ${mod.horario}`:"",
+        mod.dias&&mod.dias.length?`Días: ${mod.dias.join(", ")}`:"",``,
+        fechas.length?`Fechas de clase:\n${fechas.map((f,i)=>`  ${i+1}. ${fmtFecha(f)}`).join("\n")}`:"",``,
+        `Total: ${mod.clases} sesion${mod.clases!==1?"es":""} de ${mod.horasPorClase}h — ${totalH}h en total.`,``,
+        `Quedamos al pendiente para cualquier duda. Gracias.`
+      ].filter(l=>l!==undefined).join("\n");
+    } else {
+      const subject = `Calendario de módulo — ${mod.nombre} · ${prog.nombre}`;
+      const body = [
+        `Estimado/a ${mod.docente},`,``,
+        `Confirmamos tu participación como docente en el siguiente módulo:`,``,
+        `  Programa: ${prog.nombre}${gen}`,
+        `  Módulo ${mod.numero}: ${mod.nombre}`,
+        `  Período: ${fmtFecha(mod.fechaInicio)} — ${fmtFecha(mod.fechaFin)}`,
+        mod.horario?`  Horario: ${mod.horario}`:"",
+        mod.dias&&mod.dias.length?`  Días: ${mod.dias.join(", ")}`:"",``,
+        fechas.length?`Fechas de clase:\n${fechas.map((f,i)=>`  ${i+1}. ${fmtFecha(f)}`).join("\n")}`:"",``,
+        `  Total: ${mod.clases} sesion${mod.clases!==1?"es":""} de ${mod.horasPorClase}h — ${totalH}h en total.`,``,
+        `Quedamos al pendiente para cualquier duda.`,``,
+        `Atentamente,`,`Coordinación de Educación Continua — IBERO Tijuana`
+      ].filter(l=>l!==undefined).join("\n");
+      return {subject, body};
+    }
+  };
+
+  const enviarCalendarioWA = (mod, prog) => {
+    const doc = (docentes||[]).find(d=>d.id===mod.docenteId||d.nombre===mod.docente);
+    const tel = (doc?.telefono||"").replace(/\D/g,"");
+    if(!tel){notify("El docente no tiene teléfono registrado en el catálogo.","error");return;}
+    const num = tel.startsWith("52")?tel:"52"+tel;
+    const msg = _buildCalMsg(mod,prog,"wa");
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
+  };
+
+  const enviarCalendarioEmail = (mod, prog) => {
+    const doc = (docentes||[]).find(d=>d.id===mod.docenteId||d.nombre===mod.docente);
+    const email = mod.emailDocente || doc?.email || "";
+    if(!email){notify("El docente no tiene correo registrado.","error");return;}
+    const {subject,body} = _buildCalMsg(mod,prog,"email");
+    window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
   };
   const descartarAlerta = key => {
     const nuevas = [...alertasDesc, key];
@@ -3106,7 +3167,7 @@ export default function App() {
                 {alertas.length===0&&<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Todo en orden ✓</div>}
                 <div style={{maxHeight:400,overflowY:"auto"}}>
                   {alertas.map((a,i)=>{
-                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="asistencia"?"#ea580c":a.tipo==="sin_confirmar"?"#f59e0b":"#6b7280";
+                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":"#6b7280";
                     const irA = () => {
                       if(a.tipo==="pago_critico"||a.tipo==="pago_recargo"){setView("pagos_global");setProgPagos(a.prog.id);setShowAl(false);}
                       else if(a.tipo==="asistencia"){setView("asistencia");setShowAl(false);}
@@ -3123,6 +3184,10 @@ export default function App() {
                           {a.tipo==="sin_confirmar"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#92400e"}}>Docente sin confirmar</div>
                             <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""} — estatus: propuesta</div>
+                          </>}
+                          {a.tipo==="recordatorio_docente"&&<>
+                            <div style={{fontWeight:600,fontSize:13,color:"#2563eb"}}>Recordar calendario al docente</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre} — inicia en {a.dias} día{a.dias!==1?"s":""}</div>
                           </>}
                           {a.tipo==="asistencia"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.faltas} falta{a.faltas!==1?"s":""}</div>
@@ -3144,6 +3209,10 @@ export default function App() {
                             {a.tipo==="asistencia"&&(
                               <button onClick={()=>abrirWAAsistencia(a.est,a.prog,a.faltas)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WhatsApp seguimiento</button>
                             )}
+                            {a.tipo==="recordatorio_docente"&&<>
+                              <button onClick={()=>enviarCalendarioWA(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Enviar WA</button>
+                              <button onClick={()=>enviarCalendarioEmail(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#2563eb"}}>Enviar Email</button>
+                            </>}
                           </div>
                         </div>
                         <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
@@ -3422,6 +3491,8 @@ export default function App() {
                             <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:conf?"#f0fdf4":"#fffbeb",color:conf?"#16a34a":"#d97706",fontWeight:700,fontFamily:"system-ui",border:"1px solid "+(conf?"#bbf7d0":"#fde68a")}}>{conf?"Confirmado":"Propuesta"}</span>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
                               {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
+                              {m.docente&&<button onClick={()=>enviarCalendarioWA(m,prog)} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC",padding:"5px 11px",fontSize:12})}>Cal. WA</button>}
+                              {m.docente&&<button onClick={()=>enviarCalendarioEmail(m,prog)} style={S.btn("#EFF6FF","#2563eb",{border:"1px solid #BFDBFE",padding:"5px 11px",fontSize:12})}>Cal. Email</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
                               {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
                             </div>
@@ -3506,7 +3577,11 @@ export default function App() {
                           </div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                             <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 10px",fontSize:12})}>Pago</button>
-                            <select value={e.estatus||"activo"} onChange={ev=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:ev.target.value}:es)}:p))}
+                            <select value={e.estatus||"activo"} onChange={ev=>{
+                                const nuevo=ev.target.value;
+                                if(nuevo==="inactivo"){setInactivoRazon("");setInactivoModal({est:e,prog});}
+                                else save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:nuevo}:es)}:p));
+                              }}
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
                               <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado EC</option><option value="baja">Baja</option>
                             </select>
@@ -5261,6 +5336,33 @@ export default function App() {
       </div>
 
       {/* MODALES */}
+      {inactivoModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setInactivoModal(null)}>
+          <div onClick={ev=>ev.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:"28px 28px 24px",width:"100%",maxWidth:400,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:FONT_BODY}}>
+            <div style={{fontWeight:700,fontSize:17,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",marginBottom:4,color:"#111"}}>Marcar como Inactivo</div>
+            <div style={{fontSize:13,color:"#6B7280",marginBottom:20}}>{inactivoModal.est.nombre} · {inactivoModal.prog.nombre}</div>
+            <label style={S.lbl}>Motivo</label>
+            <textarea
+              autoFocus
+              value={inactivoRazon}
+              onChange={ev=>setInactivoRazon(ev.target.value)}
+              placeholder="Ej. Solicitud del estudiante, situación económica, cambio de horario, viaje..."
+              rows={3}
+              style={{...S.inp,resize:"vertical",lineHeight:1.6,marginBottom:20}}
+            />
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setInactivoModal(null)} style={S.btn("#F3F4F6","#374151")}>Cancelar</button>
+              <button onClick={()=>{
+                const {est:estI,prog:progI}=inactivoModal;
+                save((programas||[]).map(p=>p.id!==progI.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estI.id?es:{...es,estatus:"inactivo",campos_extra:{...(es.campos_extra||{}),motivo_inactivo:inactivoRazon||"Sin especificar",fecha_inactivo:today()}})}));
+                notify("Estudiante marcado como inactivo.");
+                setInactivoModal(null);
+                setInactivoRazon("");
+              }} style={S.btn(RED,"#fff",{fontWeight:700})}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)}/>}
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
