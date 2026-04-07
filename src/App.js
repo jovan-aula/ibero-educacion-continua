@@ -2424,6 +2424,27 @@ export default function App() {
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
   const logout    = ()=>{localStorage.removeItem(SK2);setSession(null);setView("lista");};
 
+  const abrirWhatsApp = (tipo, est, prog) => {
+    const mf  = ((est.pago?.monto_acordado||0)*(1-(est.pago?.descuento_pct||0)/100));
+    const n   = (est.pago?.parcialidades||[]).length;
+    const mp  = n ? mf/n : 0;
+    const pendientes = (est.pago?.parcialidades||[]).filter(x=>!x.pagado);
+    const proxima    = pendientes.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento>=today()).sort((a,b)=>a.fecha_vencimiento.localeCompare(b.fecha_vencimiento))[0];
+    const vencidas   = pendientes.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento<today());
+    const gen        = prog.generacion ? ` (${prog.generacion} generación)` : "";
+    let msg = "";
+    if(tipo==="proximo"){
+      msg = [`Hola ${est.nombre} 👋`,``,`Te recordamos que tienes una parcialidad próxima a vencer en *${prog.nombre}${gen}*:`,``,`• Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya pagaste, avísanos para confirmarlo. ¡Gracias! 🙌`].join("\n");
+    } else if(tipo==="vencido"){
+      const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
+      const totalPend = mp*vencidas.length;
+      msg = [`Hola ${est.nombre},`,``,`Te contactamos porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en *${prog.nombre}${gen}*:`,``,`• Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad. Si tienes alguna situación especial, con gusto nos coordinamos. 🙏`].join("\n");
+    }
+    const tel = (est.telefono||"").replace(/\D/g,"");
+    const num = tel.startsWith("52") ? tel : "52"+tel;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
+  };
+
   const abrirCorreo = (tipo, est, prog) => {
     const mf  = ((est.pago?.monto_acordado||0)*(1-(est.pago?.descuento_pct||0)/100));
     const n   = (est.pago?.parcialidades||[]).length;
@@ -2914,7 +2935,12 @@ export default function App() {
 
   return(
     <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:"#f2f2f2",color:"#1a1a1a"}}>
-      {notif&&<div style={{position:"fixed",top:16,right:16,zIndex:9999,background:notif.type==="error"?"#fef2f2":notif.type==="warning"?"#fffbeb":"#f0fdf4",border:"1px solid "+(notif.type==="error"?"#fca5a5":notif.type==="warning"?"#fcd34d":"#86efac"),borderRadius:8,padding:"12px 20px",fontSize:13,maxWidth:380,boxShadow:"0 4px 24px rgba(0,0,0,0.1)",fontFamily:"system-ui"}}>{notif.msg}</div>}
+      {notif&&(
+        <div style={{position:"fixed",top:20,right:20,zIndex:9999,display:"flex",alignItems:"center",gap:10,background:notif.type==="error"?"#fef2f2":notif.type==="warning"?"#fffbeb":"#f0fdf4",border:"1px solid "+(notif.type==="error"?"#fca5a5":notif.type==="warning"?"#fcd34d":"#86efac"),borderRadius:10,padding:"11px 18px",fontSize:13,maxWidth:360,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",fontFamily:"system-ui",fontWeight:500,color:notif.type==="error"?"#dc2626":notif.type==="warning"?"#d97706":"#16a34a"}}>
+          <span style={{fontSize:16}}>{notif.type==="error"?"✕":notif.type==="warning"?"⚠":"✓"}</span>
+          <span>{notif.msg}</span>
+        </div>
+      )}
 
       {/* HEADER */}
       <div style={{background:RED,padding:"0 20px",display:"flex",alignItems:"center",height:64,gap:16}}>
@@ -3091,6 +3117,44 @@ export default function App() {
         {/* LISTA DE PROGRAMAS */}
         {view==="lista"&&(
           <div>
+            {/* RESUMEN URGENTES */}
+            {(()=>{
+              const hoy=today();
+              let vencidos=0,vencenProto=0,sinConfig=0,requierenFactura=0;
+              (programas||[]).filter(p=>progStatus(p)==="activo").forEach(p=>{
+                ests(p).forEach(e=>{
+                  if(e.estatus==="baja"||e.estatus==="inactivo")return;
+                  const pago=e.pago||{};
+                  if(!pago.monto_acordado){sinConfig++;return;}
+                  (pago.parcialidades||[]).forEach(parc=>{
+                    if(parc.pagado)return;
+                    if(parc.fecha_vencimiento&&parc.fecha_vencimiento<hoy)vencidos++;
+                    else if(parc.fecha_vencimiento){
+                      const diff=Math.round((new Date(parc.fecha_vencimiento+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));
+                      if(diff>=0&&diff<=2)vencenProto++;
+                    }
+                  });
+                  if(e.requiere_factura==="Sí")requierenFactura++;
+                });
+              });
+              const items=[
+                {v:vencidos,   label:"pago"+(vencidos!==1?"s":"")+" vencido"+(vencidos!==1?"s":""),  bg:"#fef2f2",color:"#dc2626",filtro:"vencido"},
+                {v:vencenProto,label:"vence"+(vencenProto!==1?"n":"")+" pronto",                      bg:"#fffbeb",color:"#d97706",filtro:"vence_pronto"},
+                {v:requierenFactura,label:"requiere"+(requierenFactura!==1?"n":"")+" factura",        bg:"#eff6ff",color:"#2563eb",filtro:"factura"},
+                {v:sinConfig,  label:"sin configurar pago",                                           bg:"#f3f4f6",color:"#6b7280",filtro:"sinconfig"},
+              ].filter(x=>x.v>0);
+              if(!items.length)return null;
+              return(
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
+                  {items.map(it=>(
+                    <button key={it.filtro} onClick={()=>{setView("pagos_global");setFiltroPagos(it.filtro);}} style={{display:"flex",alignItems:"center",gap:7,background:it.bg,border:"1px solid "+it.color+"33",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontFamily:"system-ui"}}>
+                      <span style={{fontWeight:800,fontSize:18,color:it.color,lineHeight:1}}>{it.v}</span>
+                      <span style={{fontSize:12,color:it.color,fontWeight:500}}>{it.label}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
               <div><h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Programas</h1><p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Gestión de diplomados y cursos de educación continua</p></div>
               {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
@@ -3634,14 +3698,29 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Resumen */}
+              {/* Resumen — clickeable para filtrar */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:16}}>
-                {[["Esperado",totalEsperado,"#1a1a1a",false],["Cobrado",totalCobrado,"#16a34a",false],["Pendiente",totalPendiente,"#d97706",false],["Vencidos",cntVencidos,"#d97706",true],["Críticos",cntCriticos,"#dc2626",true],["Inactivos",cntInactivos,"#9ca3af",true]].map(([l,v,c,esNum])=>(
-                  <div key={l} style={{...S.card,padding:"12px 14px",textAlign:"center"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{l.toUpperCase()}</div>
-                    <div style={{fontSize:esNum?22:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{esNum?v:fmtMXN(v)}</div>
-                  </div>
-                ))}
+                {[
+                  {l:"Esperado",  v:totalEsperado,  c:"#1a1a1a", esNum:false, filtro:null},
+                  {l:"Cobrado",   v:totalCobrado,   c:"#16a34a", esNum:false, filtro:null},
+                  {l:"Pendiente", v:totalPendiente, c:"#d97706", esNum:false, filtro:"pendiente"},
+                  {l:"Vencidos",  v:cntVencidos,    c:"#d97706", esNum:true,  filtro:"vencido"},
+                  {l:"Críticos",  v:cntCriticos,    c:"#dc2626", esNum:true,  filtro:"critico"},
+                  {l:"Inactivos", v:cntInactivos,   c:"#9ca3af", esNum:true,  filtro:"inactivo"},
+                ].map(({l,v,c,esNum,filtro})=>{
+                  const activo=filtroEstado===filtro&&filtro!==null;
+                  const clickable=filtro!==null;
+                  return(
+                    <div key={l}
+                      onClick={clickable?(()=>setFiltroEstado(activo?null:filtro)):undefined}
+                      style={{...S.card,padding:"12px 14px",textAlign:"center",cursor:clickable?"pointer":"default",border:activo?"2px solid "+c:"1px solid #e5e7eb",transition:"box-shadow .15s",boxShadow:activo?"0 0 0 3px "+c+"22":"none"}}
+                    >
+                      <div style={{fontSize:10,fontWeight:700,color:activo?c:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{l.toUpperCase()}</div>
+                      <div style={{fontSize:esNum?22:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{esNum?v:fmtMXN(v)}</div>
+                      {clickable&&<div style={{fontSize:9,color:activo?c:"#d1d5db",fontFamily:"system-ui",marginTop:2}}>{activo?"▲ activo":"clic para filtrar"}</div>}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Filtros */}
@@ -3797,13 +3876,16 @@ export default function App() {
                                         <option value="Tarjeta">Tarjeta</option>
                                         <option value="Efectivo">Efectivo</option>
                                       </select>
-                                      {/* Correos mailto */}
-                                      {est.email&&!esInactivo&&(estado==="pendiente"||estado==="ok")&&(p.parcialidades||[]).some(x=>!x.pagado&&x.fecha_vencimiento>=today())&&(
-                                        <button onClick={e=>{e.stopPropagation();abrirCorreo("proximo",est,prog);}} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>✉ Recordatorio pago</button>
-                                      )}
-                                      {est.email&&!esInactivo&&(estado==="vencido"||estado==="critico")&&(
-                                        <button onClick={e=>{e.stopPropagation();abrirCorreo("vencido",est,prog);}} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>✉ Aviso vencido</button>
-                                      )}
+                                      {/* Recordatorio pago próximo — correo + WhatsApp */}
+                                      {!esInactivo&&(estado==="pendiente"||estado==="ok")&&(p.parcialidades||[]).some(x=>!x.pagado&&x.fecha_vencimiento>=today())&&(<>
+                                        {est.email&&<button onClick={e=>{e.stopPropagation();abrirCorreo("proximo",est,prog);}} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>✉ Recordatorio</button>}
+                                        {est.telefono&&<button onClick={e=>{e.stopPropagation();abrirWhatsApp("proximo",est,prog);}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>💬 WA Recordatorio</button>}
+                                      </>)}
+                                      {/* Aviso vencido — correo + WhatsApp */}
+                                      {!esInactivo&&(estado==="vencido"||estado==="critico")&&(<>
+                                        {est.email&&<button onClick={e=>{e.stopPropagation();abrirCorreo("vencido",est,prog);}} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>✉ Aviso vencido</button>}
+                                        {est.telefono&&<button onClick={e=>{e.stopPropagation();abrirWhatsApp("vencido",est,prog);}} style={S.btn("#fff7ed","#c2410c",{padding:"5px 12px",fontSize:12,border:"1px solid #fed7aa"})}>💬 WA Vencido</button>}
+                                      </>)}
                                       {/* Evaluación de diplomado */}
                                       {est.email&&(
                                         <button onClick={e=>{e.stopPropagation();abrirEvaluacion("diplomado",est,prog,null);}} style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 12px",fontSize:12,border:"1px solid #ddd6fe"})}>✉ Eval. diplomado</button>
@@ -3926,7 +4008,23 @@ export default function App() {
                                             <strong>{fmtMXN(recargo)}</strong>
                                           </div>
                                         )}
-                                        {p.notas&&<div style={{marginTop:8,fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic"}}>{p.notas}</div>}
+                                        {/* Notas rápidas */}
+                                        <div style={{marginTop:10}}>
+                                          <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:4}}>NOTAS</div>
+                                          <textarea
+                                            defaultValue={p.notas||""}
+                                            onBlur={e=>{
+                                              const val=e.target.value.trim();
+                                              if(val!==(p.notas||"").trim()){
+                                                savePago(prog.id,est.id,{...p,notas:val});
+                                              }
+                                            }}
+                                            onClick={ev=>ev.stopPropagation()}
+                                            placeholder="Acuerdos, comentarios, seguimiento..."
+                                            rows={2}
+                                            style={{width:"100%",boxSizing:"border-box",border:"1px solid #e5e7eb",borderRadius:6,padding:"7px 10px",fontSize:11,fontFamily:"system-ui",color:"#374151",resize:"vertical",outline:"none",background:"#fff",lineHeight:1.5}}
+                                          />
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
