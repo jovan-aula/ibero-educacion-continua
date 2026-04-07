@@ -2716,6 +2716,7 @@ export default function App() {
   const [notifCfg,setNotifCfg]   = useState({apiKey:"",locationId:""});
   const [fieldMap,setFieldMap]   = useState([]);
   const [docentes,setDocentes]   = useState([]);
+  const [ordenes,setOrdenes]     = useState([]);
   const [showApiKey,setShowAK]   = useState(false);
   const [view,setView]           = useState("lista");
   const [selProg,setSelProg]     = useState(null);
@@ -2835,6 +2836,12 @@ export default function App() {
       setDocentes([]);
     }
     } catch(e) { setDocentes([]); }
+
+    // Cargar órdenes de pago firmadas (para alertas)
+    try {
+      const ords = await supa.get("ordenes_pago","?estatus=eq.firmada&order=created_at.desc");
+      if(ords) setOrdenes(ords);
+    } catch(e) { console.warn("No se pudo cargar ordenes:", e); }
 
     // Cargar programas: intentar Supabase primero, caer a localStorage
     const cargarProgramas = async () => {
@@ -3189,6 +3196,7 @@ export default function App() {
     if(a.tipo==="asistencia")          return `asistencia_${a.est.id}_${a.prog.id}`;
     if(a.tipo==="pago_recargo")        return `pago_recargo_${a.est.id}`;
     if(a.tipo==="pago_critico")        return `pago_critico_${a.est.id}`;
+    if(a.tipo==="orden_firmada")       return `orden_firmada_${a.orden.id}`;
     return `alerta_${Math.random()}`;
   };
 
@@ -3259,7 +3267,10 @@ export default function App() {
     localStorage.setItem("ibero_alertas_desc", JSON.stringify(nuevas));
     setShowAl(false);
   };
-  const alertasTodas  = getAlertas(programas);
+  const alertasTodas  = [
+    ...getAlertas(programas),
+    ...(ordenes||[]).filter(o=>o.estatus==="firmada").map(o=>({tipo:"orden_firmada",orden:o})),
+  ];
   const alertasVisible = alertasTodas.filter(a=>!alertasDesc.includes(alertaKey(a)));
   const alertas = alertasVisible;
 
@@ -3690,12 +3701,13 @@ export default function App() {
                 {alertas.length===0&&<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Todo en orden ✓</div>}
                 <div style={{maxHeight:400,overflowY:"auto"}}>
                   {alertas.map((a,i)=>{
-                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="factura_docente"?"#7c3aed":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":"#6b7280";
+                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="factura_docente"?"#7c3aed":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":a.tipo==="orden_firmada"?"#16a34a":"#6b7280";
                     const irA = () => {
                       if(a.tipo==="pago_critico"||a.tipo==="pago_recargo"){setView("pagos_global");setProgPagos(a.prog.id);setShowAl(false);}
                       else if(a.tipo==="asistencia"){setView("asistencia");setShowAl(false);}
                       else if(a.tipo==="sin_docente"||a.tipo==="sin_confirmar"){setSelProg(a.prog.id);setProgTab("modulos");setView("programa");setShowAl(false);}
                       else if(a.tipo==="factura_docente"||a.tipo==="recordatorio_docente"){setView("honorarios");setShowAl(false);}
+                      else if(a.tipo==="orden_firmada"){window.open(window.location.href.split("?")[0]+"?orden="+a.orden.id,"_blank");setShowAl(false);}
                     };
                     return(
                       <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
@@ -3729,6 +3741,15 @@ export default function App() {
                             <div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>{a.est.nombre} — {a.vencidas} pagos vencidos</div>
                             <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div>
                           </>}
+                          {a.tipo==="orden_firmada"&&(()=>{
+                            const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                            const mes=a.orden.datos?.mes||"";
+                            const mesLabel=mes?MESES_N[parseInt(mes.split("-")[1])-1]+" "+mes.split("-")[0]:"";
+                            return<>
+                              <div style={{fontWeight:700,fontSize:13,color:"#16a34a"}}>✓ Solicitud firmada — lista para descargar</div>
+                              <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{mesLabel&&<>{mesLabel} · </>}Ambas firmas completadas</div>
+                            </>;
+                          })()}
                           <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
                             <button onClick={irA} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F7F7F8",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#374151"}}>Ver</button>
                             {(a.tipo==="pago_recargo"||a.tipo==="pago_critico")&&(
@@ -3741,6 +3762,9 @@ export default function App() {
                               <button onClick={()=>enviarCalendarioWA(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Enviar WA</button>
                               <button onClick={()=>enviarCalendarioEmail(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#2563eb"}}>Enviar Email</button>
                             </>}
+                            {a.tipo==="orden_firmada"&&(
+                              <button onClick={()=>{window.open(window.location.href.split("?")[0]+"?orden="+a.orden.id,"_blank");descartarAlerta(alertaKey(a));setShowAl(false);}} style={{fontSize:11,fontWeight:700,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Abrir y descargar PDF</button>
+                            )}
                           </div>
                         </div>
                         <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
