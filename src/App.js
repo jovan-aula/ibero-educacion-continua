@@ -69,6 +69,7 @@ const syncToSupabase = async (programas) => {
     clases: m.clases||4, horas_por_clase: m.horasPorClase||4, horario: m.horario||"",
     fecha_inicio: m.fechaInicio||"", fecha_fin: m.fechaFin||"",
     dias: m.dias||[], fechas_clase: m.fechasClase||[], estatus: m.estatus||"propuesta",
+    factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false,
   })));
   if(modulos.length){ const ok = await supa.upsert("modulos", modulos); if(!ok) throw new Error("Error al guardar módulos"); }
 
@@ -108,6 +109,7 @@ const syncDocentesToSupabase = async (docentes) => {
       telefono: d.telefono||"", especialidad: d.especialidad||"",
       honorarios_por_hora: d.honorariosPorHora||d.honorarios_por_hora||0,
       banco: d.banco||"", clabe: d.clabe||"", rfc: d.rfc||"",
+      iva: d.iva||16,
     }));
     await supa.upsert("docentes", rows);
   } catch(e) { console.error("Sync docentes error:", e); }
@@ -291,7 +293,9 @@ const calcHonorarios = (mod, docentes) => {
   const doc = docentes.find(d=>d.id===mod.docenteId||d.nombre===mod.docente);
   const cat = CATEGORIA_DOCENTE[doc?.categoria||"A"];
   const horas = (mod.clases||0)*(mod.horasPorClase||0);
-  return horas * cat.tarifa;
+  const subtotal = horas * cat.tarifa;
+  const iva = doc?.iva||16;
+  return Math.round(subtotal * (1 + iva/100));
 };
 
 // Proyección mensual: por cada parcialidad pendiente o pagada, asigna al mes de vencimiento
@@ -406,9 +410,17 @@ const getAlertas = programas => {
       const diff=Math.round((new Date(mod.fechaInicio+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));
       if(diff>=0&&diff<=3) alerts.push({tipo:"recordatorio_docente",prog,mod,dias:diff});
     });
+    // Factura docente pendiente: módulo que termina este mes, sin factura solicitada
+    const mesHoy=hoy.substring(0,7);
+    const diaHoy=parseInt(hoy.substring(8,10));
+    mods(prog).forEach(mod=>{
+      if(!mod.docente||!mod.fechaFin)return;
+      if(mod.fechaFin.substring(0,7)===mesHoy&&!mod.factura_solicitada&&diaHoy>=8)
+        alerts.push({tipo:"factura_docente",prog,mod});
+    });
   });
-  // Ordenar: crítico > recargo > recordatorio_docente > asistencia > sin_confirmar > sin_docente
-  const prioridad = {pago_critico:0,pago_recargo:1,recordatorio_docente:2,asistencia:3,sin_confirmar:4,sin_docente:5};
+  // Ordenar: crítico > recargo > factura_docente > recordatorio_docente > asistencia > sin_confirmar > sin_docente
+  const prioridad = {pago_critico:0,pago_recargo:1,factura_docente:2,recordatorio_docente:3,asistencia:4,sin_confirmar:5,sin_docente:6};
   return alerts.sort((a,b)=>(prioridad[a.tipo]??9)-(prioridad[b.tipo]??9));
 };
 
@@ -1611,11 +1623,11 @@ function CalendarioView({programas}) {
 // ─── DOCENTES ─────────────────────────────────────────
 function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const [showM,setShowM]   = useState(false);
-  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""});
+  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:"",iva:16});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
 
-  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:""}); setEditId(null); setShowM(true); };
+  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => { if(!form.nombre)return; editId?saveDocentes((docentes||[]).map(d=>d.id===editId?form:d)):saveDocentes([...(docentes||[]),form]); setShowM(false); };
   const delDoc  = id => {
@@ -1757,6 +1769,17 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                       style={{flex:1,border:"2px solid "+(form.categoria===k?cat.color:"#e5e7eb"),borderRadius:8,padding:"10px 14px",cursor:"pointer",fontFamily:"system-ui",background:form.categoria===k?cat.bg:"#fff",textAlign:"left"}}>
                       <div style={{fontWeight:700,fontSize:13,color:form.categoria===k?cat.color:"#1a1a1a"}}>{cat.label}</div>
                       <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{fmtMXN(cat.tarifa)} / hora</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{marginBottom:20}}>
+                <label style={S.lbl}>IVA que aplica</label>
+                <div style={{display:"flex",gap:8}}>
+                  {[{v:16,l:"16% — General"},{v:8,l:"8% — Frontera"}].map(({v,l})=>(
+                    <button key={v} onClick={()=>setForm({...form,iva:v})}
+                      style={{flex:1,border:"2px solid "+((form.iva||16)===v?"#2563eb":"#e5e7eb"),borderRadius:8,padding:"10px 14px",cursor:"pointer",fontFamily:"system-ui",background:(form.iva||16)===v?"#eff6ff":"#fff",textAlign:"left"}}>
+                      <div style={{fontWeight:700,fontSize:13,color:(form.iva||16)===v?"#2563eb":"#1a1a1a"}}>{l}</div>
                     </button>
                   ))}
                 </div>
@@ -2189,6 +2212,147 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ─── HONORARIOS DOCENTES ──────────────────────────────
+function HonorariosView({programas,docentes,onToggle}) {
+  const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const getMesOff=off=>{const d=new Date(today().substring(0,7)+"-01");d.setMonth(d.getMonth()+off);return d.toISOString().substring(0,7);};
+  const mesOpts=[-2,-1,0,1,2,3,4,5].map(i=>getMesOff(i));
+  const [mesSel,setMesSel]=useState(today().substring(0,7));
+  const [busq,setBusq]=useState("");
+  const fmtMes=m=>{const[y,mo]=m.split("-");return MESES_N[parseInt(mo)-1]+" "+y;};
+
+  const rows=(programas||[]).flatMap(prog=>
+    mods(prog).filter(mod=>mod.docente&&mod.fechaFin&&mod.fechaFin.startsWith(mesSel)).map(mod=>{
+      const doc=(docentes||[]).find(d=>d.id===mod.docenteId||d.nombre===mod.docente);
+      const cat=CATEGORIA_DOCENTE[doc?.categoria||"A"];
+      const horas=(mod.clases||0)*(mod.horasPorClase||0);
+      const subtotal=horas*cat.tarifa;
+      const ivaPct=doc?.iva||16;
+      const ivaMonto=Math.round(subtotal*ivaPct/100);
+      return{modId:mod.id,progId:prog.id,mod,
+        docente:mod.docente,programa:prog.nombre,generacion:prog.generacion||"",
+        modulo:`${mod.numero} — ${mod.nombre}`,horas,
+        categoria:doc?.categoria||"A",ivaPct,
+        fechaInicio:mod.fechaInicio,fechaFin:mod.fechaFin,
+        subtotal,ivaMonto,total:subtotal+ivaMonto,
+        factura_solicitada:mod.factura_solicitada||false,
+        pago_emitido:mod.pago_emitido||false,
+      };
+    })
+  );
+  const filtrados=rows.filter(r=>!busq||r.docente.toLowerCase().includes(busq.toLowerCase())||r.programa.toLowerCase().includes(busq.toLowerCase()));
+  const totalGeneral=filtrados.reduce((a,r)=>a+r.total,0);
+  const totalSubtotal=filtrados.reduce((a,r)=>a+r.subtotal,0);
+  const totalIVA=filtrados.reduce((a,r)=>a+r.ivaMonto,0);
+
+  const exportCSV=()=>{
+    if(!filtrados.length)return;
+    const hdrs=["Docente","Programa","Generación","Módulo","Horas","Categoría","IVA %","Fecha Inicio","Fecha Fin","Subtotal","IVA $","Total","Factura Solicitada","Pago Emitido"];
+    const data=filtrados.map(r=>[r.docente,r.programa,r.generacion,r.modulo,r.horas,"Cat. "+r.categoria,r.ivaPct+"%",r.fechaInicio||"",r.fechaFin||"",r.subtotal,r.ivaMonto,r.total,r.factura_solicitada?"Sí":"No",r.pago_emitido?"Sí":"No"]);
+    const csv=[hdrs,...data].map(row=>row.map(v=>'"'+(String(v||"")).replace(/"/g,'""')+'"').join(",")).join("\n");
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+    a.download=`honorarios_${mesSel}.csv`;a.click();
+  };
+
+  const thStyle={padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.06em",fontFamily:FONT_BODY,textAlign:"left",borderBottom:"1px solid #F0F0F0",whiteSpace:"nowrap"};
+  const tdStyle={padding:"12px 14px",fontSize:13,fontFamily:FONT_BODY,borderBottom:"1px solid #F9F9F9",verticalAlign:"middle"};
+  const Check=({on,onClick,label})=>(
+    <button onClick={onClick} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:FONT_BODY}}>
+      <div style={{width:18,height:18,borderRadius:4,border:"2px solid "+(on?"#16a34a":"#D1D5DB"),background:on?"#16a34a":"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        {on&&<span style={{color:"#fff",fontSize:11,fontWeight:700,lineHeight:1}}>✓</span>}
+      </div>
+      <span style={{fontSize:12,color:on?"#16a34a":"#9CA3AF",fontWeight:on?600:400}}>{label}</span>
+    </button>
+  );
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Honorarios Docentes</h1>
+          <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Facturación y pagos a docentes · recordatorio antes del día 20</p>
+        </div>
+        <button onClick={exportCSV} style={{...S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}}>Exportar Excel/CSV</button>
+      </div>
+
+      {/* Selector de mes */}
+      <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4}}>
+        {mesOpts.map(m=>{
+          const esActual=m===today().substring(0,7);
+          const sel=m===mesSel;
+          return(
+            <button key={m} onClick={()=>setMesSel(m)} style={{flexShrink:0,border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:13,fontFamily:FONT_BODY,fontWeight:sel?700:400,background:sel?RED:"#fff",color:sel?"#fff":esActual?"#374151":"#9CA3AF",outline:esActual&&!sel?"2px solid "+RED:"none",outlineOffset:"-2px"}}>
+              {fmtMes(m)}{esActual?" (actual)":""}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Buscador + resumen */}
+      <div style={{display:"flex",gap:12,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+        <input placeholder="Buscar docente o programa..." value={busq} onChange={e=>setBusq(e.target.value)} style={{...S.inp,maxWidth:300}}/>
+        <div style={{display:"flex",gap:10,marginLeft:"auto",flexWrap:"wrap"}}>
+          {[["Módulos",filtrados.length,"#374151"],["Subtotal",fmtMXN(totalSubtotal),"#374151"],["IVA",fmtMXN(totalIVA),"#6B7280"],["Total",fmtMXN(totalGeneral),RED]].map(([l,v,c])=>(
+            <div key={l} style={{...S.card,padding:"10px 16px",textAlign:"right"}}>
+              <div style={{fontSize:11,color:"#9CA3AF",fontFamily:FONT_BODY,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</div>
+              <div style={{fontWeight:800,fontSize:16,color:c,fontFamily:FONT_TITLE,marginTop:2}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabla */}
+      {filtrados.length===0?(
+        <div style={{...S.card,padding:48,textAlign:"center",color:"#9CA3AF",fontFamily:FONT_BODY}}>Sin docentes programados para {fmtMes(mesSel)}.</div>
+      ):(
+        <div style={{...S.card,overflow:"hidden"}}>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+              <thead>
+                <tr style={{background:"#FAFAFA"}}>
+                  {["Docente","Programa","Módulo","Horas","Cat.","IVA","Inicio","Fin","Subtotal","IVA $","Total","Factura solicitada","Pago emitido"].map(h=>(
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtrados.map((r,i)=>(
+                  <tr key={r.modId} style={{background:i%2===0?"#fff":"#FAFAFA"}}>
+                    <td style={tdStyle}><div style={{fontWeight:600,color:"#111"}}>{r.docente}</div></td>
+                    <td style={tdStyle}><div style={{fontSize:12,color:"#374151"}}>{r.programa}</div>{r.generacion&&<div style={{fontSize:11,color:"#9CA3AF"}}>{r.generacion}</div>}</td>
+                    <td style={tdStyle}><div style={{fontSize:12,color:"#374151"}}>{r.modulo}</div></td>
+                    <td style={{...tdStyle,textAlign:"center"}}><span style={{fontWeight:700,color:"#374151"}}>{r.horas}h</span></td>
+                    <td style={{...tdStyle,textAlign:"center"}}>
+                      <span style={{background:CATEGORIA_DOCENTE[r.categoria]?.bg,color:CATEGORIA_DOCENTE[r.categoria]?.color,borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700,fontFamily:FONT_BODY}}>Cat. {r.categoria}</span>
+                    </td>
+                    <td style={{...tdStyle,textAlign:"center"}}><span style={{fontSize:12,color:"#6B7280"}}>{r.ivaPct}%</span></td>
+                    <td style={{...tdStyle,fontSize:12,color:"#6B7280"}}>{fmtFecha(r.fechaInicio)}</td>
+                    <td style={{...tdStyle,fontSize:12,color:"#6B7280"}}>{fmtFecha(r.fechaFin)}</td>
+                    <td style={{...tdStyle,textAlign:"right"}}><span style={{fontSize:13,color:"#374151"}}>{fmtMXN(r.subtotal)}</span></td>
+                    <td style={{...tdStyle,textAlign:"right"}}><span style={{fontSize:12,color:"#9CA3AF"}}>{fmtMXN(r.ivaMonto)}</span></td>
+                    <td style={{...tdStyle,textAlign:"right"}}><span style={{fontWeight:700,color:RED,fontSize:14}}>{fmtMXN(r.total)}</span></td>
+                    <td style={{...tdStyle,textAlign:"center"}}><Check on={r.factura_solicitada} onClick={()=>onToggle(r.progId,r.modId,"factura_solicitada")} label={r.factura_solicitada?"Sí":"—"}/></td>
+                    <td style={{...tdStyle,textAlign:"center"}}><Check on={r.pago_emitido} onClick={()=>onToggle(r.progId,r.modId,"pago_emitido")} label={r.pago_emitido?"Sí":"—"}/></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{background:"#F7F7F8",borderTop:"2px solid #EBEBEB"}}>
+                  <td colSpan={8} style={{...tdStyle,fontWeight:700,color:"#374151"}}>Total {fmtMes(mesSel)}</td>
+                  <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{fmtMXN(totalSubtotal)}</td>
+                  <td style={{...tdStyle,textAlign:"right",fontWeight:700,color:"#6B7280"}}>{fmtMXN(totalIVA)}</td>
+                  <td style={{...tdStyle,textAlign:"right",fontWeight:800,color:RED,fontSize:15}}>{fmtMXN(totalGeneral)}</td>
+                  <td colSpan={2} style={tdStyle}/>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2667,7 +2831,8 @@ export default function App() {
   const alertaKey = a => {
     if(a.tipo==="sin_docente")         return `sin_docente_${a.mod.id}`;
     if(a.tipo==="sin_confirmar")       return `sin_confirmar_${a.mod.id}`;
-    if(a.tipo==="recordatorio_docente")return `recordatorio_docente_${a.mod.id}`;
+    if(a.tipo==="recordatorio_docente") return `recordatorio_docente_${a.mod.id}`;
+    if(a.tipo==="factura_docente")      return `factura_docente_${a.mod.id}`;
     if(a.tipo==="asistencia")          return `asistencia_${a.est.id}_${a.prog.id}`;
     if(a.tipo==="pago_recargo")        return `pago_recargo_${a.est.id}`;
     if(a.tipo==="pago_critico")        return `pago_critico_${a.est.id}`;
@@ -2707,6 +2872,10 @@ export default function App() {
       ].filter(l=>l!==undefined).join("\n");
       return {subject, body};
     }
+  };
+
+  const toggleHonorario = (progId, modId, field) => {
+    save((programas||[]).map(p=>p.id!==progId?p:{...p,modulos:mods(p).map(m=>m.id!==modId?m:{...m,[field]:!m[field]})}));
   };
 
   const enviarCalendarioWA = (mod, prog) => {
@@ -3093,6 +3262,7 @@ export default function App() {
             {group:"Finanzas",items:[
               {v:"pagos_global",l:"Pagos",       perm:"verPagos"},
               {v:"facturacion", l:"Facturación", perm:"verFacturacion"},
+              {v:"honorarios",  l:"Honorarios",  perm:"verFacturacion"},
             ]},
             {group:"Administración",items:[
               {v:"docentes", l:"Docentes", perm:"gestionarDocentes"},
@@ -3150,7 +3320,7 @@ export default function App() {
         {/* TOP BAR */}
         <div style={{height:54,background:"#fff",borderBottom:"1px solid #EBEBEB",padding:"0 32px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:90,flexShrink:0}}>
           <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
-            {view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="facturacion"?"Facturación":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
+            {view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
           </div>
           {/* Alertas */}
           <div ref={alertRef} style={{position:"relative"}}>
@@ -3167,11 +3337,12 @@ export default function App() {
                 {alertas.length===0&&<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Todo en orden ✓</div>}
                 <div style={{maxHeight:400,overflowY:"auto"}}>
                   {alertas.map((a,i)=>{
-                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":"#6b7280";
+                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="factura_docente"?"#7c3aed":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":"#6b7280";
                     const irA = () => {
                       if(a.tipo==="pago_critico"||a.tipo==="pago_recargo"){setView("pagos_global");setProgPagos(a.prog.id);setShowAl(false);}
                       else if(a.tipo==="asistencia"){setView("asistencia");setShowAl(false);}
                       else if(a.tipo==="sin_docente"||a.tipo==="sin_confirmar"){setSelProg(a.prog.id);setProgTab("modulos");setView("programa");setShowAl(false);}
+                      else if(a.tipo==="factura_docente"||a.tipo==="recordatorio_docente"){setView("honorarios");setShowAl(false);}
                     };
                     return(
                       <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
@@ -3188,6 +3359,10 @@ export default function App() {
                           {a.tipo==="recordatorio_docente"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#2563eb"}}>Recordar calendario al docente</div>
                             <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre} — inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                          </>}
+                          {a.tipo==="factura_docente"&&<>
+                            <div style={{fontWeight:700,fontSize:13,color:"#7c3aed"}}>Factura pendiente — vence día 20</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre} · Termina {fmtFecha(a.mod.fechaFin)}</div>
                           </>}
                           {a.tipo==="asistencia"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.faltas} falta{a.faltas!==1?"s":""}</div>
@@ -4432,6 +4607,9 @@ export default function App() {
             </div>
           );
         })()}
+
+        {/* HONORARIOS DOCENTES */}
+        {view==="honorarios"&&<HonorariosView programas={programas} docentes={docentes} onToggle={toggleHonorario}/>}
 
         {/* EVALUACIONES */}
         {view==="evaluaciones"&&(()=>{
