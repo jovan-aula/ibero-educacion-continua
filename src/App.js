@@ -2434,11 +2434,14 @@ export default function App() {
     const gen        = prog.generacion ? ` (${prog.generacion} generación)` : "";
     let msg = "";
     if(tipo==="proximo"){
-      msg = [`Hola ${est.nombre} 👋`,``,`Te recordamos que tienes una parcialidad próxima a vencer en *${prog.nombre}${gen}*:`,``,`• Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya pagaste, avísanos para confirmarlo. ¡Gracias! 🙌`].join("\n");
+      msg = [`Hola ${est.nombre},`,``,`Te recordamos que tienes una parcialidad próxima a vencer en *${prog.nombre}${gen}*:`,``,`• Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya realizaste tu pago, puedes ignorar este mensaje o avisarnos para confirmarlo.`].join("\n");
+    } else if(tipo==="mensualidad"){
+      const totalPend = mp*vencidas.length;
+      msg = [`Hola ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en *${prog.nombre}${gen}*:`,``,`• Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad para evitar un recargo adicional.`,``,`Si ya lo realizaste, avísanos para registrarlo. Cualquier duda con gusto te atendemos.`].join("\n");
     } else if(tipo==="vencido"){
       const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
       const totalPend = mp*vencidas.length;
-      msg = [`Hola ${est.nombre},`,``,`Te contactamos porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en *${prog.nombre}${gen}*:`,``,`• Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad. Si tienes alguna situación especial, con gusto nos coordinamos. 🙏`].join("\n");
+      msg = [`Hola ${est.nombre},`,``,`Te contactamos porque tienes *${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""}* en *${prog.nombre}${gen}*:`,``,`• Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos. Si tienes alguna situacion especial, con gusto nos coordinamos.`].join("\n");
     }
     const tel = (est.telefono||"").replace(/\D/g,"");
     const num = tel.startsWith("52") ? tel : "52"+tel;
@@ -2453,16 +2456,19 @@ export default function App() {
     const proxima    = pendientes.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento>=today()).sort((a,b)=>a.fecha_vencimiento.localeCompare(b.fecha_vencimiento))[0];
     const vencidas   = pendientes.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento<today());
     const gen        = prog.generacion ? ` (${prog.generacion} generación)` : "";
-    const firma      = "\n\nAtentamente,\n[Tu nombre]\nCoordinación de Educación Continua — IBERO Tijuana\nTel: 664 630 1577 Ext. 2576 | WhatsApp: 664 764 1119";
     let subject="", body="";
     if(tipo==="proximo"){
       subject = `Recordatorio de pago — ${prog.nombre}`;
-      body = [`Estimado/a ${est.nombre},`,``,`Esperamos que estés aprovechando al máximo el ${prog.nombre}${gen}.`,``,`Te recordamos que tienes una parcialidad próxima a vencer:`,``,`  • Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya realizaste tu pago, ignora este mensaje o escríbenos para confirmarlo.`,firma].join("\n");
+      body = [`Estimado/a ${est.nombre},`,``,`Esperamos que estés aprovechando al máximo el ${prog.nombre}${gen}.`,``,`Te recordamos que tienes una parcialidad próxima a vencer:`,``,`  • Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya realizaste tu pago, ignora este mensaje o escríbenos para confirmarlo.`].join("\n");
+    } else if(tipo==="mensualidad"){
+      const totalPend = mp*vencidas.length;
+      subject = `Aviso de mensualidad vencida — ${prog.nombre}`;
+      body = [`Estimado/a ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en el programa ${prog.nombre}${gen}.`,``,`  • Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad para evitar un recargo adicional.`,``,`Si ya lo realizaste, puedes ignorar este mensaje o escríbenos para confirmarlo. Cualquier duda, con gusto te atendemos.`].join("\n");
     } else if(tipo==="vencido"){
       const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
       const totalPend = mp*vencidas.length;
       subject = `Aviso de pago vencido — ${prog.nombre}`;
-      body = [`Estimado/a ${est.nombre},`,``,`Nos comunicamos contigo porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en el programa ${prog.nombre}${gen}.`,``,`  • Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos.`,``,`Si tienes alguna situación especial, con gusto podemos coordinarnos.`,firma].join("\n");
+      body = [`Estimado/a ${est.nombre},`,``,`Nos comunicamos contigo porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en el programa ${prog.nombre}${gen}.`,``,`  • Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos.`,``,`Si tienes alguna situación especial, con gusto podemos coordinarnos.`].join("\n");
     }
     window.open(`mailto:${est.email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
   };
@@ -3120,12 +3126,12 @@ export default function App() {
             {/* RESUMEN URGENTES */}
             {(()=>{
               const hoy=today();
-              let vencidos=0,vencenProto=0,sinConfig=0,requierenFactura=0;
+              let vencidos=0,vencenProto=0;
               (programas||[]).filter(p=>progStatus(p)==="activo").forEach(p=>{
                 ests(p).forEach(e=>{
                   if(e.estatus==="baja"||e.estatus==="inactivo")return;
                   const pago=e.pago||{};
-                  if(!pago.monto_acordado){sinConfig++;return;}
+                  if(!pago.monto_acordado)return;
                   (pago.parcialidades||[]).forEach(parc=>{
                     if(parc.pagado)return;
                     if(parc.fecha_vencimiento&&parc.fecha_vencimiento<hoy)vencidos++;
@@ -3134,14 +3140,11 @@ export default function App() {
                       if(diff>=0&&diff<=2)vencenProto++;
                     }
                   });
-                  if(e.requiere_factura==="Sí")requierenFactura++;
                 });
               });
               const items=[
                 {v:vencidos,   label:"pago"+(vencidos!==1?"s":"")+" vencido"+(vencidos!==1?"s":""),  bg:"#fef2f2",color:"#dc2626",filtro:"vencido"},
                 {v:vencenProto,label:"vence"+(vencenProto!==1?"n":"")+" pronto",                      bg:"#fffbeb",color:"#d97706",filtro:"vence_pronto"},
-                {v:requierenFactura,label:"requiere"+(requierenFactura!==1?"n":"")+" factura",        bg:"#eff6ff",color:"#2563eb",filtro:"factura"},
-                {v:sinConfig,  label:"sin configurar pago",                                           bg:"#f3f4f6",color:"#6b7280",filtro:"sinconfig"},
               ].filter(x=>x.v>0);
               if(!items.length)return null;
               return(
@@ -3839,9 +3842,10 @@ export default function App() {
                                       }
                                       {pctAsist!==null&&pctAsist<80&&!esInactivo&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Asist. {pctAsist}%</span>}
                                     </div>
-                                    <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:8,flexWrap:"wrap"}}>
+                                    <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                                       {est.empresa&&<span>{est.empresa}</span>}
                                       {est.email&&<span>{est.email}</span>}
+                                      {p.tipo&&mf>0&&<span style={{fontSize:10,background:p.tipo==="unico"?"#f0fdf4":"#eff6ff",color:p.tipo==="unico"?"#16a34a":"#2563eb",borderRadius:3,padding:"1px 6px",fontWeight:600,border:"1px solid "+(p.tipo==="unico"?"#bbf7d0":"#bfdbfe"),flexShrink:0}}>{p.tipo==="unico"?"Pago único":"Parcialidades"}</span>}
                                     </div>
                                   </div>
                                   {/* Asistencia rápida */}
@@ -3876,15 +3880,20 @@ export default function App() {
                                         <option value="Tarjeta">Tarjeta</option>
                                         <option value="Efectivo">Efectivo</option>
                                       </select>
-                                      {/* Recordatorio pago próximo — correo + WhatsApp */}
+                                      {/* Recordatorio pago próximo */}
                                       {!esInactivo&&(estado==="pendiente"||estado==="ok")&&(p.parcialidades||[]).some(x=>!x.pagado&&x.fecha_vencimiento>=today())&&(<>
                                         {est.email&&<button onClick={e=>{e.stopPropagation();abrirCorreo("proximo",est,prog);}} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>✉ Recordatorio</button>}
                                         {est.telefono&&<button onClick={e=>{e.stopPropagation();abrirWhatsApp("proximo",est,prog);}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>💬 WA Recordatorio</button>}
                                       </>)}
-                                      {/* Aviso vencido — correo + WhatsApp */}
-                                      {!esInactivo&&(estado==="vencido"||estado==="critico")&&(<>
+                                      {/* Mensualidad vencida (1 pago overdue) */}
+                                      {!esInactivo&&estado==="vencido"&&(<>
+                                        {est.email&&<button onClick={e=>{e.stopPropagation();abrirCorreo("mensualidad",est,prog);}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fcd34d"})}>✉ Mensualidad vencida</button>}
+                                        {est.telefono&&<button onClick={e=>{e.stopPropagation();abrirWhatsApp("mensualidad",est,prog);}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fcd34d"})}>💬 WA Mensualidad</button>}
+                                      </>)}
+                                      {/* Múltiples pagos vencidos (critico) */}
+                                      {!esInactivo&&estado==="critico"&&(<>
                                         {est.email&&<button onClick={e=>{e.stopPropagation();abrirCorreo("vencido",est,prog);}} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>✉ Aviso vencido</button>}
-                                        {est.telefono&&<button onClick={e=>{e.stopPropagation();abrirWhatsApp("vencido",est,prog);}} style={S.btn("#fff7ed","#c2410c",{padding:"5px 12px",fontSize:12,border:"1px solid #fed7aa"})}>💬 WA Vencido</button>}
+                                        {est.telefono&&<button onClick={e=>{e.stopPropagation();abrirWhatsApp("vencido",est,prog);}} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>💬 WA Vencido</button>}
                                       </>)}
                                       {/* Evaluación de diplomado */}
                                       {est.email&&(
@@ -4020,7 +4029,7 @@ export default function App() {
                                               }
                                             }}
                                             onClick={ev=>ev.stopPropagation()}
-                                            placeholder="Acuerdos, comentarios, seguimiento..."
+                                            placeholder="Escribe y haz clic fuera para guardar..."
                                             rows={2}
                                             style={{width:"100%",boxSizing:"border-box",border:"1px solid #e5e7eb",borderRadius:6,padding:"7px 10px",fontSize:11,fontFamily:"system-ui",color:"#374151",resize:"vertical",outline:"none",background:"#fff",lineHeight:1.5}}
                                           />
