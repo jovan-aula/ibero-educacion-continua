@@ -3904,11 +3904,10 @@ export default function App() {
                                       {!esInactivo&&<button onClick={e=>{e.stopPropagation();setPagoModal({est,prog});}} style={S.btn(estado==="critico"||estado==="vencido"?RED:"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"5px 12px",fontSize:12})}>{mf===0?"Configurar pago":"Editar pago"}</button>}
                                       <select value={est.forma_cobro||""} onChange={ev=>{ev.stopPropagation();saveEstudiante(prog.id,est.id,{forma_cobro:ev.target.value});}}
                                         style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 10px",fontSize:12,fontFamily:"system-ui",background:"#fff",color:"#374151",cursor:"pointer"}}>
-                                        <option value="">Forma de cobro...</option>
+                                        <option value="">Forma de pago...</option>
                                         <option value="Transferencia">Transferencia</option>
                                         <option value="Depósito">Depósito</option>
                                         <option value="Tarjeta">Tarjeta</option>
-                                        <option value="Efectivo">Efectivo</option>
                                       </select>
                                       {/* Recordatorio pago próximo */}
                                       {!esInactivo&&(estado==="pendiente"||estado==="ok")&&(p.parcialidades||[]).some(x=>!x.pagado&&x.fecha_vencimiento>=today())&&(<>
@@ -3984,9 +3983,9 @@ export default function App() {
                                         )}
                                       </div>
 
-                                      {/* COL DER: Parcialidades — clic para marcar */}
+                                      {/* COL DER: Parcialidades izq→der */}
                                       <div style={{padding:"14px 20px"}}>
-                                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                                           <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px"}}>
                                             {p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}
                                             {mf>0&&<span style={{marginLeft:6,color:"#374151",fontWeight:400}}>· {fmtMXN(mf)}{p.descuento_pct>0?` (−${p.descuento_pct}%)`:""}</span>}
@@ -4023,7 +4022,7 @@ export default function App() {
                                           );
                                         })()}
                                         {p.tipo==="parcialidades"&&(
-                                          <div style={{display:"grid",gap:4}}>
+                                          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                                             {(p.parcialidades||[]).map((parc,j)=>{
                                               const vencido=!parc.pagado&&parc.fecha_vencimiento&&parc.fecha_vencimiento<today();
                                               const toggleParc=e=>{
@@ -4039,16 +4038,32 @@ export default function App() {
                                                 } else { aplicar(""); }
                                               };
                                               return(
-                                                <div key={parc.id} onClick={toggleParc} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 10px",borderRadius:7,cursor:esInactivo?"default":"pointer",background:parc.pagado?"#f0fdf4":vencido?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":vencido?"#fca5a5":"#f3f4f6"),transition:"all .15s"}}>
-                                                  <div style={{width:18,height:18,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .15s"}}>
-                                                    <span style={{color:"#fff",fontSize:9,fontWeight:700}}>{parc.pagado?"✓":""}</span>
+                                                <div key={parc.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:64}}>
+                                                  {/* Chip clickeable */}
+                                                  <div onClick={toggleParc} style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 10px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:parc.pagado?"#f0fdf4":vencido?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":vencido?"#fca5a5":"#e5e7eb"),transition:"all .15s",width:"100%"}}>
+                                                    <div style={{width:22,height:22,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:3,transition:"background .15s"}}>
+                                                      <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{parc.pagado?"✓":parc.numero}</span>
+                                                    </div>
+                                                    <div style={{fontSize:10,fontWeight:700,fontFamily:"system-ui",color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>{fmtMXN(total?mf/total:0)}</div>
+                                                    <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
                                                   </div>
-                                                  <span style={{fontFamily:"system-ui",fontSize:12,fontWeight:600,flex:1,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
-                                                  <div style={{textAlign:"right"}}>
-                                                    <div style={{fontSize:10,fontWeight:700,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado?"Pagado":vencido?"Vencido":"Pendiente"}</div>
-                                                    <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?"vence "+fmtFecha(parc.fecha_vencimiento):""}</div>
-                                                    {parc.pagado&&est.requiere_factura==="Sí"&&<div style={{fontSize:9,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706",fontWeight:700}}>{parc.folio?parc.folio:"Folio pendiente"}</div>}
-                                                  </div>
+                                                  {/* Folio inline */}
+                                                  {est.requiere_factura==="Sí"&&(
+                                                    <input
+                                                      defaultValue={parc.folio||""}
+                                                      placeholder="Folio"
+                                                      onClick={ev=>ev.stopPropagation()}
+                                                      onBlur={ev=>{
+                                                        ev.stopPropagation();
+                                                        const val=ev.target.value.trim();
+                                                        if(val!==(parc.folio||"")){
+                                                          const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,folio:val}:x);
+                                                          savePago(prog.id,est.id,{...p,parcialidades:newParcs});
+                                                        }
+                                                      }}
+                                                      style={{width:"100%",border:"1px solid "+(parc.folio?"#bfdbfe":"#fde68a"),borderRadius:4,padding:"2px 4px",fontSize:9,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706",outline:"none",background:parc.folio?"#eff6ff":"#fffbeb",textAlign:"center"}}
+                                                    />
+                                                  )}
                                                 </div>
                                               );
                                             })}
@@ -4165,14 +4180,16 @@ export default function App() {
                         {/* 2. Datos fiscales */}
                         <div style={{padding:"14px 16px",borderRight:"1px solid #f3f4f6"}}>
                           <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>DATOS FISCALES</div>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 12px",fontFamily:"system-ui",fontSize:11}}>
-                            {[["RFC",e.rfc],["Razón social",e.razon_social],["Régimen",e.regimen_fiscal],["Uso CFDI",e.uso_cfdi],["CP",e.codigo_postal],["Ciudad",e.ciudad],["Estado",e.estado]].filter(([,v])=>v).map(([k,v])=>(
-                              <div key={k}><span style={{color:"#9ca3af"}}>{k}: </span><span style={{fontWeight:600}}>{v}</span></div>
-                            ))}
+                          <div style={{display:"grid",gap:3,fontFamily:"system-ui",fontSize:11}}>
+                            {e.rfc&&<div><span style={{color:"#9ca3af"}}>RFC: </span><span style={{fontWeight:700,letterSpacing:"0.5px"}}>{e.rfc}</span></div>}
+                            {e.razon_social&&<div><span style={{color:"#9ca3af"}}>Razón social: </span><span style={{fontWeight:600}}>{e.razon_social}</span></div>}
+                            {e.regimen_fiscal&&<div><span style={{color:"#9ca3af"}}>Régimen: </span><span style={{fontWeight:500}}>{e.regimen_fiscal}</span></div>}
+                            {e.uso_cfdi&&<div><span style={{color:"#9ca3af"}}>Uso CFDI: </span><span style={{fontWeight:500}}>{e.uso_cfdi}</span></div>}
                           </div>
-                          {(e.calle||e.colonia)&&(
-                            <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginTop:4}}>
-                              {[e.calle,e.num_exterior&&"#"+e.num_exterior,e.num_interior&&"Int."+e.num_interior,e.colonia].filter(Boolean).join(", ")}
+                          {(e.calle||e.colonia||e.ciudad)&&(
+                            <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginTop:6,padding:"5px 8px",background:"#f9f9f9",borderRadius:5,lineHeight:1.5}}>
+                              {[e.calle,e.num_exterior&&"#"+e.num_exterior,e.num_interior&&"Int."+e.num_interior].filter(Boolean).join(" ")}{(e.colonia||e.ciudad||e.estado)&&<br/>}
+                              {[e.colonia,e.ciudad,e.estado,e.codigo_postal&&"C.P."+e.codigo_postal].filter(Boolean).join(", ")}
                             </div>
                           )}
                           {e.csf_url
