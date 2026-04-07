@@ -453,10 +453,10 @@ function ConfirmEscrita({titulo,subtitulo,mensaje,onConfirm,onClose}) {
 const FONT_TITLE = "'Montserrat', sans-serif";
 const FONT_BODY  = "'Inter', system-ui, sans-serif";
 const S = { // estilos reutilizables
-  inp: {width:"100%",border:"1.5px solid #E5E7EB",borderRadius:8,padding:"10px 14px",fontSize:14,boxSizing:"border-box",fontFamily:FONT_BODY,outline:"none",background:"#FAFAFA",transition:"border-color .15s",color:"#111"},
+  inp: {width:"100%",border:"1.5px solid #E5E7EB",borderRadius:10,padding:"10px 14px",fontSize:14,boxSizing:"border-box",fontFamily:FONT_BODY,outline:"none",background:"#FAFAFA",transition:"border-color .15s",color:"#111"},
   lbl: {fontSize:11,fontWeight:600,color:"#6B7280",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.07em",fontFamily:FONT_BODY},
-  card:{background:"#fff",border:"1px solid #EBEBEB",borderRadius:12,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"},
-  btn: (bg,color,extra={}) => ({border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:FONT_BODY,background:bg,color,letterSpacing:"0.01em",...extra}),
+  card:{background:"#fff",border:"1px solid #F0F0F0",borderRadius:16,boxShadow:"0 1px 4px rgba(0,0,0,0.05),0 4px 20px rgba(0,0,0,0.04)"},
+  btn: (bg,color,extra={}) => ({border:"none",borderRadius:10,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:FONT_BODY,background:bg,color,letterSpacing:"0.01em",...extra}),
 };
 
 // ─── LOGIN ────────────────────────────────────────────
@@ -2971,7 +2971,7 @@ export default function App() {
   };
 
   return(
-    <div style={{fontFamily:FONT_BODY,minHeight:"100vh",background:"#F5F5F7",color:"#111"}}>
+    <div style={{fontFamily:FONT_BODY,minHeight:"100vh",background:"#F7F7F8",color:"#111",display:"flex"}}>
       {notif&&(
         <div style={{position:"fixed",top:20,right:20,zIndex:9999,display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid "+(notif.type==="error"?"#FCA5A5":notif.type==="warning"?"#FCD34D":"#86EFAC"),borderRadius:12,padding:"12px 18px",fontSize:13,maxWidth:360,boxShadow:"0 8px 30px rgba(0,0,0,0.1)",fontFamily:FONT_BODY,fontWeight:500,color:notif.type==="error"?"#DC2626":notif.type==="warning"?"#D97706":"#16A34A"}}>
           <span style={{fontSize:15,fontWeight:700}}>{notif.type==="error"?"✕":notif.type==="warning"?"⚠":"✓"}</span>
@@ -2979,81 +2979,121 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER */}
-      <div style={{background:RED,padding:"0 24px",display:"flex",alignItems:"center",height:60,gap:16,boxShadow:"0 2px 16px rgba(200,16,46,0.2)"}}>
-        <div style={{cursor:"pointer",display:"flex",alignItems:"center"}} onClick={()=>setView("lista")}><IberoLogo h={40}/></div>
-        <div style={{width:1,height:28,background:"rgba(255,255,255,0.2)"}}/>
-        <div style={{color:"rgba(255,255,255,0.7)",fontSize:11,fontFamily:FONT_BODY,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Educación Continua</div>
-        <div style={{flex:1}}/>
-        <div style={{display:"flex",alignItems:"center",gap:1,flexWrap:"wrap"}}>
-          {[
-            ["lista","Programas","verProgramas"],
-            ["hoy","Hoy","verProgramas"],
-            ["calendario","Calendario","verProgramas"],
-            ["asistencia","Asistencia","verAsistencia"],
-            ["pagos_global","Pagos","verPagos"],
-            ["facturacion","Facturación","verFacturacion"],
-            ["docentes","Docentes","gestionarDocentes"],
-            ["evaluaciones","Evaluaciones","verEvaluaciones"],
-            ["reportes","Reportes","verReportes"],
-          ].filter(([,,perm])=>can(session,perm)).map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.15)":"transparent",color:view===v?"#fff":"rgba(255,255,255,0.72)",border:"none",borderRadius:6,padding:"6px 11px",cursor:"pointer",fontSize:12,fontFamily:FONT_BODY,fontWeight:view===v?600:400,transition:"all .15s"}}>{l}</button>
-          ))}
-          <div style={{width:1,height:24,background:"rgba(255,255,255,0.25)",margin:"0 6px"}}/>
-          {/* ALERTAS */}
-          <div ref={alertRef} style={{position:"relative"}}>
-            <button onClick={()=>setShowAl(!showAlertas)} style={{background:alertas.length>0?"#fff":"rgba(255,255,255,0.15)",border:"1px solid "+(alertas.length>0?"#fff":"rgba(255,255,255,0.3)"),borderRadius:6,padding:"6px 14px",cursor:"pointer",color:alertas.length>0?RED:"#fff",fontFamily:"system-ui",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:alertas.length>0?RED:"rgba(255,255,255,0.5)",flexShrink:0}}/>
-                {alertas.length>0?"Alertas ("+alertas.length+")":"Sin alertas"}
-              </button>
-            {showAlertas&&(
-              <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",width:360,zIndex:999,overflow:"hidden"}}>
-                <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>
-                    {alertas.length>0?"Alertas activas":"Sin alertas pendientes"}
-                  </span>
-                  {alertas.length>0&&(
-                    <button onClick={descartarTodas}
-                      style={{fontSize:11,color:"#6b7280",background:"none",border:"1px solid #e5e7eb",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontFamily:"system-ui"}}>
-                      Borrar todas
+      {/* ── SIDEBAR ───────────────────────────────────────── */}
+      <div style={{position:"fixed",left:0,top:0,bottom:0,width:240,background:"#fff",borderRight:"1px solid #EBEBEB",display:"flex",flexDirection:"column",zIndex:100}}>
+        {/* Logo */}
+        <div style={{padding:"22px 20px 18px",borderBottom:"1px solid #F3F4F6",cursor:"pointer"}} onClick={()=>setView("lista")}>
+          <IberoLogo h={34}/>
+          <div style={{fontSize:10,fontWeight:700,color:"#B8BCC8",letterSpacing:"0.14em",textTransform:"uppercase",fontFamily:FONT_BODY,marginTop:10}}>Educación Continua</div>
+        </div>
+        {/* Nav groups */}
+        <div style={{flex:1,padding:"8px 10px",overflowY:"auto"}}>
+          {([
+            {group:"Coordinación",items:[
+              {v:"lista",   l:"Programas",  perm:"verProgramas"},
+              {v:"hoy",     l:"Hoy",        perm:"verProgramas"},
+              {v:"calendario",l:"Calendario",perm:"verProgramas"},
+            ]},
+            {group:"Académico",items:[
+              {v:"asistencia",  l:"Asistencia",  perm:"verAsistencia"},
+              {v:"evaluaciones",l:"Evaluaciones", perm:"verEvaluaciones"},
+            ]},
+            {group:"Finanzas",items:[
+              {v:"pagos_global",l:"Pagos",       perm:"verPagos"},
+              {v:"facturacion", l:"Facturación", perm:"verFacturacion"},
+            ]},
+            {group:"Administración",items:[
+              {v:"docentes", l:"Docentes", perm:"gestionarDocentes"},
+              {v:"reportes", l:"Reportes", perm:"verReportes"},
+            ]},
+          ]).map(({group,items})=>{
+            const vis=items.filter(({perm})=>can(session,perm));
+            if(!vis.length)return null;
+            return(
+              <div key={group} style={{marginBottom:6}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#B8BCC8",letterSpacing:"0.1em",textTransform:"uppercase",padding:"14px 10px 5px",fontFamily:FONT_BODY}}>{group}</div>
+                {vis.map(({v,l})=>{
+                  const active=view===v||(v==="lista"&&view==="programa");
+                  return(
+                    <button key={v} onClick={()=>setView(v)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",background:active?"#FFF1F2":"transparent",color:active?RED:"#4B5563",border:"none",borderRadius:8,padding:"9px 12px",cursor:"pointer",fontSize:13,fontFamily:FONT_BODY,fontWeight:active?600:400,marginBottom:1,transition:"all .1s"}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:active?RED:"#D1D5DB",flexShrink:0}}/>
+                      {l}
                     </button>
-                  )}
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div style={{marginBottom:6}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#B8BCC8",letterSpacing:"0.1em",textTransform:"uppercase",padding:"14px 10px 5px",fontFamily:FONT_BODY}}>Sistema</div>
+            <button onClick={()=>setView("busqueda")} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",background:view==="busqueda"?"#FFF1F2":"transparent",color:view==="busqueda"?RED:"#4B5563",border:"none",borderRadius:8,padding:"9px 12px",cursor:"pointer",fontSize:13,fontFamily:FONT_BODY,fontWeight:view==="busqueda"?600:400,marginBottom:1}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:view==="busqueda"?RED:"#D1D5DB",flexShrink:0}}/>
+              Búsqueda
+            </button>
+            {(can(session,"gestionarUsuarios")||can(session,"configurarNotif"))&&(
+              <button onClick={()=>setView("config")} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",background:view==="config"?"#FFF1F2":"transparent",color:view==="config"?RED:"#4B5563",border:"none",borderRadius:8,padding:"9px 12px",cursor:"pointer",fontSize:13,fontFamily:FONT_BODY,fontWeight:view==="config"?600:400,marginBottom:1}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:view==="config"?RED:"#D1D5DB",flexShrink:0}}/>
+                Configuración
+              </button>
+            )}
+          </div>
+        </div>
+        {/* User footer */}
+        <div style={{padding:"14px 16px",borderTop:"1px solid #F3F4F6"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:RED,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,flexShrink:0}}>
+              {(session.nombre||"U").charAt(0).toUpperCase()}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:13,fontFamily:FONT_BODY,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#111"}}>{session.nombre}</div>
+              <div style={{fontSize:11,color:"#9CA3AF",fontFamily:FONT_BODY,textTransform:"capitalize"}}>{session.rol}</div>
+            </div>
+            <button onClick={logout} title="Cerrar sesión" style={{background:"none",border:"1px solid #E5E7EB",borderRadius:6,padding:"4px 9px",cursor:"pointer",fontSize:11,color:"#9CA3AF",fontFamily:FONT_BODY,flexShrink:0,fontWeight:500}}>Salir</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── MAIN AREA ─────────────────────────────────────── */}
+      <div style={{marginLeft:240,flex:1,display:"flex",flexDirection:"column",minHeight:"100vh",minWidth:0}}>
+        {/* TOP BAR */}
+        <div style={{height:54,background:"#fff",borderBottom:"1px solid #EBEBEB",padding:"0 32px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:90,flexShrink:0}}>
+          <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
+            {view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="facturacion"?"Facturación":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
+          </div>
+          {/* Alertas */}
+          <div ref={alertRef} style={{position:"relative"}}>
+            <button onClick={()=>setShowAl(!showAlertas)} style={{background:alertas.length>0?"#FFF1F2":"#F7F7F8",border:"1px solid "+(alertas.length>0?"#FCA5A5":"#E5E7EB"),borderRadius:8,padding:"6px 14px",cursor:"pointer",color:alertas.length>0?RED:"#6B7280",fontFamily:FONT_BODY,fontSize:12,fontWeight:alertas.length>0?700:500,display:"flex",alignItems:"center",gap:7}}>
+              {alertas.length>0&&<div style={{width:7,height:7,borderRadius:"50%",background:RED,flexShrink:0}}/>}
+              {alertas.length>0?"Alertas ("+alertas.length+")":"Sin alertas"}
+            </button>
+            {showAlertas&&(
+              <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"#fff",border:"1px solid #EBEBEB",borderRadius:14,boxShadow:"0 8px 40px rgba(0,0,0,0.12)",width:360,zIndex:999,overflow:"hidden"}}>
+                <div style={{padding:"14px 18px",borderBottom:"1px solid #F3F4F6",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:700,fontSize:14,fontFamily:FONT_BODY}}>{alertas.length>0?"Alertas activas":"Sin alertas pendientes"}</span>
+                  {alertas.length>0&&<button onClick={descartarTodas} style={{fontSize:11,color:"#9CA3AF",background:"none",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:500}}>Borrar todas</button>}
                 </div>
-                {alertas.length===0&&(
-                  <div style={{padding:24,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>
-                    Todo en orden ✓
-                  </div>
-                )}
+                {alertas.length===0&&<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Todo en orden ✓</div>}
                 <div style={{maxHeight:360,overflowY:"auto"}}>
                   {alertas.map((a,i)=>(
-                    <div key={i} style={{padding:"12px 16px",borderBottom:"1px solid #f3f4f6",display:"flex",gap:10,alignItems:"flex-start"}}>
+                    <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
                       <div style={{width:8,height:8,borderRadius:"50%",background:a.tipo==="sin_docente"?"#f59e0b":a.tipo==="pago_recargo"?"#d97706":"#dc2626",marginTop:5,flexShrink:0}}/>
-                      <div style={{flex:1,fontFamily:"system-ui"}}>
+                      <div style={{flex:1,fontFamily:FONT_BODY}}>
                         {a.tipo==="sin_docente"&&<><div style={{fontWeight:600,fontSize:13}}>Módulo sin docente</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre}<br/>{a.prog.nombre} · Inicia en {a.dias} días</div></>}
                         {a.tipo==="asistencia"&&<><div style={{fontWeight:600,fontSize:13,color:"#dc2626"}}>Asistencia baja: {a.pct}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre}<br/>{a.prog.nombre}</div></>}
                         {a.tipo==="pago_recargo"&&<><div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>Pago vencido — recargo {RECARGO_PCT}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo: {fmtMXN(a.recargo)}</div></>}
                         {a.tipo==="pago_critico"&&<><div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>Acción requerida — {a.vencidas} pagos sin cubrir</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div></>}
                       </div>
-                      <button onClick={()=>descartarAlerta(alertaKey(a))}
-                        title="Descartar alerta"
-                        style={{background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:16,padding:"0 2px",flexShrink:0,lineHeight:1}}>
-                        ×
-                      </button>
+                      <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
                     </div>
                   ))}
                 </div>
               </div>
             )}
           </div>
-          <button onClick={()=>setView("busqueda")} style={{background:view==="busqueda"?"rgba(255,255,255,0.15)":"transparent",color:view==="busqueda"?"#fff":"rgba(255,255,255,0.72)",border:"none",borderRadius:6,padding:"6px 11px",cursor:"pointer",fontSize:12,fontFamily:FONT_BODY,fontWeight:400}}>Buscar</button>
-          {(can(session,"gestionarUsuarios")||can(session,"configurarNotif"))&&<button onClick={()=>setView("config")} style={{background:view==="config"?"rgba(255,255,255,0.15)":"transparent",color:"rgba(255,255,255,0.72)",border:"none",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontSize:13,fontFamily:FONT_BODY}}>⚙</button>}
-          <div style={{width:1,height:22,background:"rgba(255,255,255,0.2)",margin:"0 6px"}}/>
-          <div style={{color:"rgba(255,255,255,0.8)",fontSize:12,fontFamily:FONT_BODY,fontWeight:500}}>{session.nombre}</div>
-          <button onClick={logout} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.85)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:FONT_BODY}}>Salir</button>
         </div>
-      </div>
 
-      <div style={{maxWidth:1000,margin:"0 auto",padding:"32px 24px"}}>
+        {/* CONTENT */}
+        <div style={{padding:"28px 32px",flex:1}}>
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
         {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas} npsData={npsData} setCS={setCS}/>}
@@ -5433,6 +5473,7 @@ export default function App() {
           </div>
         </div>
       )}
+      </div>{/* /main area */}
     </div>
   );
 }
