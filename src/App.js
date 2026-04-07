@@ -1614,7 +1614,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   return(
     <div>
       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
-        <div><h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Docentes</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Catálogo de docentes de educación continua</p></div>
+        <div><h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Docentes</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Catálogo de docentes de educación continua</p></div>
         <button onClick={openNew} style={S.btn(RED,"#fff")}>Agregar docente</button>
       </div>
       {(docentes||[]).length>0&&(
@@ -1790,7 +1790,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
   if (!selProgId) return (
     <div>
       <div style={{marginBottom:20}}>
-        <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Asistencia</h1>
+        <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Asistencia</h1>
         <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
           {busqAsist?"Resultados de búsqueda":"Selecciona un programa o busca un estudiante directamente"}
         </p>
@@ -3084,7 +3084,7 @@ export default function App() {
             <div>
               <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
                 <div>
-                  <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Lista de hoy</h1>
+                  <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Lista de hoy</h1>
                   <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{fmtHoyLargo()} · {modulosHoy.length} {modulosHoy.length===1?"módulo":"módulos"} con clase</p>
                 </div>
               </div>
@@ -3200,7 +3200,7 @@ export default function App() {
               );
             })()}
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
-              <div><h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Programas</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Gestión de diplomados y cursos de educación continua</p></div>
+              <div><h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Programas</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Gestión de diplomados y cursos de educación continua</p></div>
               {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
             </div>
             <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
@@ -3736,7 +3736,7 @@ export default function App() {
           return(
             <div>
               <div style={{marginBottom:20}}>
-                <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Control de Pagos</h1>
+                <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Control de Pagos</h1>
                 <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
                   {busqP||progSelP||filtroEstado?"Resultados filtrados":"Programas activos por default — usa filtros para ver más"}
                 </p>
@@ -4152,7 +4152,7 @@ export default function App() {
               {/* Encabezado + filtro + exportar */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16,flexWrap:"wrap",gap:10}}>
                 <div>
-                  <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Facturación</h1>
+                  <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Facturación</h1>
                   <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{lista.length} estudiante{lista.length!==1?"s":""} con factura requerida</p>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -4303,7 +4303,7 @@ export default function App() {
           return(
             <div>
               <div style={{marginBottom:20}}>
-                <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Evaluaciones</h1>
+                <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Evaluaciones</h1>
                 <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
                   {(npsData||[]).length} respuesta{(npsData||[]).length!==1?"s":""} registradas · {docentesConEvals.length} docente{docentesConEvals.length!==1?"s":""} evaluados
                 </p>
