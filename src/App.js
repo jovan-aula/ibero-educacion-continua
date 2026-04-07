@@ -2246,6 +2246,14 @@ function HonorariosView({programas,docentes,onToggle,session}) {
       .finally(()=>setCargandoOrd(false));
   },[honTab]);
 
+  const eliminarOrden=async id=>{
+    if(!window.confirm("¿Eliminar esta orden de pago? Esta acción no se puede deshacer."))return;
+    try{
+      await supa.del("ordenes_pago",id);
+      setListaOrdenes(prev=>prev.filter(o=>o.id!==id));
+    }catch(e){alert("Error al eliminar la orden.");}
+  };
+
   const abrirSolicitud=()=>setSolicitudCfg({
     solicitante:session?.nombre||PERSONAS_DEFAULT[0],
     jefe_inmediato:PERSONAS_DEFAULT[2],
@@ -2527,7 +2535,7 @@ function HonorariosView({programas,docentes,onToggle,session}) {
                 <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
                   <thead>
                     <tr style={{background:"#FAFAFA"}}>
-                      {["Tipo / Mes","Docente o Solicitud","Total","Estado","Fecha","Acciones"].map(h=>(
+                      {["Tipo / Mes","Docente o Solicitud","Total","Estado","Fecha","Acciones",""].map(h=>(
                         <th key={h} style={thStyle}>{h}</th>
                       ))}
                     </tr>
@@ -2567,6 +2575,12 @@ function HonorariosView({programas,docentes,onToggle,session}) {
                             <button onClick={()=>window.open(url,"_blank")}
                               style={{fontSize:11,padding:"5px 12px",border:"1px solid #BFDBFE",borderRadius:6,background:"#EFF6FF",color:"#2563EB",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap"}}>
                               {o.estatus==="firmada"?"Descargar PDF":"Abrir orden"}
+                            </button>
+                          </td>
+                          <td style={{...tdStyle,textAlign:"center"}}>
+                            <button onClick={()=>eliminarOrden(o.id)}
+                              style={{fontSize:11,padding:"5px 10px",border:"1px solid #FECACA",borderRadius:6,background:"#FFF5F5",color:"#DC2626",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap"}}>
+                              Eliminar
                             </button>
                           </td>
                         </tr>
