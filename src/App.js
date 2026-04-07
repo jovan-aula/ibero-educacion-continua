@@ -113,6 +113,9 @@ const syncDocentesToSupabase = async (docentes) => {
       honorarios_por_hora: d.honorariosPorHora||d.honorarios_por_hora||0,
       banco: d.banco||"", clabe: d.clabe||"", rfc: d.rfc||"",
       iva: d.iva||16,
+      grado: d.grados&&d.grados.length>0?d.grados[d.grados.length-1]:(d.grado||"Licenciatura"),
+      grados: d.grados||[], programas_egreso: d.programas_egreso||{},
+      categoria: d.categoria||"A", semblanza: d.semblanza||"",
     }));
     await supa.upsert("docentes", rows);
   } catch(e) { console.error("Sync docentes error:", e); }
@@ -1626,11 +1629,13 @@ function CalendarioView({programas}) {
 // ─── DOCENTES ─────────────────────────────────────────
 function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const [showM,setShowM]   = useState(false);
-  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:"",iva:16});
+  const gradosOrden=["Licenciatura","Maestría","Doctorado"];
+  const gradoMax=grados=>{for(const g of["Doctorado","Maestría","Licenciatura"])if((grados||[]).includes(g))return g;return"Licenciatura";};
+  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
 
-  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grado:"Licenciatura",categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
+  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => { if(!form.nombre)return; editId?saveDocentes((docentes||[]).map(d=>d.id===editId?form:d)):saveDocentes([...(docentes||[]),form]); setShowM(false); };
   const delDoc  = id => {
@@ -1665,7 +1670,8 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
       <div style={{display:"grid",gap:14}}>
         {filtrados.map(doc=>{
           const hist=historial(doc), horas=hist.reduce((a,{mod})=>a+(mod.clases||0)*(mod.horasPorClase||0),0);
-          const gc=GRADO_C[doc.grado]||GRADO_C.Licenciatura;
+          const docGrados=doc.grados&&doc.grados.length>0?doc.grados:(doc.grado?[doc.grado]:[]);
+          const gc=GRADO_C[gradoMax(docGrados)]||GRADO_C.Licenciatura;
           const cat=CATEGORIA_DOCENTE[doc.categoria||"A"];
           return(
             <div key={doc.id} style={{...S.card,borderLeft:"4px solid "+RED,padding:"18px 22px"}}>
@@ -1673,7 +1679,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                 <div style={{flex:1,minWidth:200}}>
                   <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                     <span style={{fontWeight:700,fontSize:16}}>{doc.nombre}</span>
-                    <span style={{background:gc.bg,color:gc.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{doc.grado}</span>
+                    {docGrados.map(g=>{const c=GRADO_C[g]||GRADO_C.Licenciatura;return<span key={g} style={{background:c.bg,color:c.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{g}</span>;})}
                     <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{cat.label} · {fmtMXN(cat.tarifa)}/hr</span>
                   </div>
                   <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
@@ -1757,12 +1763,20 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                 <div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input type={t} value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})} style={S.inp}/></div>
               ))}
               <div style={{marginBottom:16}}>
-                <label style={S.lbl}>Grado académico</label>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {["Licenciatura","Maestría","Doctorado"].map(g=>{const gc=GRADO_C[g];return(
-                    <button key={g} onClick={()=>setForm({...form,grado:g})} style={{border:"2px solid "+(form.grado===g?gc.color:"#e5e7eb"),borderRadius:6,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.grado===g?gc.bg:"#fff",color:form.grado===g?gc.color:"#9ca3af"}}>{g}</button>
+                <label style={S.lbl}>Grado académico <span style={{color:"#9ca3af",fontWeight:400}}>(selecciona uno o más)</span></label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                  {gradosOrden.map(g=>{const gc=GRADO_C[g];const sel=(form.grados||[]).includes(g);return(
+                    <button key={g} onClick={()=>{const ya=(form.grados||[]).includes(g);const nuevos=ya?(form.grados||[]).filter(x=>x!==g):[...(form.grados||[]),g];const pe={...form.programas_egreso};if(ya)delete pe[g];setForm({...form,grados:nuevos,programas_egreso:pe});}}
+                      style={{border:"2px solid "+(sel?gc.color:"#e5e7eb"),borderRadius:6,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:sel?gc.bg:"#fff",color:sel?gc.color:"#9ca3af"}}>{g}</button>
                   );})}
                 </div>
+                {gradosOrden.filter(g=>(form.grados||[]).includes(g)).map(g=>(
+                  <div key={g} style={{marginBottom:8}}>
+                    <input value={(form.programas_egreso||{})[g]||""} onChange={e=>setForm({...form,programas_egreso:{...form.programas_egreso,[g]:e.target.value}})}
+                      placeholder={"Programa de "+g.toLowerCase()+" — ej: Ingeniería en Sistemas"}
+                      style={S.inp}/>
+                  </div>
+                ))}
               </div>
               <div style={{marginBottom:16}}>
                 <label style={S.lbl}>Categoría de pago</label>
@@ -2944,6 +2958,11 @@ export default function App() {
         id:d.id, nombre:d.nombre, email:d.email||"", telefono:d.telefono||"",
         especialidad:d.especialidad||"", honorariosPorHora:d.honorarios_por_hora||0,
         banco:d.banco||"", clabe:d.clabe||"", rfc:d.rfc||"",
+        iva:d.iva||16,
+        grado:d.grado||"Licenciatura",
+        grados:Array.isArray(d.grados)?d.grados:(d.grado?[d.grado]:[]),
+        programas_egreso:d.programas_egreso||{},
+        categoria:d.categoria||"A", semblanza:d.semblanza||"",
       })));
     } else {
       setDocentes([]);
@@ -4550,7 +4569,8 @@ export default function App() {
 
           // Programas que pasan el filtro de programa
           const progsFiltrados=(programas||[]).filter(prog=>{
-            if(progSelP&&prog.id!==progSelP)return false;
+            if(progSelP==="activos") return progStatus(prog)==="activo";
+            if(progSelP&&progSelP!=="activos"&&prog.id!==progSelP)return false;
             // Si hay búsqueda de texto, solo mostrar programas que tengan algún estudiante que coincida
             if(busqP){
               const ql=busqP.toLowerCase();
@@ -4562,8 +4582,7 @@ export default function App() {
                 )
               );
             }
-            // Por default: solo programas activos
-            return progStatus(prog)==="activo";
+            return true;
           });
 
           // Si hay filtro de estado de pago, filtrar programas que tengan al menos un est con ese estado
@@ -4612,7 +4631,7 @@ export default function App() {
               <div style={{marginBottom:20}}>
                 <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Control de Pagos</h1>
                 <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
-                  {busqP||progSelP||filtroEstado?"Resultados filtrados":"Programas activos por default — usa filtros para ver más"}
+                  {busqP||progSelP||filtroEstado?"Resultados filtrados":"Todos los programas con estudiantes registrados"}
                 </p>
               </div>
 
@@ -4645,7 +4664,9 @@ export default function App() {
               <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
                 <input value={busqP} onChange={e=>setBusqP(e.target.value)} placeholder="Buscar estudiante, empresa o correo..." style={{...S.inp,flex:1,minWidth:180}}/>
                 <select value={progSelP} onChange={e=>setProgSelP(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
-                  <option value="">Programas activos</option>
+                  <option value="">Todos los programas</option>
+                  <option value="activos">Solo programas activos</option>
+                  <option disabled>──────────</option>
                   {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
                 <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
@@ -6209,7 +6230,7 @@ export default function App() {
                 <label style={S.lbl}>Docente</label>
                 <select value={modForm.docenteId||"__manual__"} onChange={e=>{if(e.target.value==="__manual__"){setModForm({...modForm,docenteId:"",docente:""});}else{const d=(docentes||[]).find(d=>d.id===e.target.value);if(d)setModForm({...modForm,docenteId:d.id,docente:d.nombre,emailDocente:d.email||modForm.emailDocente});}}} style={S.inp}>
                   <option value="__manual__">Escribir manualmente...</option>
-                  {(docentes||[]).map(d=><option key={d.id} value={d.id}>{d.nombre+" ("+d.grado+")"}</option>)}
+                  {(docentes||[]).map(d=>{const gs=d.grados&&d.grados.length>0?d.grados.join(", "):(d.grado||"");return<option key={d.id} value={d.id}>{d.nombre+(gs?" ("+gs+")":"")}</option>;})}
                 </select>
                 {!modForm.docenteId&&<input placeholder="Nombre del docente" value={modForm.docente||""} onChange={e=>setModForm({...modForm,docente:e.target.value})} style={{...S.inp,marginTop:8}}/>}
               </div>
