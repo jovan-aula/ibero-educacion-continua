@@ -2217,14 +2217,51 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
 }
 
 // ─── HONORARIOS DOCENTES ──────────────────────────────
-function HonorariosView({programas,docentes,onToggle}) {
+const IBERO_LOGO="https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png";
+const PERSONAS_DEFAULT=[
+  "Nohelya Melina Martínez Escalante",
+  "José Roberto Martínez Reyes",
+  "Jován Misael Naranjo Vega",
+];
+
+function HonorariosView({programas,docentes,onToggle,session}) {
   const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
   const getMesOff=off=>{const d=new Date(today().substring(0,7)+"-01");d.setMonth(d.getMonth()+off);return d.toISOString().substring(0,7);};
   const mesOpts=[-2,-1,0,1,2,3,4,5].map(i=>getMesOff(i));
   const [mesSel,setMesSel]=useState(today().substring(0,7));
   const [busq,setBusq]=useState("");
-  const [ordenModal,setOrdenModal]=useState(null); // {url, row}
-  const [generando,setGenerando]=useState(null); // modId mientras carga
+  const [ordenModal,setOrdenModal]=useState(null);
+  const [generando,setGenerando]=useState(null);
+  const [solicitudCfg,setSolicitudCfg]=useState(null); // modal de config solicitud mensual
+
+  const abrirSolicitud=()=>setSolicitudCfg({
+    solicitante:session?.nombre||PERSONAS_DEFAULT[0],
+    jefe_inmediato:PERSONAS_DEFAULT[2],
+    responsable:PERSONAS_DEFAULT[1],
+    entidad:"0705 Educación Continua",
+    programa:"0001 Gastos de Operación",
+    partida:"E012 Honorarios para docentes",
+  });
+
+  const generarSolicitudMensual=async()=>{
+    if(!solicitudCfg||!filtrados.length)return;
+    setGenerando("mensual");
+    try{
+      const id=newId()+newId();
+      const datos={
+        tipo:"mensual",
+        mes:mesSel,
+        ...solicitudCfg,
+        filas:filtrados.map((r,i)=>({n:i+1,docente:r.docente,modulo:r.modulo,fechaInicio:r.fechaInicio,fechaFin:r.fechaFin,horas:r.horas,subtotal:r.subtotal,ivaMonto:r.ivaMonto,total:r.total})),
+        totalSubtotal,totalIVA,totalGeneral,
+      };
+      await supa.upsert("ordenes_pago",[{id,datos,estatus:"pendiente",created_at:new Date().toISOString()}]);
+      const url=window.location.href.split("?")[0]+"?orden="+id;
+      setSolicitudCfg(null);
+      setOrdenModal({url,row:{docente:"Solicitud mensual",modulo:MESES_N[parseInt(mesSel.split("-")[1])-1]+" "+mesSel.split("-")[0],total:totalGeneral}});
+    }catch(e){alert("Error al generar. Intenta de nuevo.");}
+    setGenerando(null);
+  };
 
   const generarOrden=async row=>{
     setGenerando(row.modId);
@@ -2232,9 +2269,7 @@ function HonorariosView({programas,docentes,onToggle}) {
       const id=newId()+newId();
       await supa.upsert("ordenes_pago",[{
         id,modulo_id:row.modId,programa_id:row.progId,
-        datos:row,
-        estatus:"pendiente",
-        created_at:new Date().toISOString(),
+        datos:row,estatus:"pendiente",created_at:new Date().toISOString(),
       }]);
       const url=window.location.href.split("?")[0]+"?orden="+id;
       setOrdenModal({url,row});
@@ -2298,6 +2333,47 @@ function HonorariosView({programas,docentes,onToggle}) {
 
   return(
     <div>
+      {/* Modal configuración solicitud mensual */}
+      {solicitudCfg&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+          <div style={{background:"#fff",borderRadius:16,padding:28,maxWidth:500,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
+            <div style={{fontWeight:800,fontSize:17,fontFamily:FONT_TITLE,marginBottom:4}}>Configurar solicitud mensual</div>
+            <div style={{fontSize:13,color:"#6B7280",fontFamily:FONT_BODY,marginBottom:20}}>{MESES_N[parseInt(mesSel.split("-")[1])-1]} {mesSel.split("-")[0]} · {filtrados.length} docente{filtrados.length!==1?"s":""}</div>
+            {[
+              {k:"solicitante",l:"Solicitud realizada por",opts:PERSONAS_DEFAULT},
+              {k:"jefe_inmediato",l:"Autorización jefe inmediato",opts:PERSONAS_DEFAULT},
+              {k:"responsable",l:"Responsable que autoriza",opts:PERSONAS_DEFAULT},
+            ].map(({k,l,opts})=>(
+              <div key={k} style={{marginBottom:14}}>
+                <label style={S.lbl}>{l}</label>
+                <select value={opts.includes(solicitudCfg[k])?solicitudCfg[k]:"__otro"} onChange={e=>setSolicitudCfg({...solicitudCfg,[k]:e.target.value==="__otro"?"":e.target.value})}
+                  style={{...S.inp,marginBottom:4}}>
+                  {opts.map(o=><option key={o} value={o}>{o}</option>)}
+                  <option value="__otro">Otro…</option>
+                </select>
+                {(!opts.includes(solicitudCfg[k])||solicitudCfg[k]==="")&&(
+                  <input value={solicitudCfg[k]} onChange={e=>setSolicitudCfg({...solicitudCfg,[k]:e.target.value})} placeholder="Nombre completo" style={S.inp}/>
+                )}
+              </div>
+            ))}
+            <div style={{height:1,background:"#F0F0F0",margin:"16px 0"}}/>
+            <div style={{fontSize:11,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.5px",marginBottom:10}}>PARTIDA PRESUPUESTAL</div>
+            {[{k:"entidad",l:"Entidad"},{k:"programa",l:"Programa"},{k:"partida",l:"Partida"}].map(({k,l})=>(
+              <div key={k} style={{marginBottom:10}}>
+                <label style={S.lbl}>{l}</label>
+                <input value={solicitudCfg[k]} onChange={e=>setSolicitudCfg({...solicitudCfg,[k]:e.target.value})} style={S.inp}/>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:8,marginTop:20}}>
+              <button onClick={()=>setSolicitudCfg(null)} style={{...S.btn("#F3F4F6","#374151",{flex:1})}}>Cancelar</button>
+              <button onClick={generarSolicitudMensual} disabled={generando==="mensual"} style={{...S.btn(RED,"#fff",{flex:2,opacity:generando==="mensual"?0.6:1})}}>
+                {generando==="mensual"?"Generando…":"Generar y compartir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal orden generada */}
       {ordenModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
@@ -2322,9 +2398,10 @@ function HonorariosView({programas,docentes,onToggle}) {
           <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Honorarios Docentes</h1>
           <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Facturación y pagos a docentes · recordatorio antes del día 20</p>
         </div>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Enviar por correo</button>
-          <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar Excel/CSV</button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button onClick={abrirSolicitud} disabled={!filtrados.length} style={S.btn(RED,"#fff",{opacity:filtrados.length?1:0.5})}>Generar solicitud mensual</button>
+          <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Correo</button>
+          <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar CSV</button>
         </div>
       </div>
 
@@ -2483,88 +2560,171 @@ function OrdenPago() {
 
   const d=orden.datos||{};
   const ambosFirmaron=!!(orden.firma_solicitante&&orden.firma_responsable);
+  const esMensual=d.tipo==="mensual";
 
-  const firmantes=[
-    {tipo:"sol",  nombre:"Nohelya Martínez",cargo:"Solicitante",     fk:"firma_solicitante",fts:"fecha_firma_sol", ref:canvasSol},
-    {tipo:"resp", nombre:"José Martínez",   cargo:"Responsable",     fk:"firma_responsable",fts:"fecha_firma_resp",ref:canvasResp},
-  ];
+  // Bloque de firma reutilizable
+  const BloqueFirema=({tipo,nombre,cargo,fk,fts,ref})=>(
+    <div key={tipo}>
+      {orden[fk]?(
+        <>
+          <img src={orden[fk]} alt="firma" style={{height:70,display:"block",margin:"0 auto"}}/>
+          <div style={{borderTop:"1.5px solid #111",paddingTop:6,marginTop:4,textAlign:"center"}}>
+            <div style={{fontSize:12,fontFamily:FONT_BODY}}>{cargo}: {nombre}</div>
+            <div style={{fontSize:10,color:"#9CA3AF",fontFamily:FONT_BODY}}>✓ {fTs(orden[fts])}</div>
+          </div>
+        </>
+      ):(
+        <>
+          <div style={{border:"1px dashed #D1D5DB",background:"#FAFAFA",touchAction:"none",cursor:"crosshair",marginBottom:6}}>
+            <canvas ref={ref} width={280} height={80} style={{width:"100%",height:80,display:"block"}}/>
+          </div>
+          <div style={{borderTop:"1.5px solid #111",paddingTop:6,textAlign:"center"}}>
+            <div style={{fontSize:12,fontFamily:FONT_BODY}}>{cargo}: {nombre}</div>
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:8}} className="no-print">
+            <button onClick={()=>limpiar(ref)} style={{flex:1,padding:"5px 0",fontSize:11,fontFamily:FONT_BODY,border:"1px solid #E5E7EB",borderRadius:4,background:"#fff",cursor:"pointer",color:"#6B7280"}}>Limpiar</button>
+            <button onClick={()=>firmar(tipo)} style={{flex:2,padding:"5px 0",fontSize:11,fontFamily:FONT_BODY,border:"none",borderRadius:4,background:RED,color:"#fff",cursor:"pointer",fontWeight:700}}>Firmar</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const solNombre = esMensual?d.solicitante:"Nohelya Melina Martínez Escalante";
+  const respNombre= esMensual?d.responsable:"José Roberto Martínez Reyes";
+
+  const td={padding:"6px 10px",border:"1px solid #D1D5DB",fontSize:12,fontFamily:FONT_BODY,verticalAlign:"middle"};
+  const th={...td,fontWeight:700,background:"#F5F5F7",textAlign:"center",fontSize:11};
+
+  // Filas de tabla — mínimo 10 para el formato mensual
+  const filas=esMensual?d.filas||[]:[];
+  const filasConPad=[...filas,...Array(Math.max(0,10-filas.length)).fill(null)];
 
   return(
-    <div style={{background:"#F5F5F7",minHeight:"100vh",padding:"32px 16px",fontFamily:FONT_BODY}}>
-      <div className="orden-wrap" style={{maxWidth:740,margin:"0 auto",background:"#fff",borderRadius:16,boxShadow:"0 4px 32px rgba(0,0,0,0.10)",overflow:"hidden"}}>
+    <div style={{background:"#F0F0F0",minHeight:"100vh",padding:"24px 16px",fontFamily:FONT_BODY}}>
+      <div className="orden-wrap" style={{maxWidth:960,margin:"0 auto",background:"#fff",boxShadow:"0 2px 20px rgba(0,0,0,0.12)"}}>
 
-        {/* Cabecera roja */}
-        <div style={{background:RED,padding:"28px 36px",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
-          <div>
-            <div style={{fontFamily:FONT_TITLE,fontWeight:800,fontSize:22,letterSpacing:"-0.5px"}}>IBERO Tijuana</div>
-            <div style={{fontSize:13,opacity:0.85,marginTop:2}}>Educación Continua</div>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:11,opacity:0.7,letterSpacing:"1px",textTransform:"uppercase",fontWeight:700}}>Orden de Pago</div>
-            <div style={{fontSize:13,fontWeight:700,marginTop:2}}>#{(orden.id||"").toUpperCase()}</div>
-            <div style={{fontSize:11,opacity:0.7,marginTop:2}}>{fF(new Date().toISOString().split("T")[0])}</div>
-          </div>
-        </div>
+        {esMensual?(
+          <>
+            {/* ── FORMATO MENSUAL (replica PDF) ── */}
+            {/* Encabezado */}
+            <table style={{width:"100%",borderCollapse:"collapse",borderBottom:"1px solid #D1D5DB"}}>
+              <tbody>
+                <tr>
+                  <td rowSpan={4} style={{width:120,padding:12,border:"1px solid #D1D5DB",verticalAlign:"middle",textAlign:"center"}}>
+                    <img src={IBERO_LOGO} alt="IBERO Tijuana" style={{width:90,height:"auto"}} onError={e=>{e.target.style.display="none";}}/>
+                  </td>
+                  <td style={{...th,width:200,textAlign:"left"}}>Fecha de solicitud:</td>
+                  <td style={{...td}}>{fF(new Date().toISOString().split("T")[0])}</td>
+                </tr>
+                <tr>
+                  <td style={th}>Solicitud realizada por:</td>
+                  <td style={td}>{d.solicitante||"—"}</td>
+                </tr>
+                <tr>
+                  <td style={th}>Autorización jefe inmediato:</td>
+                  <td style={td}>{d.jefe_inmediato||"—"}</td>
+                </tr>
+                <tr>
+                  <td style={{...th,verticalAlign:"top",paddingTop:10}}>Partida a afectar:</td>
+                  <td style={{...td,color:RED,fontWeight:600,lineHeight:1.8}}>
+                    Entidad: {d.entidad}<br/>
+                    Programa: {d.programa}<br/>
+                    Partida: {d.partida}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-        {/* Datos del pago */}
-        <div style={{padding:"28px 36px",borderBottom:"1px solid #F0F0F0"}}>
-          <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",letterSpacing:"1px",textTransform:"uppercase",marginBottom:16}}>Datos del pago</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px 32px",marginBottom:20}}>
-            {[["Docente",d.docente],["Programa",d.programa+(d.generacion?" — "+d.generacion+" gen.":"")],["Módulo",d.modulo],["Período",fF(d.fechaInicio)+" – "+fF(d.fechaFin)],["Horas impartidas",(d.horas||0)+"h"],["Categoría","Cat. "+d.categoria]].map(([l,v])=>(
-              <div key={l}>
-                <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.5px"}}>{l}</div>
-                <div style={{fontSize:14,fontWeight:600,color:"#111"}}>{v||"—"}</div>
+            {/* Tabla de docentes */}
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",marginTop:0}}>
+                <thead>
+                  <tr>
+                    {["","No. del profesor","Nombre del profesor","Curso/Taller","Fecha inicio","Fecha final","Total de Horas impartidas","Importe total (Bruto)","Importe total + IVA"].map((h,i)=>(
+                      <th key={i} style={{...th,padding:"8px 10px",textAlign:i>=6?"right":i===0?"center":"left",minWidth:i===2?160:i===3?140:undefined}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filasConPad.map((r,i)=>(
+                    <tr key={i} style={{background:i%2===0?"#fff":"#FAFAFA"}}>
+                      <td style={{...td,textAlign:"center",color:"#9CA3AF",width:28}}>{i+1}</td>
+                      <td style={{...td,textAlign:"center",color:"#6B7280"}}>{r?"":""}</td>
+                      <td style={{...td,fontWeight:r?600:400}}>{r?.docente||""}</td>
+                      <td style={td}>{r?.modulo||""}</td>
+                      <td style={{...td,textAlign:"center",whiteSpace:"nowrap"}}>{r?fF(r.fechaInicio):""}</td>
+                      <td style={{...td,textAlign:"center",whiteSpace:"nowrap"}}>{r?fF(r.fechaFin):""}</td>
+                      <td style={{...td,textAlign:"center"}}>{r?r.horas:""}</td>
+                      <td style={{...td,textAlign:"right"}}>{r?fM(r.subtotal):""}</td>
+                      <td style={{...td,textAlign:"right",fontWeight:r?700:400}}>{r?fM(r.total):""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:"#F5F5F7",fontWeight:700}}>
+                    <td colSpan={7} style={{...td}}/>
+                    <td style={{...td,textAlign:"right",fontWeight:700}}>TOTAL + IVA</td>
+                    <td style={{...td,textAlign:"right",fontWeight:800,color:RED,fontSize:14}}>{fM(d.totalGeneral)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Firmas */}
+            <div style={{padding:"32px 40px"}}>
+              <div style={{fontSize:13,fontWeight:700,fontFamily:FONT_BODY,marginBottom:40}}>Firmas de autorización</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:60}}>
+                <BloqueFirema tipo="sol"  nombre={solNombre}  cargo="Solicitante"            fk="firma_solicitante" fts="fecha_firma_sol"  ref={canvasSol}/>
+                <BloqueFirema tipo="resp" nombre={respNombre} cargo="Responsable que autoriza" fk="firma_responsable" fts="fecha_firma_resp" ref={canvasResp}/>
               </div>
-            ))}
-          </div>
-          <div style={{background:"#FAFAFA",borderRadius:10,padding:"16px 20px"}}>
-            {[["Subtotal",fM(d.subtotal),"#374151","normal"],["IVA ("+d.ivaPct+"%)",fM(d.ivaMonto),"#6B7280","normal"],["Total a pagar",fM(d.total),RED,"bold"]].map(([l,v,c,fw],i)=>(
-              <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:i?8:0,marginTop:i?8:0,borderTop:i===2?"1.5px solid #E5E7EB":"none"}}>
-                <span style={{fontSize:i===2?15:13,fontWeight:i===2?700:400,color:"#374151"}}>{l}</span>
-                <span style={{fontSize:i===2?20:14,fontWeight:fw==="bold"?800:600,color:c}}>{v}</span>
+            </div>
+          </>
+        ):(
+          <>
+            {/* ── FORMATO INDIVIDUAL (módulo único) ── */}
+            <div style={{background:RED,padding:"24px 32px",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+              <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                <img src={IBERO_LOGO} alt="IBERO" style={{height:48,filter:"brightness(0) invert(1)"}} onError={e=>{e.target.style.display="none";}}/>
+                <div>
+                  <div style={{fontFamily:FONT_TITLE,fontWeight:800,fontSize:18}}>Orden de Pago</div>
+                  <div style={{fontSize:12,opacity:0.85}}>Educación Continua · #{(orden.id||"").toUpperCase()}</div>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Firmas */}
-        <div style={{padding:"28px 36px"}}>
-          <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",letterSpacing:"1px",textTransform:"uppercase",marginBottom:20}}>Firmas de autorización</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-            {firmantes.map(({tipo,nombre,cargo,fk,fts,ref})=>(
-              <div key={tipo} style={{border:"1px solid "+(orden[fk]?"#BBF7D0":"#E5E7EB"),borderRadius:12,padding:"16px 18px",background:orden[fk]?"#F0FDF4":"#FAFAFA"}}>
-                <div style={{fontWeight:700,fontSize:13,color:"#374151",marginBottom:1}}>{nombre}</div>
-                <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>{cargo}</div>
-                {orden[fk]?(
-                  <>
-                    <img src={orden[fk]} alt="firma" style={{width:"100%",height:100,objectFit:"contain",background:"#fff",borderRadius:6,border:"1px solid #E5E7EB"}}/>
-                    <div style={{fontSize:11,color:"#16a34a",fontWeight:600,marginTop:8,display:"flex",gap:4,alignItems:"center"}}>
-                      <span>✓ Firmado</span><span style={{color:"#9CA3AF",fontWeight:400,fontSize:10}}>· {fTs(orden[fts])}</span>
-                    </div>
-                  </>
-                ):(
-                  <>
-                    <div style={{border:"1px dashed #D1D5DB",borderRadius:6,background:"#fff",marginBottom:8,touchAction:"none",cursor:"crosshair",overflow:"hidden"}}>
-                      <canvas ref={ref} width={300} height={110} style={{width:"100%",height:110,display:"block"}}/>
-                    </div>
-                    <div style={{display:"flex",gap:6}} className="no-print">
-                      <button onClick={()=>limpiar(ref)} style={{flex:1,padding:"7px 0",fontSize:12,fontFamily:FONT_BODY,border:"1px solid #E5E7EB",borderRadius:6,background:"#fff",cursor:"pointer",color:"#6B7280"}}>Limpiar</button>
-                      <button onClick={()=>firmar(tipo)} style={{flex:2,padding:"7px 0",fontSize:12,fontFamily:FONT_BODY,border:"none",borderRadius:6,background:RED,color:"#fff",cursor:"pointer",fontWeight:700}}>Firmar</button>
-                    </div>
-                  </>
-                )}
+              <div style={{fontSize:12,opacity:0.8}}>{fF(new Date().toISOString().split("T")[0])}</div>
+            </div>
+            <div style={{padding:"24px 32px",borderBottom:"1px solid #F0F0F0"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px 32px",marginBottom:20}}>
+                {[["Docente",d.docente],["Programa",d.programa+(d.generacion?" — "+d.generacion+" gen.":"")],["Módulo",d.modulo],["Período",fF(d.fechaInicio)+" – "+fF(d.fechaFin)],["Horas",(d.horas||0)+"h"],["Categoría","Cat. "+d.categoria]].map(([l,v])=>(
+                  <div key={l}><div style={{fontSize:10,color:"#9CA3AF",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{l}</div><div style={{fontSize:14,fontWeight:600}}>{v||"—"}</div></div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+              <div style={{background:"#FAFAFA",borderRadius:8,padding:"14px 18px"}}>
+                {[["Subtotal",fM(d.subtotal),"#374151"],["IVA ("+d.ivaPct+"%)",fM(d.ivaMonto),"#6B7280"],["Total a pagar",fM(d.total),RED]].map(([l,v,c],i)=>(
+                  <div key={l} style={{display:"flex",justifyContent:"space-between",paddingTop:i?8:0,marginTop:i?8:0,borderTop:i===2?"1.5px solid #E5E7EB":"none"}}>
+                    <span style={{fontSize:i===2?14:13,fontWeight:i===2?700:400}}>{l}</span>
+                    <span style={{fontSize:i===2?18:14,fontWeight:i===2?800:600,color:c}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{padding:"24px 32px"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:20}}>Firmas de autorización</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:40}}>
+                <BloqueFirema tipo="sol"  nombre={solNombre}  cargo="Solicitante"            fk="firma_solicitante" fts="fecha_firma_sol"  ref={canvasSol}/>
+                <BloqueFirema tipo="resp" nombre={respNombre} cargo="Responsable que autoriza" fk="firma_responsable" fts="fecha_firma_resp" ref={canvasResp}/>
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Footer */}
-        <div style={{padding:"20px 36px",borderTop:"1px solid #F0F0F0",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,background:"#FAFAFA"}}>
+        {/* Barra inferior — estado + PDF */}
+        <div style={{padding:"16px 32px",borderTop:"2px solid #F0F0F0",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,background:"#FAFAFA"}} className="no-print">
           <div style={{fontSize:12,color:ambosFirmaron?"#16a34a":"#9CA3AF",fontWeight:ambosFirmaron?700:400}}>
-            {ambosFirmaron?"✓ Orden completamente firmada":`Pendiente${orden.firma_solicitante||orden.firma_responsable?" — 1 de 2 firmas":""}`}
+            {ambosFirmaron?"✓ Solicitud completamente firmada":`Pendiente de firma${orden.firma_solicitante||orden.firma_responsable?" — 1 de 2":""}`}
           </div>
           {ambosFirmaron&&(
-            <button className="no-print" onClick={()=>window.print()} style={{background:RED,color:"#fff",border:"none",borderRadius:8,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:FONT_BODY}}>
+            <button onClick={()=>window.print()} style={{background:RED,color:"#fff",border:"none",borderRadius:8,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:FONT_BODY}}>
               Descargar PDF
             </button>
           )}
@@ -4829,7 +4989,7 @@ export default function App() {
         })()}
 
         {/* HONORARIOS DOCENTES */}
-        {view==="honorarios"&&<HonorariosView programas={programas} docentes={docentes} onToggle={toggleHonorario}/>}
+        {view==="honorarios"&&<HonorariosView programas={programas} docentes={docentes} onToggle={toggleHonorario} session={session}/>}
 
         {/* EVALUACIONES */}
         {view==="evaluaciones"&&(()=>{
