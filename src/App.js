@@ -954,7 +954,17 @@ function EditEstModal({est,prog,onSave,onClose}) {
 }
 
 function PagoModal({est,prog,onSave,onClose}) {
-  const pago0 = est.pago||{tipo:"unico",monto_acordado:est.monto_ghl||0,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
+  const precioL = prog.precioLista||0;
+  const montoGHL = est.monto_ghl||0;
+  // Si el pago aún no tiene monto y tenemos datos del CRM, calcular descuento automático
+  const pago0 = (()=>{
+    const base = est.pago||{tipo:"unico",monto_acordado:montoGHL,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
+    if(base.monto_acordado===montoGHL && base.descuento_pct===0 && precioL>0 && montoGHL>0 && montoGHL<=precioL){
+      const descAuto=Math.round((1-montoGHL/precioL)*100);
+      return {...base, monto_acordado:precioL, descuento_pct:descAuto};
+    }
+    return base;
+  })();
   const [pago,setPago] = useState(pago0);
   const [newPromo,setNewPromo] = useState({nombre:"",descuento:0});
 
@@ -1018,10 +1028,16 @@ function PagoModal({est,prog,onSave,onClose}) {
         <div style={{padding:"20px 24px"}}>
 
           {/* Monto de referencia al importar */}
-          {est.monto_ghl>0&&(
+          {montoGHL>0&&(
             <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"10px 14px",marginBottom:8,fontFamily:"system-ui",fontSize:13}}>
-              <span style={{color:"#92400e"}}>Monto de referencia al importar: </span>
-              <strong style={{color:"#92400e"}}>{fmtMXN(est.monto_ghl)}</strong>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                <span style={{color:"#92400e"}}>Monto CRM: <strong>{fmtMXN(montoGHL)}</strong></span>
+                {precioL>0&&montoGHL<=precioL&&(
+                  <span style={{color:"#92400e",fontWeight:700}}>
+                    {montoGHL===precioL?"Sin descuento":Math.round((1-montoGHL/precioL)*100)+"% de descuento sobre precio lista ("+fmtMXN(precioL)+")"}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           {(est.requiere_factura||est.csf_url)&&(
@@ -1260,13 +1276,22 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     };
 
     // Detecta tipo de pago según monto y genera parcialidades
-    // buildPago ahora recibe la forma de pago del CRM si existe
-    const buildPago = (monto, parcDefault, formaPago) => {
+    // buildPago calcula descuento automático en base al precioLista del programa
+    const buildPago = (monto, parcDefault, formaPago, precioLista=0) => {
       const n = parcDefault||5;
       const fechas = calcVencimientosImport(n, fechaInicioPrograma);
-      const mkParcialidades = (montoFinal, descuento=0, notas="") => ({
+
+      // Calcular descuento automático si tenemos precio lista
+      let montoBase = monto;   // lo que acordó pagar
+      let descAuto  = 0;
+      if (precioLista > 0 && monto > 0 && monto <= precioLista) {
+        descAuto  = Math.round((1 - monto / precioLista) * 100);
+        montoBase = precioLista; // guardamos precio lista, descuento explica la diferencia
+      }
+
+      const mkParcialidades = (montoAcordado, descuento=0, notas="") => ({
         tipo:"parcialidades",
-        monto_acordado:montoFinal,
+        monto_acordado:montoAcordado,
         descuento_pct:descuento,
         promocion_id:"",
         parcialidades:Array.from({length:n},(_,i)=>({
@@ -1276,9 +1301,9 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         })),
         notas,
       });
-      const mkUnico = (montoFinal, descuento=0, notas="") => ({
+      const mkUnico = (montoAcordado, descuento=0, notas="") => ({
         tipo:"unico",
-        monto_acordado:montoFinal,
+        monto_acordado:montoAcordado,
         descuento_pct:descuento,
         promocion_id:"",
         parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}],
@@ -1289,10 +1314,10 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       if (formaPago) {
         const fp = formaPago.toLowerCase();
         if (fp.includes("único") || fp.includes("unico") || fp.includes("contado")) {
-          return mkUnico(monto, 0, formaPago);
+          return mkUnico(montoBase, descAuto, formaPago);
         }
       }
-      return mkParcialidades(monto, 0, formaPago||"");
+      return mkParcialidades(montoBase, descAuto, formaPago||"");
     };
 
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
@@ -1330,7 +1355,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         asistencia:       {},
         campos_extra:     {},
         monto_ghl:        monto,
-        pago:             buildPago(monto, prog.parcialidadesDefault, formaPago),
+        pago:             buildPago(monto, prog.parcialidadesDefault, formaPago, prog.precioLista||0),
       };
     });
     onImport([...existing,...toAdd]);
@@ -2253,6 +2278,7 @@ function HonorariosView({programas,docentes,onToggle,session}) {
   const [honTab,setHonTab]=useState("honorarios"); // "honorarios" | "ordenes"
   const [listaOrdenes,setListaOrdenes]=useState([]);
   const [cargandoOrd,setCargandoOrd]=useState(false);
+  const [seleccion,setSeleccion]=useState(new Set()); // modIds seleccionados
 
   useEffect(()=>{
     if(honTab!=="ordenes")return;
@@ -2310,6 +2336,35 @@ function HonorariosView({programas,docentes,onToggle,session}) {
       }]);
       const url=window.location.href.split("?")[0]+"?orden="+id;
       setOrdenModal({url,row});
+    }catch(e){alert("Error al generar la orden. Intenta de nuevo.");}
+    setGenerando(null);
+  };
+
+  const generarOrdenSeleccion=async()=>{
+    const filasSel=filtrados.filter(r=>seleccion.has(r.modId));
+    if(!filasSel.length)return;
+    setGenerando("seleccion");
+    try{
+      const id=newId()+newId();
+      const subTotal=filasSel.reduce((a,r)=>a+r.subtotal,0);
+      const ivaTotal=filasSel.reduce((a,r)=>a+r.ivaMonto,0);
+      const genTotal=filasSel.reduce((a,r)=>a+r.total,0);
+      const datos={
+        tipo:"seleccion",
+        mes:mesSel,
+        solicitante:session?.nombre||PERSONAS_DEFAULT[0],
+        responsable:PERSONAS_DEFAULT[1],
+        jefe_inmediato:PERSONAS_DEFAULT[2],
+        entidad:"0705 Educación Continua",
+        programa:"0001 Gastos de Operación",
+        partida:"E012 Honorarios para docentes",
+        filas:filasSel.map((r,i)=>({n:i+1,docente:r.docente,programa:r.programa,generacion:r.generacion,modulo:r.modulo,categoria:r.categoria,fechaInicio:r.fechaInicio,fechaFin:r.fechaFin,horas:r.horas,subtotal:r.subtotal,ivaMonto:r.ivaMonto,total:r.total})),
+        totalSubtotal:subTotal,totalIVA:ivaTotal,totalGeneral:genTotal,
+      };
+      await supa.upsert("ordenes_pago",[{id,datos,estatus:"pendiente",created_at:new Date().toISOString()}]);
+      const url=window.location.href.split("?")[0]+"?orden="+id;
+      setSeleccion(new Set());
+      setOrdenModal({url,row:{docente:`${filasSel.length} docente${filasSel.length!==1?"s":""}`,modulo:fmtMes(mesSel),total:genTotal}});
     }catch(e){alert("Error al generar la orden. Intenta de nuevo.");}
     setGenerando(null);
   };
@@ -2437,9 +2492,21 @@ function HonorariosView({programas,docentes,onToggle,session}) {
         </div>
         {honTab==="honorarios"&&(
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={abrirSolicitud} disabled={!filtrados.length} style={S.btn(RED,"#fff",{opacity:filtrados.length?1:0.5})}>Generar solicitud mensual</button>
-            <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Correo</button>
-            <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar CSV</button>
+            {seleccion.size>0?(
+              <>
+                <button onClick={generarOrdenSeleccion} disabled={generando==="seleccion"}
+                  style={S.btn(RED,"#fff",{opacity:generando==="seleccion"?0.6:1})}>
+                  {generando==="seleccion"?"Generando…":`Generar orden (${seleccion.size} seleccionado${seleccion.size!==1?"s":""})`}
+                </button>
+                <button onClick={()=>setSeleccion(new Set())} style={S.btn("#F3F4F6","#374151")}>Cancelar selección</button>
+              </>
+            ):(
+              <>
+                <button onClick={abrirSolicitud} disabled={!filtrados.length} style={S.btn(RED,"#fff",{opacity:filtrados.length?1:0.5})}>Generar solicitud mensual</button>
+                <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Correo</button>
+                <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar CSV</button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -2489,6 +2556,15 @@ function HonorariosView({programas,docentes,onToggle,session}) {
             <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
               <thead>
                 <tr style={{background:"#FAFAFA"}}>
+                  <th style={{...thStyle,width:36,textAlign:"center"}}>
+                    <input type="checkbox"
+                      checked={filtrados.length>0&&filtrados.every(r=>seleccion.has(r.modId))}
+                      onChange={e=>{
+                        if(e.target.checked) setSeleccion(new Set(filtrados.map(r=>r.modId)));
+                        else setSeleccion(new Set());
+                      }}
+                      style={{cursor:"pointer",width:14,height:14}}/>
+                  </th>
                   {["Docente","Programa","Módulo","Horas","Cat.","IVA","Inicio","Fin","Subtotal","IVA $","Total","Factura solicitada","Pago emitido","Orden de pago"].map(h=>(
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
@@ -2496,7 +2572,12 @@ function HonorariosView({programas,docentes,onToggle,session}) {
               </thead>
               <tbody>
                 {filtrados.map((r,i)=>(
-                  <tr key={r.modId} style={{background:i%2===0?"#fff":"#FAFAFA"}}>
+                  <tr key={r.modId} style={{background:seleccion.has(r.modId)?"#FFF5F5":i%2===0?"#fff":"#FAFAFA"}}>
+                    <td style={{...tdStyle,textAlign:"center"}}>
+                      <input type="checkbox" checked={seleccion.has(r.modId)}
+                        onChange={e=>{const s=new Set(seleccion);e.target.checked?s.add(r.modId):s.delete(r.modId);setSeleccion(s);}}
+                        style={{cursor:"pointer",width:14,height:14}}/>
+                    </td>
                     <td style={tdStyle}><div style={{fontWeight:600,color:"#111"}}>{r.docente}</div></td>
                     <td style={tdStyle}><div style={{fontSize:12,color:"#374151"}}>{r.programa}</div>{r.generacion&&<div style={{fontSize:11,color:"#9CA3AF"}}>{r.generacion}</div>}</td>
                     <td style={tdStyle}><div style={{fontSize:12,color:"#374151"}}>{r.modulo}</div></td>
@@ -2685,7 +2766,7 @@ function OrdenPago() {
 
   const d=orden.datos||{};
   const ambosFirmaron=!!(orden.firma_solicitante&&orden.firma_responsable);
-  const esMensual=d.tipo==="mensual";
+  const esMensual=d.tipo==="mensual"||d.tipo==="seleccion";
   const solNombre=esMensual?d.solicitante:"Nohelya Melina Martínez Escalante";
   const respNombre=esMensual?d.responsable:"José Roberto Martínez Reyes";
 
@@ -2726,7 +2807,7 @@ function OrdenPago() {
           </div>
           <div style={{flex:1,background:RED,padding:"18px 28px",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
             <div>
-              <div style={{fontFamily:FONT_TITLE,fontWeight:800,fontSize:18,letterSpacing:"-0.3px"}}>{esMensual?"Solicitud de Honorarios Docentes":"Orden de Pago"}</div>
+              <div style={{fontFamily:FONT_TITLE,fontWeight:800,fontSize:18,letterSpacing:"-0.3px"}}>{d.tipo==="seleccion"?"Orden de Pago — Selección":d.tipo==="mensual"?"Solicitud de Honorarios Docentes":"Orden de Pago"}</div>
               <div style={{fontSize:12,opacity:0.85,marginTop:2}}>Educación Continua · #{(orden.id||"").slice(0,8).toUpperCase()}</div>
             </div>
             <div style={{fontSize:12,opacity:0.85}}>{fF(new Date().toISOString().split("T")[0])}</div>
@@ -2878,6 +2959,7 @@ export default function App() {
   const [filtroPagos,setFiltroPagos] = useState("");
   const [filtroFactProg,setFiltroFactProg] = useState("");
   const [busqFacturacion,setBusqFacturacion] = useState("");
+  const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "factura"=requieren factura, "enviada"=enviadas, "pendiente"=sin enviar
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [evalTab,setEvalTab]           = useState("modulos");
@@ -3746,9 +3828,9 @@ export default function App() {
       {/* ── SIDEBAR ───────────────────────────────────────── */}
       <div style={{position:"fixed",left:0,top:0,bottom:0,width:240,background:"#fff",borderRight:"1px solid #EBEBEB",display:"flex",flexDirection:"column",zIndex:100}}>
         {/* Logo */}
-        <div style={{padding:"22px 20px 18px",borderBottom:"1px solid #F3F4F6",cursor:"pointer"}} onClick={()=>setView("lista")}>
-          <IberoLogo h={34}/>
-          <div style={{fontSize:10,fontWeight:700,color:"#B8BCC8",letterSpacing:"0.14em",textTransform:"uppercase",fontFamily:FONT_BODY,marginTop:10}}>Educación Continua</div>
+        <div style={{background:RED,padding:"18px 20px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:6}} onClick={()=>setView("lista")}>
+          <img src="https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png" alt="IBERO Tijuana" style={{height:38,width:"auto"}} onError={e=>{e.target.style.display="none";}}/>
+          <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.7)",letterSpacing:"0.14em",textTransform:"uppercase",fontFamily:FONT_BODY}}>Educación Continua</div>
         </div>
         {/* Nav groups */}
         <div style={{flex:1,padding:"8px 10px",overflowY:"auto"}}>
@@ -5018,10 +5100,13 @@ export default function App() {
         {/* FACTURACIÓN */}
         {view==="facturacion"&&(()=>{
           const todos = (programas||[]).flatMap(prog=>
-            ests(prog).filter(e=>e.estatus!=="baja"&&e.requiere_factura==="Sí").map(e=>({e,prog}))
+            ests(prog).filter(e=>e.estatus!=="baja").map(e=>({e,prog}))
           );
           const lista = todos.filter(({e,prog})=>{
             if(filtroFactProg&&prog.id!==filtroFactProg)return false;
+            if(filtroFactTipo==="factura"&&e.requiere_factura!=="Sí")return false;
+            if(filtroFactTipo==="enviada"&&!e.factura_enviada)return false;
+            if(filtroFactTipo==="pendiente"&&e.factura_enviada)return false;
             if(busqFacturacion){
               const q=busqFacturacion.toLowerCase();
               const tieneFolio=(e.pago?.parcialidades||[]).some(parc=>parc.folio?.toLowerCase().includes(q));
@@ -5029,6 +5114,16 @@ export default function App() {
             }
             return true;
           });
+
+          const toggleEnviada=(progId,estId)=>{
+            const ahora=today();
+            save((programas||[]).map(p=>p.id!==progId?p:{...p,
+              estudiantes:ests(p).map(e=>e.id!==estId?e:{...e,
+                factura_enviada:!e.factura_enviada,
+                fecha_factura_enviada:!e.factura_enviada?ahora:"",
+              })
+            }));
+          };
 
           const exportCSV = () => {
             const cols = ["Nombre","Teléfono","Correo","Empresa","Programa","RFC","Razón social","Régimen fiscal","CP","Calle","No. Ext","No. Int","Colonia","Ciudad","Estado","Uso CFDI","CSF","Tipo pago","Monto","Parcialidades pagadas","Total parcialidades"];
@@ -5048,20 +5143,26 @@ export default function App() {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16,flexWrap:"wrap",gap:10}}>
                 <div>
                   <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Facturación</h1>
-                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{lista.length} estudiante{lista.length!==1?"s":""} con factura requerida</p>
+                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{lista.length} estudiante{lista.length!==1?"s":""} · {todos.filter(({e})=>e.factura_enviada).length} con factura enviada</p>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, correo, teléfono, folio..." style={{...S.inp,minWidth:240,fontSize:13}}/>
+                  <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, correo, teléfono, folio..." style={{...S.inp,minWidth:200,fontSize:13}}/>
+                  <select value={filtroFactTipo} onChange={e=>setFiltroFactTipo(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                    <option value="">Todos</option>
+                    <option value="factura">Requieren factura</option>
+                    <option value="enviada">Factura enviada</option>
+                    <option value="pendiente">Factura pendiente</option>
+                  </select>
                   <select value={filtroFactProg} onChange={e=>setFiltroFactProg(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                     <option value="">Todos los programas</option>
                     {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
                   </select>
-                  {(filtroFactProg||busqFacturacion)&&<button onClick={()=>{setFiltroFactProg("");setBusqFacturacion("");}} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
+                  {(filtroFactProg||busqFacturacion||filtroFactTipo)&&<button onClick={()=>{setFiltroFactProg("");setBusqFacturacion("");setFiltroFactTipo("");}} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
                   <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
                 </div>
               </div>
 
-              {lista.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>No hay estudiantes con factura requerida.</div>}
+              {lista.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin resultados con los filtros actuales.</div>}
 
               <div style={{display:"grid",gap:10}}>
                 {lista.map(({e,prog})=>{
@@ -5111,7 +5212,12 @@ export default function App() {
                           {p.tipo==="unico"&&mf>0&&(
                             <div style={{display:"flex",gap:7,alignItems:"center",padding:"6px 8px",borderRadius:6,background:pagadas>0?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadas>0?"#bbf7d0":"#fde68a")}}>
                               <div style={{width:14,height:14,borderRadius:"50%",background:pagadas>0?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:7,fontWeight:700}}>{pagadas>0?"✓":""}</span></div>
-                              <span style={{fontFamily:"system-ui",fontSize:11,fontWeight:600,color:pagadas>0?"#16a34a":"#d97706"}}>{pagadas>0?"Cubierto":"Pendiente"}</span>
+                              <div style={{flex:1}}>
+                                <span style={{fontFamily:"system-ui",fontSize:11,fontWeight:600,color:pagadas>0?"#16a34a":"#d97706"}}>{pagadas>0?"Cubierto":"Pendiente"}</span>
+                                {(p.parcialidades||[]).map((parc,j)=>parc.folio?(
+                                  <div key={j} style={{fontSize:9,fontWeight:700,color:"#2563eb",fontFamily:"system-ui"}}>{parc.folio}</div>
+                                ):pagadas>0?<div key={j} style={{fontSize:9,color:"#d97706",fontFamily:"system-ui"}}>Folio pendiente</div>:null)}
+                              </div>
                             </div>
                           )}
                           {p.tipo==="parcialidades"&&(
@@ -5133,11 +5239,28 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* 4. Estado resumen */}
-                        <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:4,minWidth:80}}>
-                          <div style={{fontWeight:800,fontSize:16,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div>
-                          <div style={{fontSize:10,fontFamily:"system-ui",fontWeight:700,color:p.tipo==="unico"?"#16a34a":"#2563eb",background:p.tipo==="unico"?"#f0fdf4":"#eff6ff",borderRadius:4,padding:"2px 7px"}}>{p.tipo==="unico"?"Único":"Parcialidades"}</div>
-                          {p.tipo==="parcialidades"&&total>0&&<div style={{fontSize:11,fontFamily:"system-ui",fontWeight:700,color:pagadas===total?"#16a34a":"#d97706"}}>{pagadas}/{total} pagadas</div>}
+                        {/* 4. Estado + Factura enviada */}
+                        <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",justifyContent:"space-between",gap:8,minWidth:110}}>
+                          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                            <div style={{fontWeight:800,fontSize:15,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div>
+                            <div style={{fontSize:10,fontFamily:"system-ui",fontWeight:700,color:p.tipo==="unico"?"#16a34a":"#2563eb",background:p.tipo==="unico"?"#f0fdf4":"#eff6ff",borderRadius:4,padding:"2px 7px"}}>{p.tipo==="unico"?"Único":"Parcialidades"}</div>
+                            {p.tipo==="parcialidades"&&total>0&&<div style={{fontSize:11,fontFamily:"system-ui",fontWeight:700,color:pagadas===total?"#16a34a":"#d97706"}}>{pagadas}/{total} pagadas</div>}
+                            {e.requiere_factura==="Sí"&&<span style={{fontSize:9,background:"#eff6ff",color:"#2563eb",borderRadius:4,padding:"1px 6px",fontFamily:"system-ui",fontWeight:700}}>Requiere factura</span>}
+                          </div>
+                          {/* Factura enviada */}
+                          <div
+                            onClick={()=>toggleEnviada(prog.id,e.id)}
+                            style={{cursor:"pointer",borderRadius:8,padding:"7px 10px",background:e.factura_enviada?"#f0fdf4":"#fafafa",border:"1px solid "+(e.factura_enviada?"#86efac":"#e5e7eb"),display:"flex",flexDirection:"column",alignItems:"center",gap:2,userSelect:"none"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                              <div style={{width:16,height:16,borderRadius:4,border:"2px solid "+(e.factura_enviada?"#16a34a":"#d1d5db"),background:e.factura_enviada?"#16a34a":"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                                {e.factura_enviada&&<span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
+                              </div>
+                              <span style={{fontSize:11,fontWeight:700,fontFamily:"system-ui",color:e.factura_enviada?"#16a34a":"#9ca3af"}}>Factura enviada</span>
+                            </div>
+                            {e.factura_enviada&&e.fecha_factura_enviada&&(
+                              <span style={{fontSize:9,color:"#16a34a",fontFamily:"system-ui"}}>{fmtFecha(e.fecha_factura_enviada)}</span>
+                            )}
+                          </div>
                         </div>
 
                       </div>
@@ -5737,7 +5860,11 @@ export default function App() {
                 const cobrado=es.reduce((a,e)=>{const pg=e.pago;if(!pg)return a;if(pg.tipo==="unico"){const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(pag>0?pg.monto_acordado*(1-(pg.descuento_pct||0)/100):0);}const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);const tot=(pg.parcialidades||[]).length;const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
                 const descuentos=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado||!pg.descuento_pct)return a;return a+pg.monto_acordado*(pg.descuento_pct/100);},0);
                 const honorarios=mods(p).reduce((a,m)=>a+calcHonorarios(m,docentes),0);
-                return{esperado,cobrado,pendiente:esperado-cobrado,descuentos,honorarios,margen:esperado-honorarios};
+                const utilidad=esperado-honorarios;
+                const esColab=p.colaboracion&&p.pct_socio>0;
+                const parteSocio=esColab?Math.round(utilidad*p.pct_socio/100):0;
+                const parteIbero=utilidad-parteSocio;
+                return{esperado,cobrado,pendiente:esperado-cobrado,descuentos,honorarios,margen:utilidad,parteSocio,parteIbero,esColab,socio:p.socio||"",pct_socio:p.pct_socio||0};
               };
 
               const proyMens = proyeccionMensual(programas,docentes);
@@ -5748,6 +5875,8 @@ export default function App() {
               const totalCobrado=(programas||[]).reduce((a,p)=>a+calcFinProg(p).cobrado,0);
               const totalHonorarios=(programas||[]).reduce((a,p)=>a+calcFinProg(p).honorarios,0);
               const totalMargen=totalEsperado-totalHonorarios;
+              const totalParteSocio=(programas||[]).reduce((a,p)=>a+calcFinProg(p).parteSocio,0);
+              const totalParteIbero=(programas||[]).reduce((a,p)=>a+calcFinProg(p).parteIbero,0);
 
               return(
                 <div style={{marginTop:16}}>
@@ -5776,7 +5905,7 @@ export default function App() {
                     <div style={{...S.card}}>
                       <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>Resumen global</div>
                       <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
-                        {[["Ingresos esperados",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalEsperado-totalCobrado,"#d97706"],["Honorarios docentes",totalHonorarios,RED],["Margen neto estimado",totalMargen,"#7c3aed"]].map(([l,v,c])=>(
+                        {[["Ingresos esperados",totalEsperado,"#1a1a1a"],["Cobrado",totalCobrado,"#16a34a"],["Pendiente",totalEsperado-totalCobrado,"#d97706"],["Honorarios docentes",totalHonorarios,RED],["Margen neto",totalMargen,"#7c3aed"],["IBERO (neto real)",totalParteIbero,"#059669"],totalParteSocio>0&&["Socios colaboración",totalParteSocio,"#9333ea"]].filter(Boolean).map(([l,v,c])=>(
                           <div key={l} style={{textAlign:"center",padding:"8px 0"}}>
                             <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
                             <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
@@ -5785,18 +5914,28 @@ export default function App() {
                       </div>
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
-                          <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>{["Programa","Estudiantes","Esperado","Cobrado","Honorarios","Margen neto","Avance"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                          <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>{["Programa","Estudiantes","Esperado","Cobrado","Honorarios","Margen neto","IBERO","Avance"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                           <tbody>
                             {(programas||[]).map(p=>{
-                              const {esperado,cobrado,honorarios,margen}=calcFinProg(p);
+                              const {esperado,cobrado,honorarios,margen,parteSocio,parteIbero,esColab,socio,pct_socio}=calcFinProg(p);
                               const pct=esperado?Math.round(cobrado/esperado*100):0;
                               return(<tr key={p.id} style={{borderBottom:"1px solid #f3f4f6"}}>
-                                <td style={{padding:"10px 12px",fontWeight:600}}>{p.nombre}</td>
+                                <td style={{padding:"10px 12px",fontWeight:600}}>
+                                  {p.nombre}
+                                  {esColab&&<div style={{fontSize:10,color:"#7c3aed",fontWeight:700,marginTop:2}}>Colaboración · {socio}</div>}
+                                </td>
                                 <td style={{padding:"10px 12px",color:"#6b7280"}}>{ests(p).length}</td>
                                 <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(esperado)}</td>
                                 <td style={{padding:"10px 12px",color:"#16a34a",fontWeight:600}}>{fmtMXN(cobrado)}</td>
                                 <td style={{padding:"10px 12px",color:RED}}>{fmtMXN(honorarios)}</td>
-                                <td style={{padding:"10px 12px",color:margen>=0?"#7c3aed":"#dc2626",fontWeight:700}}>{fmtMXN(margen)}</td>
+                                <td style={{padding:"10px 12px",color:margen>=0?"#7c3aed":"#dc2626",fontWeight:700}}>
+                                  {fmtMXN(margen)}
+                                  {esColab&&<div style={{fontSize:10,color:"#9ca3af",fontWeight:400,marginTop:2}}>{socio}: {fmtMXN(parteSocio)} ({pct_socio}%)</div>}
+                                </td>
+                                <td style={{padding:"10px 12px",color:parteIbero>=0?"#16a34a":"#dc2626",fontWeight:700}}>
+                                  {fmtMXN(parteIbero)}
+                                  {esColab&&<div style={{fontSize:10,color:"#9ca3af",fontWeight:400,marginTop:2}}>{100-pct_socio}% para IBERO</div>}
+                                </td>
                                 <td style={{padding:"10px 12px"}}>
                                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                                     <div style={{width:60,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:pct>=100?"#16a34a":pct>=50?"#d97706":RED,borderRadius:4}}/></div>
