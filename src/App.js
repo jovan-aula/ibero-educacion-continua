@@ -1171,7 +1171,8 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     const getCF = (customFields, id, fieldKey) => {
       const cf = (customFields||[]).find(f=>f.id===id||f.fieldKey===fieldKey||f.fieldKey==="contact."+fieldKey);
       const val = cf ? cf.value||cf.fieldValue||cf.fieldValueString||"" : "";
-      return typeof val === "string" ? val.trim() : "";
+      if (val === null || val === undefined || val === "") return "";
+      return String(val).trim();
     };
 
     // Extrae la URL del campo CSF (es un objeto anidado con url)
