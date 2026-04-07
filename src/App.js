@@ -197,15 +197,20 @@ const ALL_PERMISOS = [
   {key:"verProgramas",        label:"Ver programas y módulos"},
   {key:"editarProgramas",     label:"Agregar / editar programas"},
   {key:"editarModulos",       label:"Agregar / editar módulos"},
-  {key:"confirmarDocentes",   label:"Confirmar docentes"},
-  {key:"gestionarUsuarios",   label:"Gestionar usuarios"},
-  {key:"configurarNotif",     label:"Configurar notificaciones"},
+  {key:"verPagos",            label:"Ver control de pagos"},
+  {key:"verFacturacion",      label:"Ver facturación"},
+  {key:"verAsistencia",       label:"Ver asistencia"},
+  {key:"verEvaluaciones",     label:"Ver evaluaciones"},
   {key:"verReportes",         label:"Ver reportes / estadísticas"},
   {key:"importarEstudiantes", label:"Importar / sincronizar estudiantes"},
+  {key:"confirmarDocentes",   label:"Confirmar docentes"},
   {key:"gestionarDocentes",   label:"Gestionar catálogo de docentes"},
+  {key:"gestionarUsuarios",   label:"Gestionar usuarios"},
+  {key:"configurarNotif",     label:"Configurar notificaciones"},
 ];
-const ADMIN_P  = Object.fromEntries(ALL_PERMISOS.map(p=>[p.key,true]));
-const VIEWER_P = {verProgramas:true,...Object.fromEntries(ALL_PERMISOS.slice(1).map(p=>[p.key,false]))};
+const ADMIN_P    = Object.fromEntries(ALL_PERMISOS.map(p=>[p.key,true]));
+const VIEWER_P   = {verProgramas:true,verPagos:false,verFacturacion:false,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false};
+const FINANZAS_P = {verProgramas:false,verPagos:true,verFacturacion:true,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false};
 const DEFAULT_USERS = [{nombre:"Administrador",email:"admin@ibero.mx",password:"ibero2026",permisos:ADMIN_P}];
 const ST_STYLE = {
   activo:    {label:"Activo",    bg:"#f0fdf4",color:"#16a34a",border:"#bbf7d0"},
@@ -241,7 +246,7 @@ const fmtFecha = d => {
 };
 const fmtMXN = n => n!=null ? "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
 const newId  = () => Math.random().toString(36).slice(2,9);
-const can    = (s,p) => !!(s && s.permisos && s.permisos[p]);
+const can    = (s,p) => !!(s && (s.rol==="admin" || (s.permisos && s.permisos[p])));
 const today  = () => new Date().toISOString().split("T")[0];
 const mods   = p => (p && p.modulos) || [];
 const ests   = p => (p && p.estudiantes) || [];
@@ -2183,7 +2188,7 @@ export default function App() {
   const [sending,setSending]     = useState(null);
   const [newResp,setNewResp]     = useState({nombre:"",email:""});
   const [users,setUsers]         = useState([]);
-  const [newUser,setNewUser]     = useState({nombre:"",email:"",password:"",permisos:{...VIEWER_P}});
+  const [newUser,setNewUser]     = useState({nombre:"",email:"",password:"",permisos:{...ADMIN_P}});
   const [showUP,setShowUP]       = useState(false);
   const [newFM,setNewFM]         = useState({id:"",label:""});
   const [repExp,setRepExp]           = useState(null);
@@ -2389,13 +2394,25 @@ export default function App() {
       if (ok === false) notify("Error al guardar responsables.", "error");
     }
   };
+  const crearUsuarioAuth = async (email, password) => {
+    try {
+      const r = await fetch(`${SUPA_URL}/auth/v1/signup`, {
+        method: "POST",
+        headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const d = await r.json();
+      if (!r.ok) return { error: d.error_description || d.msg || d.message || "Error al crear usuario" };
+      return { ok: true };
+    } catch(e) { return { error: "Error de conexión" }; }
+  };
+
   const saveUsers = async d => {
     setUsers(d);
     if (d && d.length) {
       const ok = await supa.upsert("usuarios", d.map(u=>({
         id: u.id||u.email.replace(/[^a-z0-9]/gi,"_"),
         nombre: u.nombre||"", email: u.email||"",
-        password_hash: u.password||"",
         rol: u.rol||"auxiliar",
         permisos: u.permisos||{},
         activo: u.activo!==false,
@@ -2955,7 +2972,17 @@ export default function App() {
         <div style={{color:"rgba(255,255,255,0.9)",fontSize:13,fontFamily:"system-ui"}}>Educación Continua</div>
         <div style={{flex:1}}/>
         <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-          {[["lista","Programas"],["hoy","Hoy"],["calendario","Calendario"],["asistencia","Asistencia"],["pagos_global","Pagos"],["docentes","Docentes"],["evaluaciones","Evaluaciones"],["reportes","Reportes"]].map(([v,l])=>(
+          {[
+            ["lista","Programas","verProgramas"],
+            ["hoy","Hoy","verProgramas"],
+            ["calendario","Calendario","verProgramas"],
+            ["asistencia","Asistencia","verAsistencia"],
+            ["pagos_global","Pagos","verPagos"],
+            ["facturacion","Facturación","verFacturacion"],
+            ["docentes","Docentes","gestionarDocentes"],
+            ["evaluaciones","Evaluaciones","verEvaluaciones"],
+            ["reportes","Reportes","verReportes"],
+          ].filter(([,, perm])=>can(session,perm)).map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view===v?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>{l}</button>
           ))}
           <div style={{width:1,height:24,background:"rgba(255,255,255,0.25)",margin:"0 6px"}}/>
@@ -4051,6 +4078,132 @@ export default function App() {
           );
         })()}
 
+        {/* FACTURACIÓN */}
+        {view==="facturacion"&&(()=>{
+          const estudiantesFactura = (programas||[]).flatMap(prog=>
+            ests(prog).filter(e=>e.estatus!=="baja"&&e.requiere_factura==="Sí").map(e=>({e,prog}))
+          );
+
+          const exportCSV = () => {
+            const cols = ["Nombre","Empresa","Programa","RFC","Razón social","Régimen fiscal","CP","Calle","No. Ext","No. Int","Colonia","Ciudad","Estado","Uso CFDI","CSF","Tipo pago","Monto total","Parcialidades pagadas","Parcialidades total"];
+            const rows = estudiantesFactura.map(({e,prog})=>{
+              const p = e.pago||{};
+              const mf = (p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+              const pagadas = (p.parcialidades||[]).filter(x=>x.pagado).length;
+              const total = (p.parcialidades||[]).length;
+              return [e.nombre,e.empresa||"",prog.nombre,e.rfc||"",e.razon_social||"",e.regimen_fiscal||"",e.codigo_postal||"",e.calle||"",e.num_exterior||"",e.num_interior||"",e.colonia||"",e.ciudad||"",e.estado||"",e.uso_cfdi||"",e.csf_url||"",p.tipo||"",mf,pagadas,total].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",");
+            });
+            const csv = [cols.map(c=>'"'+c+'"').join(","),...rows].join("\n");
+            const a = document.createElement("a");
+            a.href = "data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv);
+            a.download = "facturacion_ibero_"+today()+".csv";
+            a.click();
+          };
+
+          return(
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20,flexWrap:"wrap",gap:10}}>
+                <div>
+                  <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Facturación</h1>
+                  <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{estudiantesFactura.length} estudiante{estudiantesFactura.length!==1?"s":""} con factura requerida</p>
+                </div>
+                <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
+              </div>
+
+              {estudiantesFactura.length===0&&(
+                <div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>No hay estudiantes con factura requerida.</div>
+              )}
+
+              <div style={{display:"grid",gap:12}}>
+                {estudiantesFactura.map(({e,prog})=>{
+                  const p = e.pago||{};
+                  const mf = (p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+                  const pagadas = (p.parcialidades||[]).filter(x=>x.pagado).length;
+                  const total = (p.parcialidades||[]).length;
+                  return(
+                    <div key={e.id} style={{...S.card,overflow:"hidden",borderLeft:"4px solid "+prog.color}}>
+                      {/* Encabezado */}
+                      <div style={{padding:"14px 20px",display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",borderBottom:"1px solid #f3f4f6"}}>
+                        <div style={{flex:1,minWidth:200}}>
+                          <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{e.nombre}</div>
+                          {e.empresa&&<div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui"}}>{e.empresa}</div>}
+                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:2}}>{prog.nombre}{prog.generacion?` · ${prog.generacion} gen.`:""}</div>
+                        </div>
+                        {/* Pago rápido */}
+                        {mf>0&&(
+                          <div style={{display:"flex",gap:12,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
+                            <div style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>MONTO</div>
+                              <div style={{fontWeight:800,fontSize:15,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div>
+                            </div>
+                            <div style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>TIPO</div>
+                              <div style={{fontSize:12,fontFamily:"system-ui",fontWeight:600,color:p.tipo==="unico"?"#16a34a":"#2563eb"}}>{p.tipo==="unico"?"Único":"Parcialidades"}</div>
+                            </div>
+                            {p.tipo==="parcialidades"&&total>0&&(
+                              <div style={{textAlign:"center"}}>
+                                <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>PAGADAS</div>
+                                <div style={{fontWeight:700,fontSize:15,fontFamily:"system-ui",color:pagadas===total?"#16a34a":"#d97706"}}>{pagadas}/{total}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                        {/* COL IZQ: Datos fiscales */}
+                        <div style={{padding:"14px 20px",borderRight:"1px solid #f3f4f6"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>DATOS FISCALES</div>
+                          <div style={{display:"grid",gap:4,fontFamily:"system-ui",fontSize:12}}>
+                            {[["RFC",e.rfc],["Razón social",e.razon_social],["Régimen fiscal",e.regimen_fiscal],["Uso CFDI",e.uso_cfdi],["CP",e.codigo_postal],["Calle",e.calle],["No. Ext.",e.num_exterior],["No. Int.",e.num_interior],["Colonia",e.colonia],["Ciudad",e.ciudad],["Estado",e.estado]].filter(([,v])=>v).map(([k,v])=>(
+                              <div key={k}><span style={{color:"#9ca3af"}}>{k}: </span><span style={{fontWeight:500}}>{v}</span></div>
+                            ))}
+                            {e.csf_url
+                              ?<a href={e.csf_url} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:4,fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 9px",color:"#16a34a",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                              :<span style={{fontSize:11,color:"#9ca3af",marginTop:4,display:"block"}}>Sin CSF adjunto</span>
+                            }
+                          </div>
+                        </div>
+
+                        {/* COL DER: Parcialidades */}
+                        <div style={{padding:"14px 20px"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>
+                            {p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}
+                          </div>
+                          {!mf&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>Sin configurar</div>}
+                          {p.tipo==="unico"&&mf>0&&(
+                            <div style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",borderRadius:7,background:pagadas>0?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadas>0?"#bbf7d0":"#fde68a")}}>
+                              <div style={{width:16,height:16,borderRadius:"50%",background:pagadas>0?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:8,fontWeight:700}}>{pagadas>0?"✓":""}</span></div>
+                              <span style={{fontFamily:"system-ui",fontSize:12,fontWeight:600,color:pagadas>0?"#16a34a":"#d97706"}}>{pagadas>0?"Cubierto":"Pendiente"} — {fmtMXN(mf)}</span>
+                            </div>
+                          )}
+                          {p.tipo==="parcialidades"&&(
+                            <div style={{display:"grid",gap:3}}>
+                              {(p.parcialidades||[]).map((parc)=>{
+                                const venc=!parc.pagado&&parc.fecha_vencimiento&&parc.fecha_vencimiento<today();
+                                return(
+                                  <div key={parc.id} style={{display:"flex",gap:8,alignItems:"center",padding:"5px 8px",borderRadius:5,background:parc.pagado?"#f0fdf4":venc?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":venc?"#fca5a5":"#f3f4f6")}}>
+                                    <div style={{width:14,height:14,borderRadius:"50%",background:parc.pagado?"#16a34a":venc?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:7,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
+                                    <span style={{fontFamily:"system-ui",fontSize:11,flex:1,color:parc.pagado?"#16a34a":venc?"#dc2626":"#374151",fontWeight:600}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
+                                    <div style={{textAlign:"right"}}>
+                                      <div style={{fontSize:10,fontWeight:700,color:parc.pagado?"#16a34a":venc?"#dc2626":"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado?"Pagado":venc?"Vencido":"Pendiente"}</div>
+                                      <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* EVALUACIONES */}
         {view==="evaluaciones"&&(()=>{
           // estados al nivel del App: evalTab, filtroDocEval, filtroProgEval
@@ -4884,8 +5037,9 @@ export default function App() {
                   <div style={{marginBottom:14}}>
                     <label style={S.lbl}>Permisos</label>
                     <div style={{display:"flex",gap:8,marginBottom:8}}>
-                      <button onClick={()=>setNewUser({...newUser,permisos:{...VIEWER_P}})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Solo lectura</button>
                       <button onClick={()=>setNewUser({...newUser,permisos:{...ADMIN_P}})} style={S.btn("#fef2f2",RED,{padding:"5px 12px",fontSize:12})}>Administrador</button>
+                      <button onClick={()=>setNewUser({...newUser,permisos:{...FINANZAS_P}})} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>Finanzas</button>
+                      <button onClick={()=>setNewUser({...newUser,permisos:{...VIEWER_P}})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Solo lectura</button>
                     </div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                       {ALL_PERMISOS.map(p=>(
@@ -4895,7 +5049,16 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  <button onClick={()=>{if(!newUser.nombre||!newUser.email||!newUser.password){notify("Completa todos los campos","error");return;}saveUsers([...(users||[]),{...newUser}]);setNewUser({nombre:"",email:"",password:"",permisos:{...VIEWER_P}});notify("Usuario agregado");}} style={S.btn(RED,"#fff")}>Agregar usuario</button>
+                  <button onClick={async()=>{
+                    if(!newUser.nombre||!newUser.email||!newUser.password){notify("Completa nombre, correo y contraseña","error");return;}
+                    if(newUser.password.length<6){notify("La contraseña debe tener mínimo 6 caracteres","error");return;}
+                    notify("Creando usuario...");
+                    const auth = await crearUsuarioAuth(newUser.email.toLowerCase(), newUser.password);
+                    if(auth.error){notify("Error: "+auth.error,"error");return;}
+                    await saveUsers([...(users||[]),{...newUser,email:newUser.email.toLowerCase()}]);
+                    setNewUser({nombre:"",email:"",password:"",permisos:{...VIEWER_P}});
+                    notify("Usuario creado. Ya puede iniciar sesión.");
+                  }} style={S.btn(RED,"#fff")}>Agregar usuario</button>
                 </div>
               </div>
             )}
