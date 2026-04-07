@@ -966,7 +966,8 @@ function PagoModal({est,prog,onSave,onClose}) {
       const totalAcordado = base.tipo==="parcialidades" ? montoGHL*numParcs : montoGHL;
       if(totalAcordado>0 && totalAcordado<=precioL){
         const descAuto=Math.round((1-totalAcordado/precioL)*100);
-        return {...base, monto_acordado:precioL, descuento_pct:descAuto};
+        const matchPromo=(prog.promociones||[]).find(pr=>pr.descuento===descAuto);
+        return {...base, monto_acordado:precioL, descuento_pct:descAuto, promocion_id:matchPromo?matchPromo.id:base.promocion_id||""};
       }
     }
     return base;
@@ -6573,7 +6574,7 @@ export default function App() {
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
                   <div>
                     <label style={S.lbl}>Precio lista (MXN)</label>
-                    <input type="number" min="0" value={progForm.precioLista||""} onChange={e=>setProgForm({...progForm,precioLista:parseFloat(e.target.value)||0})} placeholder="0" style={S.inp}/>
+                    <input type="number" min="0" step="1" value={progForm.precioLista||""} onChange={e=>setProgForm({...progForm,precioLista:Math.round(parseFloat(e.target.value)||0)})} placeholder="0" style={S.inp}/>
                   </div>
                   <div>
                     <label style={S.lbl}>Parcialidades default</label>
