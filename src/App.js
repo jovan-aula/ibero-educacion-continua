@@ -2232,7 +2232,19 @@ function HonorariosView({programas,docentes,onToggle,session}) {
   const [busq,setBusq]=useState("");
   const [ordenModal,setOrdenModal]=useState(null);
   const [generando,setGenerando]=useState(null);
-  const [solicitudCfg,setSolicitudCfg]=useState(null); // modal de config solicitud mensual
+  const [solicitudCfg,setSolicitudCfg]=useState(null);
+  const [honTab,setHonTab]=useState("honorarios"); // "honorarios" | "ordenes"
+  const [listaOrdenes,setListaOrdenes]=useState([]);
+  const [cargandoOrd,setCargandoOrd]=useState(false);
+
+  useEffect(()=>{
+    if(honTab!=="ordenes")return;
+    setCargandoOrd(true);
+    supa.get("ordenes_pago","?order=created_at.desc&limit=50")
+      .then(data=>setListaOrdenes(data||[]))
+      .catch(()=>setListaOrdenes([]))
+      .finally(()=>setCargandoOrd(false));
+  },[honTab]);
 
   const abrirSolicitud=()=>setSolicitudCfg({
     solicitante:session?.nombre||PERSONAS_DEFAULT[0],
@@ -2398,13 +2410,25 @@ function HonorariosView({programas,docentes,onToggle,session}) {
           <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Honorarios Docentes</h1>
           <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Facturación y pagos a docentes · recordatorio antes del día 20</p>
         </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <button onClick={abrirSolicitud} disabled={!filtrados.length} style={S.btn(RED,"#fff",{opacity:filtrados.length?1:0.5})}>Generar solicitud mensual</button>
-          <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Correo</button>
-          <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar CSV</button>
-        </div>
+        {honTab==="honorarios"&&(
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={abrirSolicitud} disabled={!filtrados.length} style={S.btn(RED,"#fff",{opacity:filtrados.length?1:0.5})}>Generar solicitud mensual</button>
+            <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Correo</button>
+            <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar CSV</button>
+          </div>
+        )}
       </div>
 
+      {/* Pestañas */}
+      <div style={{display:"flex",...S.card,overflow:"hidden",marginBottom:20}}>
+        {[["honorarios","Honorarios"],["ordenes","Órdenes de pago"]].map(([t,l])=>(
+          <button key={t} onClick={()=>setHonTab(t)} style={{flex:1,padding:"12px 16px",border:"none",borderBottom:honTab===t?"3px solid "+RED:"3px solid transparent",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:FONT_BODY,background:"#fff",color:honTab===t?RED:"#6b7280"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {honTab==="honorarios"&&(<>
       {/* Selector de mes */}
       <div style={{display:"flex",gap:6,marginBottom:20,overflowX:"auto",paddingBottom:4}}>
         {mesOpts.map(m=>{
@@ -2483,6 +2507,76 @@ function HonorariosView({programas,docentes,onToggle,session}) {
               </tfoot>
             </table>
           </div>
+        </div>
+      )}
+      </>)}
+
+      {honTab==="ordenes"&&(
+        <div>
+          {cargandoOrd?(
+            <div style={{...S.card,padding:48,textAlign:"center",color:"#9CA3AF",fontFamily:FONT_BODY}}>Cargando órdenes…</div>
+          ):listaOrdenes.length===0?(
+            <div style={{...S.card,padding:48,textAlign:"center",color:"#9CA3AF",fontFamily:FONT_BODY}}>
+              <div style={{fontSize:32,marginBottom:12}}>📋</div>
+              <div style={{fontWeight:600,marginBottom:6}}>Sin órdenes generadas</div>
+              <div style={{fontSize:13}}>Genera una orden desde la pestaña de Honorarios.</div>
+            </div>
+          ):(
+            <div style={{...S.card,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
+                  <thead>
+                    <tr style={{background:"#FAFAFA"}}>
+                      {["Tipo / Mes","Docente o Solicitud","Total","Estado","Fecha","Acciones"].map(h=>(
+                        <th key={h} style={thStyle}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listaOrdenes.map((o,i)=>{
+                      const d=o.datos||{};
+                      const esMens=d.tipo==="mensual";
+                      const firmas=(o.firma_solicitante?1:0)+(o.firma_responsable?1:0);
+                      const estLabel=o.estatus==="firmada"?"Firmada":firmas===1?"1 de 2 firmas":"Pendiente";
+                      const estColor=o.estatus==="firmada"?"#16a34a":firmas===1?"#d97706":"#9CA3AF";
+                      const estBg=o.estatus==="firmada"?"#F0FDF4":firmas===1?"#FFFBEB":"#F9FAFB";
+                      const url=window.location.href.split("?")[0]+"?orden="+o.id;
+                      const fechaStr=o.created_at?new Date(o.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"}):"—";
+                      return(
+                        <tr key={o.id} style={{background:i%2===0?"#fff":"#FAFAFA"}}>
+                          <td style={tdStyle}>
+                            <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,background:esMens?"#FFF5F5":"#EFF6FF",color:esMens?RED:"#2563EB"}}>
+                              {esMens?"Solicitud mensual":"Orden individual"}
+                            </span>
+                            {esMens&&d.mes&&<div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>{["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][parseInt(d.mes.split("-")[1])-1]} {d.mes.split("-")[0]}</div>}
+                          </td>
+                          <td style={tdStyle}>
+                            <div style={{fontWeight:600,color:"#111",fontSize:13}}>{esMens?(d.solicitante||"Solicitud mensual"):d.docente}</div>
+                            {!esMens&&<div style={{fontSize:11,color:"#6B7280",marginTop:2}}>{d.modulo}</div>}
+                            {esMens&&<div style={{fontSize:11,color:"#6B7280",marginTop:2}}>{(d.filas||[]).length} docente{(d.filas||[]).length!==1?"s":""}</div>}
+                          </td>
+                          <td style={{...tdStyle,textAlign:"right"}}>
+                            <span style={{fontWeight:700,color:RED,fontSize:14}}>{fmtMXN(esMens?d.totalGeneral:d.total)}</span>
+                            {esMens&&d.totalIVA>0&&<div style={{fontSize:11,color:"#9CA3AF",marginTop:2}}>IVA {fmtMXN(d.totalIVA)}</div>}
+                          </td>
+                          <td style={{...tdStyle,textAlign:"center"}}>
+                            <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,background:estBg,color:estColor}}>{estLabel}</span>
+                          </td>
+                          <td style={{...tdStyle,fontSize:12,color:"#6B7280",whiteSpace:"nowrap"}}>{fechaStr}</td>
+                          <td style={{...tdStyle,textAlign:"center"}}>
+                            <button onClick={()=>window.open(url,"_blank")}
+                              style={{fontSize:11,padding:"5px 12px",border:"1px solid #BFDBFE",borderRadius:6,background:"#EFF6FF",color:"#2563EB",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap"}}>
+                              {o.estatus==="firmada"?"Descargar PDF":"Abrir orden"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2629,7 +2723,7 @@ function OrdenPago() {
               <table style={{width:"100%",borderCollapse:"collapse",minWidth:620}}>
                 <thead>
                   <tr style={{background:"#FAFAFA"}}>
-                    {["#","Nombre del profesor","Diplomado","Módulo","Cat.","Inicio","Fin","Horas","Importe bruto","Total + IVA"].map((h,i)=>(
+                    {["#","Nombre del profesor","Diplomado","Módulo","Cat.","Inicio","Fin","Horas","Importe bruto","IVA $","Total + IVA"].map((h,i)=>(
                       <th key={h} style={{padding:"8px 10px",fontSize:10,fontWeight:700,color:"#6B7280",textAlign:i>=7?"right":i===0||i===4?"center":"left",borderBottom:"2px solid #E5E7EB",fontFamily:FONT_BODY,whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
@@ -2646,6 +2740,7 @@ function OrdenPago() {
                       <td style={{padding:"9px 10px",fontSize:11,color:"#6B7280",textAlign:"right",whiteSpace:"nowrap",borderBottom:"1px solid #F3F4F6",fontFamily:FONT_BODY}}>{fF(r.fechaFin)}</td>
                       <td style={{padding:"9px 10px",fontSize:12,fontWeight:700,textAlign:"right",borderBottom:"1px solid #F3F4F6",fontFamily:FONT_BODY}}>{r.horas}h</td>
                       <td style={{padding:"9px 10px",fontSize:12,textAlign:"right",color:"#374151",borderBottom:"1px solid #F3F4F6",fontFamily:FONT_BODY}}>{fM(r.subtotal)}</td>
+                      <td style={{padding:"9px 10px",fontSize:12,textAlign:"right",color:"#6B7280",borderBottom:"1px solid #F3F4F6",fontFamily:FONT_BODY}}>{fM(r.ivaMonto)}</td>
                       <td style={{padding:"9px 10px",fontSize:13,fontWeight:700,textAlign:"right",color:RED,borderBottom:"1px solid #F3F4F6",fontFamily:FONT_BODY}}>{fM(r.total)}</td>
                     </tr>
                   ))}
@@ -2654,6 +2749,7 @@ function OrdenPago() {
                   <tr style={{background:"#F7F7F8",borderTop:"2px solid #E5E7EB"}}>
                     <td colSpan={8} style={{padding:"10px",fontWeight:700,fontSize:12,fontFamily:FONT_BODY,color:"#374151"}}>Total</td>
                     <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontSize:13,fontFamily:FONT_BODY}}>{fM(d.totalSubtotal)}</td>
+                    <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontSize:13,color:"#6B7280",fontFamily:FONT_BODY}}>{fM(d.totalIVA)}</td>
                     <td style={{padding:"10px",textAlign:"right",fontWeight:800,fontSize:15,color:RED,fontFamily:FONT_BODY}}>{fM(d.totalGeneral)}</td>
                   </tr>
                 </tfoot>
@@ -2770,7 +2866,7 @@ export default function App() {
   const alertRef = useRef(null);
 
   const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:4,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,promociones:PROMOCIONES_DEFAULT.map(p=>({...p,id:p.id+"_"+newId()}))};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,promociones:PROMOCIONES_DEFAULT.map(p=>({...p,id:p.id+"_"+newId()})),colaboracion:false,socio:"",pct_socio:0};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -3954,6 +4050,7 @@ export default function App() {
                         <span style={{fontWeight:700,fontSize:16}}>{p.nombre}</span>
                         <span style={{background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>{p.tipo.toUpperCase()}</span>
                         <StatusBadge p={p}/>
+                        {p.colaboracion&&<span style={{background:"#f5f3ff",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#7c3aed",fontFamily:"system-ui",fontWeight:700}}>Colaboración · {p.socio}</span>}
                       </div>
                       <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>
                         {inicio&&<span>{fmtFecha(inicio)} — {fmtFecha(fin)}</span>}
@@ -4278,13 +4375,35 @@ export default function App() {
                     </div>
                   )}
                   {/* Margen neto */}
-                  <div style={{...S.card,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div>
-                      <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:2}}>MARGEN NETO ESTIMADO</div>
-                      <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Ingresos esperados menos honorarios de docentes</div>
-                    </div>
-                    <div style={{fontSize:28,fontWeight:800,color:(totalEsperado-honorarios)>=0?"#7c3aed":"#dc2626",fontFamily:"Georgia,serif"}}>{fmtMXN(totalEsperado-honorarios)}</div>
-                  </div>
+                  {(()=>{
+                    const utilidad=totalEsperado-honorarios;
+                    const esColab=prog.colaboracion&&prog.pct_socio>0;
+                    const parteSocio=esColab?Math.round(utilidad*prog.pct_socio/100):0;
+                    const parteIbero=utilidad-parteSocio;
+                    return(
+                      <div style={{...S.card,padding:"16px 18px",marginBottom:16,borderLeft:esColab?"4px solid #7c3aed":"none"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:esColab?12:0}}>
+                          <div>
+                            <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:2}}>MARGEN NETO ESTIMADO</div>
+                            <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Ingresos esperados menos honorarios de docentes{esColab?" · Programa en colaboración":""}</div>
+                          </div>
+                          <div style={{fontSize:28,fontWeight:800,color:utilidad>=0?"#7c3aed":"#dc2626",fontFamily:"Georgia,serif"}}>{fmtMXN(utilidad)}</div>
+                        </div>
+                        {esColab&&(
+                          <div style={{borderTop:"1px solid #e5e7eb",paddingTop:12,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                            <div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#16a34a",fontFamily:"system-ui",marginBottom:3}}>IBERO — {100-prog.pct_socio}%</div>
+                              <div style={{fontSize:18,fontWeight:800,color:"#16a34a",fontFamily:"system-ui"}}>{fmtMXN(parteIbero)}</div>
+                            </div>
+                            <div style={{background:"#f5f3ff",borderRadius:8,padding:"10px 14px"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#7c3aed",fontFamily:"system-ui",marginBottom:3}}>{prog.socio||"Socio"} — {prog.pct_socio}%</div>
+                              <div style={{fontSize:18,fontWeight:800,color:"#7c3aed",fontFamily:"system-ui"}}>{fmtMXN(parteSocio)}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* Link a Control de Pagos */}
                   <div style={{...S.card,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f9f9f9"}}>
                     <span style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>Para ver parcialidades, enviar correos y gestionar pagos individuales:</span>
@@ -6286,6 +6405,41 @@ export default function App() {
                   <button onClick={()=>setProgForm({...progForm,promociones:[...(progForm.promociones||[]),{id:newId(),nombre:"",descuento:0,editable:true}]})}
                     style={{...S.btn("#f3f4f6","#374151",{fontSize:12})}}>+ Agregar promoción especial</button>
                 </div>
+              </div>
+
+              {/* COLABORACIÓN */}
+              <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:18}}>
+                <div style={{fontWeight:700,fontSize:11,color:"#7c3aed",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:14}}>COLABORACIÓN INSTITUCIONAL</div>
+                <button onClick={()=>setProgForm({...progForm,colaboracion:!progForm.colaboracion,socio:!progForm.colaboracion?progForm.socio:"",pct_socio:!progForm.colaboracion?progForm.pct_socio:0})}
+                  style={{width:"100%",padding:"12px 16px",border:"2px solid "+(progForm.colaboracion?"#7c3aed":"#e5e7eb"),borderRadius:10,cursor:"pointer",background:progForm.colaboracion?"#f5f3ff":"#fff",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:progForm.colaboracion?12:0}}>
+                  <div style={{textAlign:"left"}}>
+                    <div style={{fontWeight:700,fontSize:13,color:progForm.colaboracion?"#7c3aed":"#374151"}}>Programa en colaboración</div>
+                    <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Las utilidades se dividen con una institución socia</div>
+                  </div>
+                  <div style={{width:40,height:22,borderRadius:11,background:progForm.colaboracion?"#7c3aed":"#d1d5db",position:"relative",transition:"background 0.2s",flexShrink:0}}>
+                    <div style={{position:"absolute",top:2,left:progForm.colaboracion?20:2,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+                  </div>
+                </button>
+                {progForm.colaboracion&&(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"end"}}>
+                    <div>
+                      <label style={S.lbl}>Nombre del socio / institución</label>
+                      <input value={progForm.socio||""} onChange={e=>setProgForm({...progForm,socio:e.target.value})} placeholder="Ej: CETYS Universidad" style={S.inp}/>
+                    </div>
+                    <div style={{width:110}}>
+                      <label style={S.lbl}>% que le corresponde</label>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <input type="number" min="1" max="99" value={progForm.pct_socio||""} onChange={e=>setProgForm({...progForm,pct_socio:Math.min(99,Math.max(1,parseInt(e.target.value)||0))})} placeholder="0" style={{...S.inp,textAlign:"center"}}/>
+                        <span style={{fontFamily:"system-ui",fontSize:14,color:"#6b7280",flexShrink:0}}>%</span>
+                      </div>
+                    </div>
+                    {progForm.pct_socio>0&&(
+                      <div style={{gridColumn:"1/-1",background:"#f5f3ff",borderRadius:8,padding:"10px 14px",fontSize:12,fontFamily:"system-ui",color:"#7c3aed",fontWeight:600}}>
+                        IBERO: {100-progForm.pct_socio}% de las utilidades · {progForm.socio||"Socio"}: {progForm.pct_socio}%
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
