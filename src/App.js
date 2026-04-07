@@ -2182,6 +2182,7 @@ export default function App() {
     try{return JSON.parse(localStorage.getItem("ibero_alertas_desc")||"[]");}catch(e){return[];}
   });
   const [pagoModal,setPagoModal] = useState(null); // {est, prog}
+  const [folioModal,setFolioModal] = useState(null); // {onConfirm, onSkip}
   const [notif,setNotif]         = useState(null);
   const [confirmSimple,setCS]    = useState(null); // {titulo,mensaje,onConfirm}
   const [confirmEscrita,setCE]   = useState(null); // {titulo,subtitulo,mensaje,onConfirm}
@@ -2200,6 +2201,7 @@ export default function App() {
   const [progPagos,setProgPagos]     = useState("");
   const [filtroPagos,setFiltroPagos] = useState("");
   const [filtroFactProg,setFiltroFactProg] = useState("");
+  const [busqFacturacion,setBusqFacturacion] = useState("");
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [evalTab,setEvalTab]           = useState("modulos");
@@ -3997,10 +3999,16 @@ export default function App() {
                                           const toggleUnico=e=>{
                                             e.stopPropagation();
                                             if(esInactivo)return;
-                                            const newParcs=(p.parcialidades||[]).length>0
-                                              ?(p.parcialidades||[]).map(x=>({...x,pagado:!pagadoUnico,fecha_pago:!pagadoUnico?today():null}))
-                                              :[{id:est.id+"_p1",numero:1,pagado:!pagadoUnico,fecha_pago:!pagadoUnico?today():null}];
-                                            savePago(prog.id,est.id,{...p,parcialidades:newParcs});
+                                            const marcando=!pagadoUnico;
+                                            const aplicar=(folio="")=>{
+                                              const newParcs=(p.parcialidades||[]).length>0
+                                                ?(p.parcialidades||[]).map(x=>({...x,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}))
+                                                :[{id:est.id+"_p1",numero:1,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}];
+                                              savePago(prog.id,est.id,{...p,parcialidades:newParcs});
+                                            };
+                                            if(marcando&&est.requiere_factura==="Sí"){
+                                              setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("")});
+                                            } else { aplicar(""); }
                                           };
                                           return(
                                             <div onClick={toggleUnico} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:pagadoUnico?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadoUnico?"#bbf7d0":"#fde68a"),transition:"all .15s"}}>
@@ -4021,8 +4029,14 @@ export default function App() {
                                               const toggleParc=e=>{
                                                 e.stopPropagation();
                                                 if(esInactivo)return;
-                                                const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,pagado:!x.pagado,fecha_pago:!x.pagado?today():null}:x);
-                                                savePago(prog.id,est.id,{...p,parcialidades:newParcs});
+                                                const marcando=!parc.pagado;
+                                                const aplicar=(folio="")=>{
+                                                  const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}:x);
+                                                  savePago(prog.id,est.id,{...p,parcialidades:newParcs});
+                                                };
+                                                if(marcando&&est.requiere_factura==="Sí"){
+                                                  setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("")});
+                                                } else { aplicar(""); }
                                               };
                                               return(
                                                 <div key={parc.id} onClick={toggleParc} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 10px",borderRadius:7,cursor:esInactivo?"default":"pointer",background:parc.pagado?"#f0fdf4":vencido?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":vencido?"#fca5a5":"#f3f4f6"),transition:"all .15s"}}>
@@ -4033,6 +4047,7 @@ export default function App() {
                                                   <div style={{textAlign:"right"}}>
                                                     <div style={{fontSize:10,fontWeight:700,color:parc.pagado?"#16a34a":vencido?"#dc2626":"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado?"Pagado":vencido?"Vencido":"Pendiente"}</div>
                                                     <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?"vence "+fmtFecha(parc.fecha_vencimiento):""}</div>
+                                                    {parc.pagado&&est.requiere_factura==="Sí"&&<div style={{fontSize:9,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706",fontWeight:700}}>{parc.folio?parc.folio:"Folio pendiente"}</div>}
                                                   </div>
                                                 </div>
                                               );
@@ -4084,7 +4099,15 @@ export default function App() {
           const todos = (programas||[]).flatMap(prog=>
             ests(prog).filter(e=>e.estatus!=="baja"&&e.requiere_factura==="Sí").map(e=>({e,prog}))
           );
-          const lista = filtroFactProg ? todos.filter(({prog})=>prog.id===filtroFactProg) : todos;
+          const lista = todos.filter(({e,prog})=>{
+            if(filtroFactProg&&prog.id!==filtroFactProg)return false;
+            if(busqFacturacion){
+              const q=busqFacturacion.toLowerCase();
+              const tieneFolio=(e.pago?.parcialidades||[]).some(parc=>parc.folio?.toLowerCase().includes(q));
+              return e.nombre?.toLowerCase().includes(q)||e.email?.toLowerCase().includes(q)||e.telefono?.toLowerCase().includes(q)||tieneFolio;
+            }
+            return true;
+          });
 
           const exportCSV = () => {
             const cols = ["Nombre","Teléfono","Correo","Empresa","Programa","RFC","Razón social","Régimen fiscal","CP","Calle","No. Ext","No. Int","Colonia","Ciudad","Estado","Uso CFDI","CSF","Tipo pago","Monto","Parcialidades pagadas","Total parcialidades"];
@@ -4106,12 +4129,13 @@ export default function App() {
                   <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Facturación</h1>
                   <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{lista.length} estudiante{lista.length!==1?"s":""} con factura requerida</p>
                 </div>
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, correo, teléfono, folio..." style={{...S.inp,minWidth:240,fontSize:13}}/>
                   <select value={filtroFactProg} onChange={e=>setFiltroFactProg(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                     <option value="">Todos los programas</option>
                     {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
                   </select>
-                  {filtroFactProg&&<button onClick={()=>setFiltroFactProg("")} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
+                  {(filtroFactProg||busqFacturacion)&&<button onClick={()=>{setFiltroFactProg("");setBusqFacturacion("");}} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
                   <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
                 </div>
               </div>
@@ -4175,7 +4199,10 @@ export default function App() {
                                   <div key={parc.id} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 7px",borderRadius:5,background:parc.pagado?"#f0fdf4":venc?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":venc?"#fca5a5":"#f3f4f6")}}>
                                     <div style={{width:12,height:12,borderRadius:"50%",background:parc.pagado?"#16a34a":venc?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:6,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
                                     <span style={{fontFamily:"system-ui",fontSize:10,flex:1,fontWeight:600,color:parc.pagado?"#16a34a":venc?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
-                                    <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</span>
+                                    <div style={{textAlign:"right"}}>
+                                      <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",display:"block"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</span>
+                                      {parc.pagado&&<span style={{fontSize:9,fontWeight:700,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706"}}>{parc.folio||"Folio pendiente"}</span>}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -5106,6 +5133,19 @@ export default function App() {
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
       {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
+      {folioModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{folioModal.onSkip();setFolioModal(null);}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,padding:28,width:360,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:"system-ui"}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>Ingresar folio de factura</div>
+            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 16px"}}>Este pago requiere factura. Ingresa el folio para registrarlo.</p>
+            <input id="folio-input" autoFocus placeholder="Ej. F-001, A-2024-15..." style={{...S.inp,marginBottom:16,fontSize:14}} defaultValue=""/>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>{folioModal.onSkip();setFolioModal(null);}} style={S.btn("#f3f4f6","#6b7280",{padding:"8px 16px"})}>Omitir por ahora</button>
+              <button onClick={()=>{const v=document.getElementById("folio-input").value.trim();folioModal.onConfirm(v||"");setFolioModal(null);}} style={S.btn(RED,"#fff",{padding:"8px 20px",fontWeight:700})}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
       {npsModal&&<NPSModal prog={npsModal.prog} mod={npsModal.mod} onSave={resp=>saveNPS(npsModal.prog.id,npsModal.mod.id,npsModal.mod.docenteId||"",npsModal.mod.docente||"",resp)} onClose={()=>setNpsModal(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
