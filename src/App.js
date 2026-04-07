@@ -76,6 +76,10 @@ const syncToSupabase = async (programas) => {
     requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
     fuente: e.fuente||"", programa_interes: e.programa_interes||"",
     forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+    razon_social: e.razon_social||"", rfc: e.rfc||"", regimen_fiscal: e.regimen_fiscal||"",
+    codigo_postal: e.codigo_postal||"", calle: e.calle||"", num_exterior: e.num_exterior||"",
+    num_interior: e.num_interior||"", colonia: e.colonia||"", ciudad: e.ciudad||"",
+    estado: e.estado||"", uso_cfdi: e.uso_cfdi||"",
     estatus: e.estatus||"activo", asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
   })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
@@ -864,6 +868,23 @@ function EditEstModal({est,prog,onSave,onClose}) {
             <label style={S.lbl}>URL del CSF</label>
             <input value={form.csf_url||""} onChange={e=>setForm({...form,csf_url:e.target.value})} placeholder="https://..." style={S.inp}/>
           </div>
+          {/* Datos de facturación */}
+          <div style={{borderTop:"1px solid #e5e7eb",paddingTop:16,marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:13,fontFamily:"Georgia,serif",marginBottom:12,color:"#374151"}}>Datos de facturación</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>Razón social</label><input value={form.razon_social||""} onChange={e=>setForm({...form,razon_social:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>RFC</label><input value={form.rfc||""} onChange={e=>setForm({...form,rfc:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>Régimen fiscal</label><input value={form.regimen_fiscal||""} onChange={e=>setForm({...form,regimen_fiscal:e.target.value})} style={S.inp}/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>Uso del CFDI</label><input value={form.uso_cfdi||""} onChange={e=>setForm({...form,uso_cfdi:e.target.value})} style={S.inp}/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>Calle</label><input value={form.calle||""} onChange={e=>setForm({...form,calle:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>No. Exterior</label><input value={form.num_exterior||""} onChange={e=>setForm({...form,num_exterior:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>No. Interior</label><input value={form.num_interior||""} onChange={e=>setForm({...form,num_interior:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>Colonia</label><input value={form.colonia||""} onChange={e=>setForm({...form,colonia:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>Código postal</label><input value={form.codigo_postal||""} onChange={e=>setForm({...form,codigo_postal:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>Ciudad</label><input value={form.ciudad||""} onChange={e=>setForm({...form,ciudad:e.target.value})} style={S.inp}/></div>
+              <div><label style={S.lbl}>Estado</label><input value={form.estado||""} onChange={e=>setForm({...form,estado:e.target.value})} style={S.inp}/></div>
+            </div>
+          </div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button onClick={onClose} style={S.btn("#f3f4f6","#374151")}>Cancelar</button><button onClick={guardar} style={S.btn(RED,"#fff")}>Guardar</button></div>
         </div>
       </div>
@@ -1231,6 +1252,18 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura"),
         forma_pago_crm:   formaPago,
         csf_url:          getCSFUrl(cf),
+        // Datos de facturación
+        razon_social:     getCF(cf,"B6l0MNkKieWhjPDz2gMh",""),
+        rfc:              getCF(cf,"hEKbt51uzqPB8ez9ki2A",""),
+        regimen_fiscal:   getCF(cf,"oAiywzoDXOWIxMxEds9U",""),
+        codigo_postal:    getCF(cf,"e701ZWcGAglx6e3a6SxM",""),
+        calle:            getCF(cf,"o423Wvz3JjA75uoRsaVP",""),
+        num_exterior:     getCF(cf,"WZYcsv0nXVzSCnLW3Gnm",""),
+        num_interior:     getCF(cf,"Wkyep2V8nyZgSBOVHleN",""),
+        colonia:          getCF(cf,"iiZZIDhmphq0yi2coay8",""),
+        ciudad:           getCF(cf,"LfGaSXNIdKDaUeOMQYeT",""),
+        estado:           getCF(cf,"Pno7iCF7nVNCVnIxqO3z",""),
+        uso_cfdi:         getCF(cf,"eocaFnqmQ4qHD60KYjry",""),
         estatus:          "activo",
         asistencia:       {},
         campos_extra:     {},
@@ -2285,6 +2318,10 @@ export default function App() {
                 requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
                 fuente: e.fuente||"", programa_interes: e.programa_interes||"",
                 forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+                razon_social: e.razon_social||"", rfc: e.rfc||"", regimen_fiscal: e.regimen_fiscal||"",
+                codigo_postal: e.codigo_postal||"", calle: e.calle||"", num_exterior: e.num_exterior||"",
+                num_interior: e.num_interior||"", colonia: e.colonia||"", ciudad: e.ciudad||"",
+                estado: e.estado||"", uso_cfdi: e.uso_cfdi||"",
                 estatus: e.estatus||"activo",
                 asistencia: Object.keys(asistencia).length>0 ? asistencia : (e.asistencia||{}),
                 campos_extra: e.campos_extra||{},
