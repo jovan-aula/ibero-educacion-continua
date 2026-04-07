@@ -58,6 +58,9 @@ const syncToSupabase = async (programas) => {
     id: p.id, nombre: p.nombre, tipo: p.tipo||"", modalidad: p.modalidad||"",
     generacion: p.generacion||"", color: p.color||"", descripcion: p.descripcion||"",
     parcialidades_default: p.parcialidadesDefault||5, estatus: p.estatus||"activo",
+    colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
+    precio_lista: p.precioLista||0, tipo_custom: p.tipoCustom||"",
+    promociones: p.promociones||[],
   }));
   const okProgs = await supa.upsert("programas", progs);
   if(!okProgs) throw new Error("Error al guardar programas");
@@ -2963,7 +2966,7 @@ export default function App() {
           supa.get("programas",   "?order=created_at"),
           supa.get("modulos",     "?order=created_at"),
           supa.get("estudiantes", "?order=created_at"),
-          supa.get("pagos",       "?order=created_at"),
+          supa.get("pagos",       "?order=id"),
           supa.get("asistencia",  "?order=fecha"),
         ]);
 
@@ -2974,6 +2977,9 @@ export default function App() {
             descripcion: p.descripcion||"",
             parcialidadesDefault: p.parcialidades_default||5,
             estatus: p.estatus||"activo",
+            colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
+            precioLista: p.precio_lista||0, tipoCustom: p.tipo_custom||"",
+            promociones: p.promociones||[],
             modulos: (supaModulos||[]).filter(m=>m.programa_id===p.id).map(m=>({
               id: m.id, numero: m.numero||"", nombre: m.nombre||"",
               docenteId: m.docente_id||"", docente: m.docente||"",
@@ -2981,6 +2987,7 @@ export default function App() {
               horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
               fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
               dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
+              factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false,
             })),
             estudiantes: (supaEsts||[]).filter(e=>e.programa_id===p.id).map(e=>{
               const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
@@ -3007,9 +3014,12 @@ export default function App() {
                 asistencia: Object.keys(asistencia).length>0 ? asistencia : (e.asistencia||{}),
                 campos_extra: e.campos_extra||{},
                 pago: pago ? {
-                  tipo: pago.tipo, monto_acordado: pago.monto_acordado,
-                  descuento_pct: pago.descuento_pct, promocion_id: pago.promocion_id||"",
-                  parcialidades: pago.parcialidades||[], notas: pago.notas||"",
+                  tipo: pago.tipo||"parcialidades",
+                  monto_acordado: Number(pago.monto_acordado)||0,
+                  descuento_pct: Number(pago.descuento_pct)||0,
+                  promocion_id: pago.promocion_id||"",
+                  parcialidades: Array.isArray(pago.parcialidades) ? pago.parcialidades : (typeof pago.parcialidades==="string" ? JSON.parse(pago.parcialidades||"[]") : []),
+                  notas: pago.notas||"",
                 } : { tipo:"parcialidades", monto_acordado:0, descuento_pct:0, promocion_id:"", parcialidades:[], notas:"" },
               };
             }),
@@ -6438,7 +6448,7 @@ export default function App() {
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"end"}}>
                     <div>
                       <label style={S.lbl}>Nombre del socio / institución</label>
-                      <input value={progForm.socio||""} onChange={e=>setProgForm({...progForm,socio:e.target.value})} placeholder="Ej: CETYS Universidad" style={S.inp}/>
+                      <input value={progForm.socio||""} onChange={e=>setProgForm({...progForm,socio:e.target.value})} placeholder="Nombre del asociado" style={S.inp}/>
                     </div>
                     <div style={{width:110}}>
                       <label style={S.lbl}>% que le corresponde</label>
