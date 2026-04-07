@@ -2199,6 +2199,7 @@ export default function App() {
   const [busqPagos,setBusqPagos]     = useState("");
   const [progPagos,setProgPagos]     = useState("");
   const [filtroPagos,setFiltroPagos] = useState("");
+  const [filtroFactProg,setFiltroFactProg] = useState("");
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [evalTab,setEvalTab]           = useState("modulos");
@@ -4080,121 +4081,115 @@ export default function App() {
 
         {/* FACTURACIÓN */}
         {view==="facturacion"&&(()=>{
-          const estudiantesFactura = (programas||[]).flatMap(prog=>
+          const todos = (programas||[]).flatMap(prog=>
             ests(prog).filter(e=>e.estatus!=="baja"&&e.requiere_factura==="Sí").map(e=>({e,prog}))
           );
+          const lista = filtroFactProg ? todos.filter(({prog})=>prog.id===filtroFactProg) : todos;
 
           const exportCSV = () => {
-            const cols = ["Nombre","Empresa","Programa","RFC","Razón social","Régimen fiscal","CP","Calle","No. Ext","No. Int","Colonia","Ciudad","Estado","Uso CFDI","CSF","Tipo pago","Monto total","Parcialidades pagadas","Parcialidades total"];
-            const rows = estudiantesFactura.map(({e,prog})=>{
-              const p = e.pago||{};
-              const mf = (p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
-              const pagadas = (p.parcialidades||[]).filter(x=>x.pagado).length;
-              const total = (p.parcialidades||[]).length;
-              return [e.nombre,e.empresa||"",prog.nombre,e.rfc||"",e.razon_social||"",e.regimen_fiscal||"",e.codigo_postal||"",e.calle||"",e.num_exterior||"",e.num_interior||"",e.colonia||"",e.ciudad||"",e.estado||"",e.uso_cfdi||"",e.csf_url||"",p.tipo||"",mf,pagadas,total].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",");
+            const cols = ["Nombre","Teléfono","Correo","Empresa","Programa","RFC","Razón social","Régimen fiscal","CP","Calle","No. Ext","No. Int","Colonia","Ciudad","Estado","Uso CFDI","CSF","Tipo pago","Monto","Parcialidades pagadas","Total parcialidades"];
+            const rows = lista.map(({e,prog})=>{
+              const p=e.pago||{}; const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+              const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
+              const total=(p.parcialidades||[]).length;
+              return [e.nombre,e.telefono||"",e.email||"",e.empresa||"",prog.nombre,e.rfc||"",e.razon_social||"",e.regimen_fiscal||"",e.codigo_postal||"",e.calle||"",e.num_exterior||"",e.num_interior||"",e.colonia||"",e.ciudad||"",e.estado||"",e.uso_cfdi||"",e.csf_url||"",p.tipo||"",mf,pagadas,total].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",");
             });
-            const csv = [cols.map(c=>'"'+c+'"').join(","),...rows].join("\n");
-            const a = document.createElement("a");
-            a.href = "data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv);
-            a.download = "facturacion_ibero_"+today()+".csv";
-            a.click();
+            const csv=[cols.map(c=>'"'+c+'"').join(","),...rows].join("\n");
+            const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv); a.download="facturacion_ibero_"+today()+".csv"; a.click();
           };
 
           return(
             <div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20,flexWrap:"wrap",gap:10}}>
+              {/* Encabezado + filtro + exportar */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16,flexWrap:"wrap",gap:10}}>
                 <div>
                   <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Facturación</h1>
-                  <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{estudiantesFactura.length} estudiante{estudiantesFactura.length!==1?"s":""} con factura requerida</p>
+                  <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{lista.length} estudiante{lista.length!==1?"s":""} con factura requerida</p>
                 </div>
-                <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <select value={filtroFactProg} onChange={e=>setFiltroFactProg(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                    <option value="">Todos los programas</option>
+                    {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                  {filtroFactProg&&<button onClick={()=>setFiltroFactProg("")} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
+                  <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
+                </div>
               </div>
 
-              {estudiantesFactura.length===0&&(
-                <div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>No hay estudiantes con factura requerida.</div>
-              )}
+              {lista.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>No hay estudiantes con factura requerida.</div>}
 
-              <div style={{display:"grid",gap:12}}>
-                {estudiantesFactura.map(({e,prog})=>{
-                  const p = e.pago||{};
-                  const mf = (p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
-                  const pagadas = (p.parcialidades||[]).filter(x=>x.pagado).length;
-                  const total = (p.parcialidades||[]).length;
+              <div style={{display:"grid",gap:10}}>
+                {lista.map(({e,prog})=>{
+                  const p=e.pago||{}; const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+                  const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
+                  const total=(p.parcialidades||[]).length;
                   return(
-                    <div key={e.id} style={{...S.card,overflow:"hidden",borderLeft:"4px solid "+prog.color}}>
-                      {/* Encabezado */}
-                      <div style={{padding:"14px 20px",display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap",borderBottom:"1px solid #f3f4f6"}}>
-                        <div style={{flex:1,minWidth:200}}>
-                          <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{e.nombre}</div>
-                          {e.empresa&&<div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui"}}>{e.empresa}</div>}
-                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:2}}>{prog.nombre}{prog.generacion?` · ${prog.generacion} gen.`:""}</div>
-                        </div>
-                        {/* Pago rápido */}
-                        {mf>0&&(
-                          <div style={{display:"flex",gap:12,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
-                            <div style={{textAlign:"center"}}>
-                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>MONTO</div>
-                              <div style={{fontWeight:800,fontSize:15,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div>
-                            </div>
-                            <div style={{textAlign:"center"}}>
-                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>TIPO</div>
-                              <div style={{fontSize:12,fontFamily:"system-ui",fontWeight:600,color:p.tipo==="unico"?"#16a34a":"#2563eb"}}>{p.tipo==="unico"?"Único":"Parcialidades"}</div>
-                            </div>
-                            {p.tipo==="parcialidades"&&total>0&&(
-                              <div style={{textAlign:"center"}}>
-                                <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>PAGADAS</div>
-                                <div style={{fontWeight:700,fontSize:15,fontFamily:"system-ui",color:pagadas===total?"#16a34a":"#d97706"}}>{pagadas}/{total}</div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                    <div key={e.id} style={{...S.card,overflow:"hidden",borderLeft:"4px solid "+prog.color,padding:0}}>
+                      <div style={{display:"grid",gridTemplateColumns:"220px 1fr 1fr auto",gap:0,alignItems:"stretch"}}>
 
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
-                        {/* COL IZQ: Datos fiscales */}
-                        <div style={{padding:"14px 20px",borderRight:"1px solid #f3f4f6"}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>DATOS FISCALES</div>
-                          <div style={{display:"grid",gap:4,fontFamily:"system-ui",fontSize:12}}>
-                            {[["RFC",e.rfc],["Razón social",e.razon_social],["Régimen fiscal",e.regimen_fiscal],["Uso CFDI",e.uso_cfdi],["CP",e.codigo_postal],["Calle",e.calle],["No. Ext.",e.num_exterior],["No. Int.",e.num_interior],["Colonia",e.colonia],["Ciudad",e.ciudad],["Estado",e.estado]].filter(([,v])=>v).map(([k,v])=>(
-                              <div key={k}><span style={{color:"#9ca3af"}}>{k}: </span><span style={{fontWeight:500}}>{v}</span></div>
+                        {/* 1. Contacto */}
+                        <div style={{padding:"14px 16px",borderRight:"1px solid #f3f4f6"}}>
+                          <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{e.nombre}</div>
+                          {e.empresa&&<div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:4}}>{e.empresa}</div>}
+                          <div style={{fontSize:11,background:prog.color,color:"#fff",borderRadius:4,padding:"1px 7px",display:"inline-block",fontFamily:"system-ui",fontWeight:600,marginBottom:6}}>{prog.nombre}{prog.generacion?` · ${prog.generacion}`:""}</div>
+                          <div style={{display:"grid",gap:2,fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
+                            {e.telefono&&<div>📞 {e.telefono}</div>}
+                            {e.email&&<div>✉ {e.email}</div>}
+                          </div>
+                        </div>
+
+                        {/* 2. Datos fiscales */}
+                        <div style={{padding:"14px 16px",borderRight:"1px solid #f3f4f6"}}>
+                          <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>DATOS FISCALES</div>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 12px",fontFamily:"system-ui",fontSize:11}}>
+                            {[["RFC",e.rfc],["Razón social",e.razon_social],["Régimen",e.regimen_fiscal],["Uso CFDI",e.uso_cfdi],["CP",e.codigo_postal],["Ciudad",e.ciudad],["Estado",e.estado]].filter(([,v])=>v).map(([k,v])=>(
+                              <div key={k}><span style={{color:"#9ca3af"}}>{k}: </span><span style={{fontWeight:600}}>{v}</span></div>
                             ))}
-                            {e.csf_url
-                              ?<a href={e.csf_url} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:4,fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 9px",color:"#16a34a",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
-                              :<span style={{fontSize:11,color:"#9ca3af",marginTop:4,display:"block"}}>Sin CSF adjunto</span>
-                            }
                           </div>
+                          {(e.calle||e.colonia)&&(
+                            <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginTop:4}}>
+                              {[e.calle,e.num_exterior&&"#"+e.num_exterior,e.num_interior&&"Int."+e.num_interior,e.colonia].filter(Boolean).join(", ")}
+                            </div>
+                          )}
+                          {e.csf_url
+                            ?<a href={e.csf_url} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:6,fontSize:11,background:"#f0fdf4",borderRadius:4,padding:"2px 8px",color:"#16a34a",fontWeight:600,textDecoration:"none",border:"1px solid #bbf7d0"}}>Ver CSF</a>
+                            :<span style={{fontSize:10,color:"#d1d5db",fontFamily:"system-ui",marginTop:6,display:"block"}}>Sin CSF</span>
+                          }
                         </div>
 
-                        {/* COL DER: Parcialidades */}
-                        <div style={{padding:"14px 20px"}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:8}}>
-                            {p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}
-                          </div>
-                          {!mf&&<div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>Sin configurar</div>}
+                        {/* 3. Parcialidades */}
+                        <div style={{padding:"14px 16px",borderRight:"1px solid #f3f4f6"}}>
+                          <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>{p.tipo==="unico"?"PAGO ÚNICO":"PARCIALIDADES"}{mf>0&&<span style={{marginLeft:6,color:"#374151",fontWeight:400}}>· {fmtMXN(mf)}</span>}</div>
+                          {!mf&&<div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Sin configurar</div>}
                           {p.tipo==="unico"&&mf>0&&(
-                            <div style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",borderRadius:7,background:pagadas>0?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadas>0?"#bbf7d0":"#fde68a")}}>
-                              <div style={{width:16,height:16,borderRadius:"50%",background:pagadas>0?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:8,fontWeight:700}}>{pagadas>0?"✓":""}</span></div>
-                              <span style={{fontFamily:"system-ui",fontSize:12,fontWeight:600,color:pagadas>0?"#16a34a":"#d97706"}}>{pagadas>0?"Cubierto":"Pendiente"} — {fmtMXN(mf)}</span>
+                            <div style={{display:"flex",gap:7,alignItems:"center",padding:"6px 8px",borderRadius:6,background:pagadas>0?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadas>0?"#bbf7d0":"#fde68a")}}>
+                              <div style={{width:14,height:14,borderRadius:"50%",background:pagadas>0?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:7,fontWeight:700}}>{pagadas>0?"✓":""}</span></div>
+                              <span style={{fontFamily:"system-ui",fontSize:11,fontWeight:600,color:pagadas>0?"#16a34a":"#d97706"}}>{pagadas>0?"Cubierto":"Pendiente"}</span>
                             </div>
                           )}
                           {p.tipo==="parcialidades"&&(
-                            <div style={{display:"grid",gap:3}}>
-                              {(p.parcialidades||[]).map((parc)=>{
+                            <div style={{display:"grid",gap:2}}>
+                              {(p.parcialidades||[]).map(parc=>{
                                 const venc=!parc.pagado&&parc.fecha_vencimiento&&parc.fecha_vencimiento<today();
                                 return(
-                                  <div key={parc.id} style={{display:"flex",gap:8,alignItems:"center",padding:"5px 8px",borderRadius:5,background:parc.pagado?"#f0fdf4":venc?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":venc?"#fca5a5":"#f3f4f6")}}>
-                                    <div style={{width:14,height:14,borderRadius:"50%",background:parc.pagado?"#16a34a":venc?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:7,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
-                                    <span style={{fontFamily:"system-ui",fontSize:11,flex:1,color:parc.pagado?"#16a34a":venc?"#dc2626":"#374151",fontWeight:600}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
-                                    <div style={{textAlign:"right"}}>
-                                      <div style={{fontSize:10,fontWeight:700,color:parc.pagado?"#16a34a":venc?"#dc2626":"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado?"Pagado":venc?"Vencido":"Pendiente"}</div>
-                                      <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
-                                    </div>
+                                  <div key={parc.id} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 7px",borderRadius:5,background:parc.pagado?"#f0fdf4":venc?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":venc?"#fca5a5":"#f3f4f6")}}>
+                                    <div style={{width:12,height:12,borderRadius:"50%",background:parc.pagado?"#16a34a":venc?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:6,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
+                                    <span style={{fontFamily:"system-ui",fontSize:10,flex:1,fontWeight:600,color:parc.pagado?"#16a34a":venc?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
+                                    <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</span>
                                   </div>
                                 );
                               })}
                             </div>
                           )}
                         </div>
+
+                        {/* 4. Estado resumen */}
+                        <div style={{padding:"14px 16px",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",gap:4,minWidth:80}}>
+                          <div style={{fontWeight:800,fontSize:16,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div>
+                          <div style={{fontSize:10,fontFamily:"system-ui",fontWeight:700,color:p.tipo==="unico"?"#16a34a":"#2563eb",background:p.tipo==="unico"?"#f0fdf4":"#eff6ff",borderRadius:4,padding:"2px 7px"}}>{p.tipo==="unico"?"Único":"Parcialidades"}</div>
+                          {p.tipo==="parcialidades"&&total>0&&<div style={{fontSize:11,fontFamily:"system-ui",fontWeight:700,color:pagadas===total?"#16a34a":"#d97706"}}>{pagadas}/{total} pagadas</div>}
+                        </div>
+
                       </div>
                     </div>
                   );
