@@ -450,11 +450,13 @@ function ConfirmEscrita({titulo,subtitulo,mensaje,onConfirm,onClose}) {
   );
 }
 
+const FONT_TITLE = "'Montserrat', sans-serif";
+const FONT_BODY  = "'Inter', system-ui, sans-serif";
 const S = { // estilos reutilizables
-  inp: {width:"100%",border:"1px solid #e5e7eb",borderRadius:6,padding:"9px 12px",fontSize:14,boxSizing:"border-box",fontFamily:"system-ui",outline:"none"},
-  lbl: {fontSize:11,fontWeight:700,color:"#6b7280",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em",fontFamily:"system-ui"},
-  card:{background:"#fff",border:"1px solid #e5e7eb",borderRadius:8,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"},
-  btn: (bg,color,extra={}) => ({border:"none",borderRadius:6,padding:"8px 16px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui",background:bg,color,...extra}),
+  inp: {width:"100%",border:"1.5px solid #E5E7EB",borderRadius:8,padding:"10px 14px",fontSize:14,boxSizing:"border-box",fontFamily:FONT_BODY,outline:"none",background:"#FAFAFA",transition:"border-color .15s",color:"#111"},
+  lbl: {fontSize:11,fontWeight:600,color:"#6B7280",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.07em",fontFamily:FONT_BODY},
+  card:{background:"#fff",border:"1px solid #EBEBEB",borderRadius:12,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"},
+  btn: (bg,color,extra={}) => ({border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:FONT_BODY,background:bg,color,letterSpacing:"0.01em",...extra}),
 };
 
 // ─── LOGIN ────────────────────────────────────────────
@@ -486,23 +488,32 @@ function LoginScreen({onLogin}) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"#f2f2f2",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:"#fff",borderRadius:10,boxShadow:"0 4px 32px rgba(0,0,0,0.10)",width:"100%",maxWidth:400,overflow:"hidden"}}>
-        <div style={{background:RED,padding:"24px 36px",display:"flex",justifyContent:"center"}}><IberoLogo h={60}/></div>
-        <div style={{padding:"32px 36px"}}>
-          <div style={{fontWeight:700,fontSize:17,marginBottom:4,fontFamily:"Georgia,serif"}}>Acceso al sistema</div>
-          <div style={{fontSize:13,color:"#9ca3af",marginBottom:24,fontFamily:"system-ui"}}>Coordinación de Educación Continua</div>
+    <div style={{minHeight:"100vh",background:"#F5F5F7",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <IberoLogo h={52}/>
+          <div style={{marginTop:12,fontSize:11,fontWeight:600,color:"#9CA3AF",letterSpacing:"0.12em",fontFamily:FONT_BODY,textTransform:"uppercase"}}>Educación Continua</div>
+        </div>
+        {/* Card */}
+        <div style={{background:"#fff",borderRadius:16,boxShadow:"0 4px 40px rgba(0,0,0,0.08)",padding:"40px 40px 36px",border:"1px solid #EBEBEB"}}>
+          <div style={{fontFamily:FONT_TITLE,fontWeight:700,fontSize:22,color:"#111",marginBottom:6,letterSpacing:"-0.5px"}}>Bienvenido</div>
+          <div style={{fontSize:13,color:"#9CA3AF",marginBottom:28,fontFamily:FONT_BODY}}>Ingresa tus credenciales para continuar</div>
           {[["Correo electrónico","email",email,setEmail],["Contraseña","password",pw,setPw]].map(([l,t,v,sv])=>(
-            <div key={t} style={{marginBottom:16}}>
+            <div key={t} style={{marginBottom:18}}>
               <label style={S.lbl}>{l}</label>
-              <input type={t} value={v} onChange={e=>sv(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} style={S.inp}/>
+              <input type={t} value={v} onChange={e=>sv(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}
+                style={{...S.inp,fontSize:15,padding:"12px 14px"}}/>
             </div>
           ))}
-          {err&&<div style={{background:"#fef2f2",color:"#dc2626",borderRadius:6,padding:"10px 14px",fontSize:13,marginBottom:16,fontFamily:"system-ui"}}>{err}</div>}
-          <button onClick={go} disabled={busy} style={{...S.btn(RED,"#fff"),width:"100%",padding:"12px"}}>{busy?"Verificando...":"Iniciar sesión"}</button>
+          {err&&<div style={{background:"#FEF2F2",color:"#DC2626",borderRadius:8,padding:"10px 14px",fontSize:13,marginBottom:18,fontFamily:FONT_BODY}}>{err}</div>}
+          <button onClick={go} disabled={busy}
+            style={{...S.btn(RED,"#fff"),width:"100%",padding:"13px",fontSize:15,fontWeight:700,borderRadius:10,marginTop:4,letterSpacing:"0.01em",opacity:busy?0.7:1}}>
+            {busy?"Verificando...":"Iniciar sesión"}
+          </button>
         </div>
+        <div style={{marginTop:24,textAlign:"center",fontSize:11,color:"#C0C0C0",fontFamily:FONT_BODY,letterSpacing:"0.03em"}}>© 2026 IBERO Tijuana · Sistema interno</div>
       </div>
-      <div style={{marginTop:20,fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>© 2026 IBERO Tijuana · Sistema interno</div>
     </div>
   );
 }
@@ -1603,7 +1614,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   return(
     <div>
       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
-        <div><h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Docentes</h1><p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Catálogo de docentes de educación continua</p></div>
+        <div><h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Docentes</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Catálogo de docentes de educación continua</p></div>
         <button onClick={openNew} style={S.btn(RED,"#fff")}>Agregar docente</button>
       </div>
       {(docentes||[]).length>0&&(
@@ -1779,8 +1790,8 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
   if (!selProgId) return (
     <div>
       <div style={{marginBottom:20}}>
-        <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Asistencia</h1>
-        <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+        <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Asistencia</h1>
+        <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
           {busqAsist?"Resultados de búsqueda":"Selecciona un programa o busca un estudiante directamente"}
         </p>
       </div>
@@ -1967,7 +1978,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
           <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
             <div>
               <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 2px"}}>{prog.nombre}</h2>
-              <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{modulos.length} módulos · {estudiantes.length} estudiantes</p>
+              <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{modulos.length} módulos · {estudiantes.length} estudiantes</p>
             </div>
           </div>
           <div style={{display:"grid",gap:10}}>
@@ -2960,21 +2971,21 @@ export default function App() {
   };
 
   return(
-    <div style={{fontFamily:"Georgia,serif",minHeight:"100vh",background:"#f2f2f2",color:"#1a1a1a"}}>
+    <div style={{fontFamily:FONT_BODY,minHeight:"100vh",background:"#F5F5F7",color:"#111"}}>
       {notif&&(
-        <div style={{position:"fixed",top:20,right:20,zIndex:9999,display:"flex",alignItems:"center",gap:10,background:notif.type==="error"?"#fef2f2":notif.type==="warning"?"#fffbeb":"#f0fdf4",border:"1px solid "+(notif.type==="error"?"#fca5a5":notif.type==="warning"?"#fcd34d":"#86efac"),borderRadius:10,padding:"11px 18px",fontSize:13,maxWidth:360,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",fontFamily:"system-ui",fontWeight:500,color:notif.type==="error"?"#dc2626":notif.type==="warning"?"#d97706":"#16a34a"}}>
-          <span style={{fontSize:16}}>{notif.type==="error"?"✕":notif.type==="warning"?"⚠":"✓"}</span>
+        <div style={{position:"fixed",top:20,right:20,zIndex:9999,display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid "+(notif.type==="error"?"#FCA5A5":notif.type==="warning"?"#FCD34D":"#86EFAC"),borderRadius:12,padding:"12px 18px",fontSize:13,maxWidth:360,boxShadow:"0 8px 30px rgba(0,0,0,0.1)",fontFamily:FONT_BODY,fontWeight:500,color:notif.type==="error"?"#DC2626":notif.type==="warning"?"#D97706":"#16A34A"}}>
+          <span style={{fontSize:15,fontWeight:700}}>{notif.type==="error"?"✕":notif.type==="warning"?"⚠":"✓"}</span>
           <span>{notif.msg}</span>
         </div>
       )}
 
       {/* HEADER */}
-      <div style={{background:RED,padding:"0 20px",display:"flex",alignItems:"center",height:64,gap:16}}>
-        <div style={{cursor:"pointer"}} onClick={()=>setView("lista")}><IberoLogo h={44}/></div>
-        <div style={{width:1,height:32,background:"rgba(255,255,255,0.3)"}}/>
-        <div style={{color:"rgba(255,255,255,0.9)",fontSize:13,fontFamily:"system-ui"}}>Educación Continua</div>
+      <div style={{background:RED,padding:"0 24px",display:"flex",alignItems:"center",height:60,gap:16,boxShadow:"0 2px 16px rgba(200,16,46,0.2)"}}>
+        <div style={{cursor:"pointer",display:"flex",alignItems:"center"}} onClick={()=>setView("lista")}><IberoLogo h={40}/></div>
+        <div style={{width:1,height:28,background:"rgba(255,255,255,0.2)"}}/>
+        <div style={{color:"rgba(255,255,255,0.7)",fontSize:11,fontFamily:FONT_BODY,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Educación Continua</div>
         <div style={{flex:1}}/>
-        <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:1,flexWrap:"wrap"}}>
           {[
             ["lista","Programas","verProgramas"],
             ["hoy","Hoy","verProgramas"],
@@ -2985,8 +2996,8 @@ export default function App() {
             ["docentes","Docentes","gestionarDocentes"],
             ["evaluaciones","Evaluaciones","verEvaluaciones"],
             ["reportes","Reportes","verReportes"],
-          ].filter(([,, perm])=>can(session,perm)).map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.2)":"transparent",color:"#fff",border:view===v?"1px solid rgba(255,255,255,0.35)":"1px solid transparent",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>{l}</button>
+          ].filter(([,,perm])=>can(session,perm)).map(([v,l])=>(
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"rgba(255,255,255,0.15)":"transparent",color:view===v?"#fff":"rgba(255,255,255,0.72)",border:"none",borderRadius:6,padding:"6px 11px",cursor:"pointer",fontSize:12,fontFamily:FONT_BODY,fontWeight:view===v?600:400,transition:"all .15s"}}>{l}</button>
           ))}
           <div style={{width:1,height:24,background:"rgba(255,255,255,0.25)",margin:"0 6px"}}/>
           {/* ALERTAS */}
@@ -3034,15 +3045,15 @@ export default function App() {
               </div>
             )}
           </div>
-          <button onClick={()=>setView("busqueda")} style={{background:view==="busqueda"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.1)",color:"#fff",border:view==="busqueda"?"1px solid rgba(255,255,255,0.35)":"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:13,fontFamily:"system-ui",fontWeight:500}}>Buscar</button>
-          {(can(session,"gestionarUsuarios")||can(session,"configurarNotif"))&&<button onClick={()=>setView("config")} style={{background:view==="config"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.1)",color:"#fff",border:view==="config"?"1px solid rgba(255,255,255,0.35)":"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12,fontFamily:"system-ui"}}>⚙️</button>}
-          <div style={{width:1,height:24,background:"rgba(255,255,255,0.3)",margin:"0 4px"}}/>
-          <div style={{color:"rgba(255,255,255,0.85)",fontSize:12,fontFamily:"system-ui"}}>{session.nombre}</div>
-          <button onClick={logout} style={{background:"rgba(255,255,255,0.15)",color:"#fff",border:"1px solid rgba(255,255,255,0.25)",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12,fontFamily:"system-ui"}}>Salir</button>
+          <button onClick={()=>setView("busqueda")} style={{background:view==="busqueda"?"rgba(255,255,255,0.15)":"transparent",color:view==="busqueda"?"#fff":"rgba(255,255,255,0.72)",border:"none",borderRadius:6,padding:"6px 11px",cursor:"pointer",fontSize:12,fontFamily:FONT_BODY,fontWeight:400}}>Buscar</button>
+          {(can(session,"gestionarUsuarios")||can(session,"configurarNotif"))&&<button onClick={()=>setView("config")} style={{background:view==="config"?"rgba(255,255,255,0.15)":"transparent",color:"rgba(255,255,255,0.72)",border:"none",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontSize:13,fontFamily:FONT_BODY}}>⚙</button>}
+          <div style={{width:1,height:22,background:"rgba(255,255,255,0.2)",margin:"0 6px"}}/>
+          <div style={{color:"rgba(255,255,255,0.8)",fontSize:12,fontFamily:FONT_BODY,fontWeight:500}}>{session.nombre}</div>
+          <button onClick={logout} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.85)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:FONT_BODY}}>Salir</button>
         </div>
       </div>
 
-      <div style={{maxWidth:980,margin:"0 auto",padding:"32px 20px"}}>
+      <div style={{maxWidth:1000,margin:"0 auto",padding:"32px 24px"}}>
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
         {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas} npsData={npsData} setCS={setCS}/>}
@@ -3073,8 +3084,8 @@ export default function App() {
             <div>
               <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
                 <div>
-                  <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Lista de hoy</h1>
-                  <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{fmtHoyLargo()} · {modulosHoy.length} {modulosHoy.length===1?"módulo":"módulos"} con clase</p>
+                  <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Lista de hoy</h1>
+                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{fmtHoyLargo()} · {modulosHoy.length} {modulosHoy.length===1?"módulo":"módulos"} con clase</p>
                 </div>
               </div>
 
@@ -3189,7 +3200,7 @@ export default function App() {
               );
             })()}
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
-              <div><h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Programas</h1><p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>Gestión de diplomados y cursos de educación continua</p></div>
+              <div><h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Programas</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Gestión de diplomados y cursos de educación continua</p></div>
               {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
             </div>
             <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
@@ -3725,8 +3736,8 @@ export default function App() {
           return(
             <div>
               <div style={{marginBottom:20}}>
-                <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Control de Pagos</h1>
-                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+                <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Control de Pagos</h1>
+                <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
                   {busqP||progSelP||filtroEstado?"Resultados filtrados":"Programas activos por default — usa filtros para ver más"}
                 </p>
               </div>
@@ -4141,8 +4152,8 @@ export default function App() {
               {/* Encabezado + filtro + exportar */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16,flexWrap:"wrap",gap:10}}>
                 <div>
-                  <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Facturación</h1>
-                  <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>{lista.length} estudiante{lista.length!==1?"s":""} con factura requerida</p>
+                  <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Facturación</h1>
+                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{lista.length} estudiante{lista.length!==1?"s":""} con factura requerida</p>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, correo, teléfono, folio..." style={{...S.inp,minWidth:240,fontSize:13}}/>
@@ -4292,8 +4303,8 @@ export default function App() {
           return(
             <div>
               <div style={{marginBottom:20}}>
-                <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Evaluaciones</h1>
-                <p style={{margin:0,color:"#6b7280",fontSize:13,fontFamily:"system-ui"}}>
+                <h1 style={{fontSize:26,fontWeight:700,margin:\"0 0 4px\",letterSpacing:\"-0.5px\",fontFamily:FONT_TITLE}}>Evaluaciones</h1>
+                <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
                   {(npsData||[]).length} respuesta{(npsData||[]).length!==1?"s":""} registradas · {docentesConEvals.length} docente{docentesConEvals.length!==1?"s":""} evaluados
                 </p>
               </div>
