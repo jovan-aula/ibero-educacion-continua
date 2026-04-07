@@ -2223,6 +2223,24 @@ function HonorariosView({programas,docentes,onToggle}) {
   const mesOpts=[-2,-1,0,1,2,3,4,5].map(i=>getMesOff(i));
   const [mesSel,setMesSel]=useState(today().substring(0,7));
   const [busq,setBusq]=useState("");
+  const [ordenModal,setOrdenModal]=useState(null); // {url, row}
+  const [generando,setGenerando]=useState(null); // modId mientras carga
+
+  const generarOrden=async row=>{
+    setGenerando(row.modId);
+    try{
+      const id=newId()+newId();
+      await supa.upsert("ordenes_pago",[{
+        id,modulo_id:row.modId,programa_id:row.progId,
+        datos:row,
+        estatus:"pendiente",
+        created_at:new Date().toISOString(),
+      }]);
+      const url=window.location.href.split("?")[0]+"?orden="+id;
+      setOrdenModal({url,row});
+    }catch(e){alert("Error al generar la orden. Intenta de nuevo.");}
+    setGenerando(null);
+  };
   const fmtMes=m=>{const[y,mo]=m.split("-");return MESES_N[parseInt(mo)-1]+" "+y;};
 
   const rows=(programas||[]).flatMap(prog=>
@@ -2251,11 +2269,20 @@ function HonorariosView({programas,docentes,onToggle}) {
 
   const exportCSV=()=>{
     if(!filtrados.length)return;
-    const hdrs=["Docente","Programa","Generación","Módulo","Horas","Categoría","IVA %","Fecha Inicio","Fecha Fin","Subtotal","IVA $","Total","Factura Solicitada","Pago Emitido"];
-    const data=filtrados.map(r=>[r.docente,r.programa,r.generacion,r.modulo,r.horas,"Cat. "+r.categoria,r.ivaPct+"%",r.fechaInicio||"",r.fechaFin||"",r.subtotal,r.ivaMonto,r.total,r.factura_solicitada?"Sí":"No",r.pago_emitido?"Sí":"No"]);
+    const hdrs=["Docente","Programa","Generación","Módulo","Horas","Categoría","IVA %","Fecha Inicio","Fecha Fin","Subtotal","IVA $","Total"];
+    const data=filtrados.map(r=>[r.docente,r.programa,r.generacion,r.modulo,r.horas,"Cat. "+r.categoria,r.ivaPct+"%",r.fechaInicio||"",r.fechaFin||"",r.subtotal,r.ivaMonto,r.total]);
     const csv=[hdrs,...data].map(row=>row.map(v=>'"'+(String(v||"")).replace(/"/g,'""')+'"').join(",")).join("\n");
     const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
     a.download=`honorarios_${mesSel}.csv`;a.click();
+  };
+
+  const enviarEmail=()=>{
+    if(!filtrados.length)return;
+    const mesLabel=fmtMes(mesSel);
+    const lineas=filtrados.map(r=>`  • ${r.docente} | ${r.modulo} | ${r.horas}h | Cat. ${r.categoria} | IVA ${r.ivaPct}% | ${r.fechaInicio||""} – ${r.fechaFin||""} | Subtotal: $${r.subtotal.toLocaleString("es-MX")} | IVA: $${r.ivaMonto.toLocaleString("es-MX")} | Total: $${r.total.toLocaleString("es-MX")}`).join("\n");
+    const body=`Reporte de Honorarios Docentes — ${mesLabel}\n\n${lineas}\n\n──────────────────────\nSubtotal: $${totalSubtotal.toLocaleString("es-MX")}\nIVA:      $${totalIVA.toLocaleString("es-MX")}\nTOTAL:    $${totalGeneral.toLocaleString("es-MX")}\n\nGenerado por el sistema IBERO Tijuana — Educación Continua`;
+    const subject=`Honorarios Docentes ${mesLabel}`;
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
   };
 
   const thStyle={padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.06em",fontFamily:FONT_BODY,textAlign:"left",borderBottom:"1px solid #F0F0F0",whiteSpace:"nowrap"};
@@ -2271,12 +2298,34 @@ function HonorariosView({programas,docentes,onToggle}) {
 
   return(
     <div>
+      {/* Modal orden generada */}
+      {ordenModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#fff",borderRadius:16,padding:28,maxWidth:460,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
+            <div style={{fontWeight:800,fontSize:17,fontFamily:FONT_TITLE,marginBottom:4}}>Orden de pago generada</div>
+            <div style={{fontSize:13,color:"#6B7280",fontFamily:FONT_BODY,marginBottom:16}}>{ordenModal.row.docente} · {ordenModal.row.modulo}</div>
+            <div style={{background:"#F5F5F7",borderRadius:8,padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"#374151",wordBreak:"break-all",marginBottom:16}}>{ordenModal.url}</div>
+            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+              <button onClick={()=>{navigator.clipboard.writeText(ordenModal.url);}} style={{...S.btn("#F3F4F6","#374151",{fontSize:13,flex:1})}}>Copiar enlace</button>
+              <button onClick={()=>window.open("https://wa.me/?text="+encodeURIComponent("Hola, te comparto la orden de pago para que la firmes:\n"+ordenModal.url),"_blank")}
+                style={{...S.btn("#F0FDF4","#16a34a",{border:"1px solid #BBF7D0",fontSize:13,flex:1})}}>WhatsApp</button>
+              <button onClick={()=>window.open("mailto:?subject="+encodeURIComponent("Orden de pago — "+ordenModal.row.docente)+"&body="+encodeURIComponent("Hola,\n\nTe comparto el enlace para firmar la orden de pago correspondiente a:\n\nDocente: "+ordenModal.row.docente+"\nMódulo: "+ordenModal.row.modulo+"\nTotal: $"+ordenModal.row.total.toLocaleString("es-MX")+"\n\nEnlace:\n"+ordenModal.url+"\n\nAtentamente,\nCoordinación de Educación Continua\nIBERO Tijuana"),"_blank")}
+                style={{...S.btn("#F5F3FF","#7C3AED",{border:"1px solid #DDD6FE",fontSize:13,flex:1})}}>✉ Email</button>
+            </div>
+            <button onClick={()=>setOrdenModal(null)} style={{width:"100%",padding:"10px 0",border:"none",borderRadius:8,background:"#F3F4F6",color:"#374151",fontFamily:FONT_BODY,fontSize:14,fontWeight:600,cursor:"pointer"}}>Cerrar</button>
+          </div>
+        </div>
+      )}
+
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
         <div>
           <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Honorarios Docentes</h1>
           <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Facturación y pagos a docentes · recordatorio antes del día 20</p>
         </div>
-        <button onClick={exportCSV} style={{...S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}}>Exportar Excel/CSV</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={enviarEmail} style={S.btn("#F5F3FF","#7c3aed",{border:"1px solid #DDD6FE"})}>✉ Enviar por correo</button>
+          <button onClick={exportCSV} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC"})}>Exportar Excel/CSV</button>
+        </div>
       </div>
 
       {/* Selector de mes */}
@@ -2314,7 +2363,7 @@ function HonorariosView({programas,docentes,onToggle}) {
             <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
               <thead>
                 <tr style={{background:"#FAFAFA"}}>
-                  {["Docente","Programa","Módulo","Horas","Cat.","IVA","Inicio","Fin","Subtotal","IVA $","Total","Factura solicitada","Pago emitido"].map(h=>(
+                  {["Docente","Programa","Módulo","Horas","Cat.","IVA","Inicio","Fin","Subtotal","IVA $","Total","Factura solicitada","Pago emitido","Orden de pago"].map(h=>(
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -2337,6 +2386,12 @@ function HonorariosView({programas,docentes,onToggle}) {
                     <td style={{...tdStyle,textAlign:"right"}}><span style={{fontWeight:700,color:RED,fontSize:14}}>{fmtMXN(r.total)}</span></td>
                     <td style={{...tdStyle,textAlign:"center"}}><Check on={r.factura_solicitada} onClick={()=>onToggle(r.progId,r.modId,"factura_solicitada")} label={r.factura_solicitada?"Sí":"—"}/></td>
                     <td style={{...tdStyle,textAlign:"center"}}><Check on={r.pago_emitido} onClick={()=>onToggle(r.progId,r.modId,"pago_emitido")} label={r.pago_emitido?"Sí":"—"}/></td>
+                    <td style={{...tdStyle,textAlign:"center"}}>
+                      <button onClick={()=>generarOrden(r)} disabled={generando===r.modId}
+                        style={{fontSize:11,padding:"5px 10px",border:"1px solid #BFDBFE",borderRadius:6,background:"#EFF6FF",color:"#2563EB",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap",opacity:generando===r.modId?0.6:1}}>
+                        {generando===r.modId?"Generando…":"Generar orden"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -2346,13 +2401,175 @@ function HonorariosView({programas,docentes,onToggle}) {
                   <td style={{...tdStyle,textAlign:"right",fontWeight:700}}>{fmtMXN(totalSubtotal)}</td>
                   <td style={{...tdStyle,textAlign:"right",fontWeight:700,color:"#6B7280"}}>{fmtMXN(totalIVA)}</td>
                   <td style={{...tdStyle,textAlign:"right",fontWeight:800,color:RED,fontSize:15}}>{fmtMXN(totalGeneral)}</td>
-                  <td colSpan={2} style={tdStyle}/>
+                  <td colSpan={3} style={tdStyle}/>
                 </tr>
               </tfoot>
             </table>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── ORDEN DE PAGO (vista pública) ───────────────────
+function OrdenPago() {
+  const ordenId = new URLSearchParams(window.location.search).get("orden");
+  const [orden,setOrden]       = useState(null);
+  const [cargando,setCargando] = useState(true);
+  const [err,setErr]           = useState("");
+  const canvasSol  = useRef(null);
+  const canvasResp = useRef(null);
+  const drawSol    = useRef(false);
+  const drawResp   = useRef(false);
+
+  useEffect(()=>{
+    if(!ordenId){setErr("Enlace inválido.");setCargando(false);return;}
+    supa.get("ordenes_pago","?id=eq."+ordenId).then(data=>{
+      if(data&&data.length>0) setOrden(data[0]);
+      else setErr("Orden no encontrada.");
+      setCargando(false);
+    }).catch(()=>{setErr("Error al cargar.");setCargando(false);});
+  },[]);
+
+  useEffect(()=>{
+    const s=document.createElement("style");s.id="orden-print-css";
+    s.textContent=`@media print{.no-print{display:none!important;}.orden-wrap{box-shadow:none!important;border-radius:0!important;}}`;
+    document.head.appendChild(s);
+    return()=>document.getElementById("orden-print-css")?.remove();
+  },[]);
+
+  const initCanvas=(ref,drawRef)=>{
+    const c=ref.current;if(!c)return;
+    const ctx=c.getContext("2d");
+    ctx.strokeStyle="#1a1a2e";ctx.lineWidth=2.2;ctx.lineCap="round";ctx.lineJoin="round";
+    const pos=e=>{const r=c.getBoundingClientRect();const sx=c.width/r.width;const sy=c.height/r.height;const cx=e.touches?e.touches[0].clientX:e.clientX;const cy=e.touches?e.touches[0].clientY:e.clientY;return{x:(cx-r.left)*sx,y:(cy-r.top)*sy};};
+    const dn=e=>{e.preventDefault();drawRef.current=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);};
+    const mv=e=>{e.preventDefault();if(!drawRef.current)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke();};
+    const up=()=>{drawRef.current=false;};
+    c.addEventListener("mousedown",dn);c.addEventListener("mousemove",mv);c.addEventListener("mouseup",up);c.addEventListener("mouseleave",up);
+    c.addEventListener("touchstart",dn,{passive:false});c.addEventListener("touchmove",mv,{passive:false});c.addEventListener("touchend",up);
+    return()=>{c.removeEventListener("mousedown",dn);c.removeEventListener("mousemove",mv);c.removeEventListener("mouseup",up);c.removeEventListener("mouseleave",up);c.removeEventListener("touchstart",dn);c.removeEventListener("touchmove",mv);c.removeEventListener("touchend",up);};
+  };
+
+  useEffect(()=>{if(orden&&!orden.firma_solicitante)return initCanvas(canvasSol,drawSol);},[orden?.id,orden?.firma_solicitante]);
+  useEffect(()=>{if(orden&&!orden.firma_responsable)return initCanvas(canvasResp,drawResp);},[orden?.id,orden?.firma_responsable]);
+
+  const limpiar=ref=>{const c=ref.current;if(!c)return;c.getContext("2d").clearRect(0,0,c.width,c.height);};
+
+  const firmar=async tipo=>{
+    const ref=tipo==="sol"?canvasSol:canvasResp;
+    const c=ref.current;if(!c)return;
+    const ctx=c.getContext("2d");
+    const isEmpty=!ctx.getImageData(0,0,c.width,c.height).data.some(v=>v!==0);
+    if(isEmpty){alert("Por favor dibuja tu firma antes de confirmar.");return;}
+    const img=c.toDataURL("image/png");
+    const ahora=new Date().toISOString();
+    const upd=tipo==="sol"?{firma_solicitante:img,fecha_firma_sol:ahora}:{firma_responsable:img,fecha_firma_resp:ahora};
+    const yaOtra=tipo==="sol"?orden.firma_responsable:orden.firma_solicitante;
+    if(yaOtra)upd.estatus="firmada";
+    const nuevo={...orden,...upd};
+    await supa.upsert("ordenes_pago",[nuevo]);
+    setOrden(nuevo);
+  };
+
+  const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const fF=f=>{if(!f)return"—";const[y,m,d]=f.split("-");return`${parseInt(d)} ${MESES_N[parseInt(m)-1]} ${y}`;};
+  const fM=n=>n!=null?"$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:0}):"—";
+  const fTs=ts=>{if(!ts)return"";const dt=new Date(ts);return dt.toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"})+" · "+dt.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});};
+
+  if(cargando)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:FONT_BODY,color:"#9CA3AF",fontSize:15}}>Cargando orden…</div>;
+  if(err)     return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:FONT_BODY,color:RED,fontSize:18}}>{err}</div>;
+
+  const d=orden.datos||{};
+  const ambosFirmaron=!!(orden.firma_solicitante&&orden.firma_responsable);
+
+  const firmantes=[
+    {tipo:"sol",  nombre:"Nohelya Martínez",cargo:"Solicitante",     fk:"firma_solicitante",fts:"fecha_firma_sol", ref:canvasSol},
+    {tipo:"resp", nombre:"José Martínez",   cargo:"Responsable",     fk:"firma_responsable",fts:"fecha_firma_resp",ref:canvasResp},
+  ];
+
+  return(
+    <div style={{background:"#F5F5F7",minHeight:"100vh",padding:"32px 16px",fontFamily:FONT_BODY}}>
+      <div className="orden-wrap" style={{maxWidth:740,margin:"0 auto",background:"#fff",borderRadius:16,boxShadow:"0 4px 32px rgba(0,0,0,0.10)",overflow:"hidden"}}>
+
+        {/* Cabecera roja */}
+        <div style={{background:RED,padding:"28px 36px",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontFamily:FONT_TITLE,fontWeight:800,fontSize:22,letterSpacing:"-0.5px"}}>IBERO Tijuana</div>
+            <div style={{fontSize:13,opacity:0.85,marginTop:2}}>Educación Continua</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:11,opacity:0.7,letterSpacing:"1px",textTransform:"uppercase",fontWeight:700}}>Orden de Pago</div>
+            <div style={{fontSize:13,fontWeight:700,marginTop:2}}>#{(orden.id||"").toUpperCase()}</div>
+            <div style={{fontSize:11,opacity:0.7,marginTop:2}}>{fF(new Date().toISOString().split("T")[0])}</div>
+          </div>
+        </div>
+
+        {/* Datos del pago */}
+        <div style={{padding:"28px 36px",borderBottom:"1px solid #F0F0F0"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",letterSpacing:"1px",textTransform:"uppercase",marginBottom:16}}>Datos del pago</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px 32px",marginBottom:20}}>
+            {[["Docente",d.docente],["Programa",d.programa+(d.generacion?" — "+d.generacion+" gen.":"")],["Módulo",d.modulo],["Período",fF(d.fechaInicio)+" – "+fF(d.fechaFin)],["Horas impartidas",(d.horas||0)+"h"],["Categoría","Cat. "+d.categoria]].map(([l,v])=>(
+              <div key={l}>
+                <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.5px"}}>{l}</div>
+                <div style={{fontSize:14,fontWeight:600,color:"#111"}}>{v||"—"}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:"#FAFAFA",borderRadius:10,padding:"16px 20px"}}>
+            {[["Subtotal",fM(d.subtotal),"#374151","normal"],["IVA ("+d.ivaPct+"%)",fM(d.ivaMonto),"#6B7280","normal"],["Total a pagar",fM(d.total),RED,"bold"]].map(([l,v,c,fw],i)=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:i?8:0,marginTop:i?8:0,borderTop:i===2?"1.5px solid #E5E7EB":"none"}}>
+                <span style={{fontSize:i===2?15:13,fontWeight:i===2?700:400,color:"#374151"}}>{l}</span>
+                <span style={{fontSize:i===2?20:14,fontWeight:fw==="bold"?800:600,color:c}}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Firmas */}
+        <div style={{padding:"28px 36px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",letterSpacing:"1px",textTransform:"uppercase",marginBottom:20}}>Firmas de autorización</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            {firmantes.map(({tipo,nombre,cargo,fk,fts,ref})=>(
+              <div key={tipo} style={{border:"1px solid "+(orden[fk]?"#BBF7D0":"#E5E7EB"),borderRadius:12,padding:"16px 18px",background:orden[fk]?"#F0FDF4":"#FAFAFA"}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#374151",marginBottom:1}}>{nombre}</div>
+                <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>{cargo}</div>
+                {orden[fk]?(
+                  <>
+                    <img src={orden[fk]} alt="firma" style={{width:"100%",height:100,objectFit:"contain",background:"#fff",borderRadius:6,border:"1px solid #E5E7EB"}}/>
+                    <div style={{fontSize:11,color:"#16a34a",fontWeight:600,marginTop:8,display:"flex",gap:4,alignItems:"center"}}>
+                      <span>✓ Firmado</span><span style={{color:"#9CA3AF",fontWeight:400,fontSize:10}}>· {fTs(orden[fts])}</span>
+                    </div>
+                  </>
+                ):(
+                  <>
+                    <div style={{border:"1px dashed #D1D5DB",borderRadius:6,background:"#fff",marginBottom:8,touchAction:"none",cursor:"crosshair",overflow:"hidden"}}>
+                      <canvas ref={ref} width={300} height={110} style={{width:"100%",height:110,display:"block"}}/>
+                    </div>
+                    <div style={{display:"flex",gap:6}} className="no-print">
+                      <button onClick={()=>limpiar(ref)} style={{flex:1,padding:"7px 0",fontSize:12,fontFamily:FONT_BODY,border:"1px solid #E5E7EB",borderRadius:6,background:"#fff",cursor:"pointer",color:"#6B7280"}}>Limpiar</button>
+                      <button onClick={()=>firmar(tipo)} style={{flex:2,padding:"7px 0",fontSize:12,fontFamily:FONT_BODY,border:"none",borderRadius:6,background:RED,color:"#fff",cursor:"pointer",fontWeight:700}}>Firmar</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"20px 36px",borderTop:"1px solid #F0F0F0",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,background:"#FAFAFA"}}>
+          <div style={{fontSize:12,color:ambosFirmaron?"#16a34a":"#9CA3AF",fontWeight:ambosFirmaron?700:400}}>
+            {ambosFirmaron?"✓ Orden completamente firmada":`Pendiente${orden.firma_solicitante||orden.firma_responsable?" — 1 de 2 firmas":""}`}
+          </div>
+          {ambosFirmaron&&(
+            <button className="no-print" onClick={()=>window.print()} style={{background:RED,color:"#fff",border:"none",borderRadius:8,padding:"10px 24px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:FONT_BODY}}>
+              Descargar PDF
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2405,6 +2622,7 @@ export default function App() {
   const [evalTab,setEvalTab]           = useState("modulos");
   const [filtroDocEval,setFiltroDocEval]   = useState("");
   const [filtroProgEval,setFiltroProgEval] = useState("");
+  const [filtroModEval,setFiltroModEval]   = useState("");
   const [editEstModal,setEditEstModal] = useState(null);
   const [inactivoModal,setInactivoModal] = useState(null); // {est, prog}
   const [inactivoRazon,setInactivoRazon] = useState("");
@@ -2822,7 +3040,9 @@ export default function App() {
 
   const isPublic = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
   const isEval   = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("eval");
+  const isOrden  = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("orden");
   if (!ready) return null;
+  if (isOrden)  return <OrdenPago/>;
   if (isEval)   return <EvaluacionDocente programas={programas}/>;
   if (isPublic) return <ListaDocente programas={programas} onSave={saveAsistDocente}/>;
   if (!session) return <LoginScreen onLogin={u=>setSession(u)}/>;
@@ -4831,117 +5051,219 @@ export default function App() {
               })()}
 
               {/* ── PESTAÑA RESULTADOS ── */}
-              {evalTab==="resultados"&&(
-                <div>
-                  {/* Filtros */}
-                  <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-                    <select value={filtroProgEval} onChange={e=>setFiltroProgEval(e.target.value)}
-                      style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
-                      <option value="">Todos los programas</option>
-                      {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
-                    </select>
-                    <select value={filtroDocEval} onChange={e=>setFiltroDocEval(e.target.value)}
-                      style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
-                      <option value="">Todos los docentes</option>
-                      {docentesConEvals.map(d=><option key={d.id||d.nombre} value={d.nombre}>{d.nombre}</option>)}
-                    </select>
-                    {(filtroProgEval||filtroDocEval)&&<button onClick={()=>{setFiltroProgEval("");setFiltroDocEval("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
-                  </div>
+              {evalTab==="resultados"&&(()=>{
+                // Resolver nombres desde programas (el campo e.mod llega vacío desde Supabase)
+                const resolve = e => {
+                  const progObj=(programas||[]).find(p=>p.id===e.progId);
+                  const modObj=progObj?mods(progObj).find(m=>m.id===e.modId):null;
+                  return {...e,progNombre:progObj?.nombre||e.prog||"—",modNombre:modObj?.nombre||e.mod||"—"};
+                };
 
-                  {evalsFiltradas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin evaluaciones registradas{filtroProgEval||filtroDocEval?" con estos filtros":""}.</div>}
+                // Módulos disponibles para filtro (filtrados por programa si hay)
+                const modsParaFiltro=[];
+                (programas||[]).forEach(prog=>{
+                  if(filtroProgEval&&prog.id!==filtroProgEval)return;
+                  mods(prog).forEach(mod=>{
+                    if((npsData||[]).some(e=>e.modId===mod.id))
+                      modsParaFiltro.push({id:mod.id,nombre:mod.nombre,prog:prog.nombre});
+                  });
+                });
 
-                  <div style={{...S.card,overflow:"hidden"}}>
-                    {/* Header */}
-                    {evalsFiltradas.length>0&&(
-                      <div style={{padding:"10px 18px",background:"#f9f9f9",borderBottom:"2px solid #e5e7eb",display:"flex",gap:8,alignItems:"center",fontFamily:"system-ui",fontSize:11,fontWeight:700,color:"#6b7280"}}>
-                        <div style={{flex:1}}>MÓDULO / DOCENTE</div>
-                        {DIM_LABELS.map(l=><div key={l} style={{textAlign:"center",minWidth:52}}>{l.slice(0,5).toUpperCase()}</div>)}
-                        <div style={{textAlign:"center",minWidth:48}}>PROM.</div>
-                        <div style={{minWidth:72}}>FECHA</div>
+                const resueltas = (npsData||[]).map(resolve).filter(e=>{
+                  if(filtroProgEval&&e.progId!==filtroProgEval)return false;
+                  if(filtroDocEval&&e.docenteNombre!==filtroDocEval&&e.docenteId!==filtroDocEval)return false;
+                  if(filtroModEval&&e.modId!==filtroModEval)return false;
+                  return true;
+                }).slice().reverse();
+
+                const exportCSVRes = () => {
+                  const cols=["Fecha","Módulo","Programa","Docente","Expectativas","Relevancia","Aplicación","Didáctica","Dominio","Promedio","Comentarios"];
+                  const rows=resueltas.map(e=>[e.fecha,e.modNombre,e.progNombre,e.docenteNombre,e.q1,e.q2,e.q3,e.q4,e.q5,e.promedio,e.comentarios||""].map(v=>'"'+String(v||"").replace(/"/g,'""')+'"').join(","));
+                  const csv=[cols.map(c=>'"'+c+'"').join(","),...rows].join("\n");
+                  const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv);a.download="evaluaciones_ibero_"+today()+".csv";a.click();
+                };
+
+                const compartirWA = () => {
+                  // Resumen global o por docente/módulo
+                  const prom=resueltas.length?Math.round(resueltas.reduce((a,e)=>a+(e.promedio||0),0)/resueltas.length*10)/10:0;
+                  const dimLines=DIM_KEYS.map((k,i)=>{
+                    const dp=Math.round(resueltas.reduce((a,e)=>a+(e[k]||0),0)/resueltas.length*10)/10;
+                    return `• ${DIM_LABELS[i]}: ${dp}/5`;
+                  }).join("\n");
+                  const comentarios=resueltas.filter(e=>e.comentarios).slice(-5).map(e=>`"${e.comentarios}"`).join("\n");
+                  const titulo=filtroDocEval?`Evaluación docente — ${filtroDocEval}`:filtroModEval?(modsParaFiltro.find(m=>m.id===filtroModEval)?.nombre||"Módulo"):"Resumen de evaluaciones";
+                  const msg=`📊 *${titulo}*\n${resueltas.length} respuesta${resueltas.length!==1?"s":""} · Promedio general: *${prom}/5*\n\n${dimLines}${comentarios?"\n\n💬 *Comentarios destacados:*\n"+comentarios:""}\n\n_IBERO Tijuana — Educación Continua_`;
+                  window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+                };
+
+                const compartirEmail = () => {
+                  const prom=resueltas.length?Math.round(resueltas.reduce((a,e)=>a+(e.promedio||0),0)/resueltas.length*10)/10:0;
+                  const dimLines=DIM_KEYS.map((k,i)=>{
+                    const dp=Math.round(resueltas.reduce((a,e)=>a+(e[k]||0),0)/resueltas.length*10)/10;
+                    return `  • ${DIM_LABELS[i]}: ${dp}/5`;
+                  }).join("\n");
+                  const comentarios=resueltas.filter(e=>e.comentarios).slice(-5).map(e=>`  • "${e.comentarios}"`).join("\n");
+                  const titulo=filtroDocEval?`Evaluación docente — ${filtroDocEval}`:filtroModEval?(modsParaFiltro.find(m=>m.id===filtroModEval)?.nombre||"Módulo"):"Resumen de evaluaciones";
+                  const subject=encodeURIComponent(`Resultados de evaluación — ${titulo}`);
+                  const body=encodeURIComponent(`Estimado/a,\n\nAdjuntamos los resultados de evaluación correspondientes a: ${titulo}\n\nTotal de respuestas: ${resueltas.length}\nPromedio general: ${prom}/5\n\nResultados por dimensión:\n${dimLines}${comentarios?"\n\nComentarios destacados:\n"+comentarios:""}\n\nAtentamente,\nCoordinación de Educación Continua\nIBERO Tijuana`);
+                  window.open(`mailto:?subject=${subject}&body=${body}`,"_blank");
+                };
+
+                return(
+                  <div>
+                    {/* Filtros + acciones */}
+                    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+                      <select value={filtroProgEval} onChange={e=>{setFiltroProgEval(e.target.value);setFiltroModEval("");}}
+                        style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
+                        <option value="">Todos los programas</option>
+                        {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                      </select>
+                      <select value={filtroModEval} onChange={e=>setFiltroModEval(e.target.value)}
+                        style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
+                        <option value="">Todos los módulos</option>
+                        {modsParaFiltro.map(m=><option key={m.id} value={m.id}>{m.nombre}{!filtroProgEval?` — ${m.prog}`:""}</option>)}
+                      </select>
+                      <select value={filtroDocEval} onChange={e=>setFiltroDocEval(e.target.value)}
+                        style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff",flex:1}}>
+                        <option value="">Todos los docentes</option>
+                        {docentesConEvals.map(d=><option key={d.id||d.nombre} value={d.nombre}>{d.nombre}</option>)}
+                      </select>
+                      {(filtroProgEval||filtroDocEval||filtroModEval)&&<button onClick={()=>{setFiltroProgEval("");setFiltroDocEval("");setFiltroModEval("");}} style={S.btn("#f3f4f6","#374151",{fontSize:13})}>Limpiar</button>}
+                    </div>
+
+                    {resueltas.length>0&&(
+                      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                        <button onClick={exportCSVRes} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
+                        <button onClick={compartirWA} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>WhatsApp</button>
+                        <button onClick={compartirEmail} style={S.btn("#f5f3ff","#7c3aed",{border:"1px solid #ddd6fe",fontSize:13,padding:"8px 16px"})}>✉ Email</button>
+                        <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",alignItems:"center"}}>{resueltas.length} respuesta{resueltas.length!==1?"s":""} · Prom. {Math.round(resueltas.reduce((a,e)=>a+(e.promedio||0),0)/resueltas.length*10)/10}/5</div>
                       </div>
                     )}
-                    {evalsFiltradas.map((e,i)=>(
-                      <div key={e.id||i} style={{padding:"12px 18px",borderBottom:i<evalsFiltradas.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                        <div style={{flex:1,minWidth:160}}>
-                          <div style={{fontWeight:600,fontSize:13,fontFamily:"system-ui"}}>{e.mod||"Módulo"}</div>
-                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:6,flexWrap:"wrap"}}>
-                            <span>{e.prog}</span>
-                            {e.docenteNombre&&<span>· {e.docenteNombre}</span>}
-                          </div>
-                          {e.comentarios&&<div style={{marginTop:4,fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic",background:"#f9f9f9",borderRadius:4,padding:"4px 8px"}}>"{e.comentarios}"</div>}
+
+                    {resueltas.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin evaluaciones registradas{(filtroProgEval||filtroDocEval||filtroModEval)?" con estos filtros":""}.</div>}
+
+                    {resueltas.length>0&&(
+                      <div style={{...S.card,overflow:"hidden"}}>
+                        <div style={{padding:"10px 18px",background:"#f9f9f9",borderBottom:"2px solid #e5e7eb",display:"flex",gap:8,alignItems:"center",fontFamily:"system-ui",fontSize:11,fontWeight:700,color:"#6b7280"}}>
+                          <div style={{flex:1}}>MÓDULO / PROGRAMA / DOCENTE</div>
+                          {DIM_LABELS.map(l=><div key={l} style={{textAlign:"center",minWidth:52}}>{l.slice(0,5).toUpperCase()}</div>)}
+                          <div style={{textAlign:"center",minWidth:48}}>PROM.</div>
+                          <div style={{minWidth:72}}>FECHA</div>
                         </div>
-                        {DIM_KEYS.map(key=>(
-                          <div key={key} style={{textAlign:"center",minWidth:52,flexShrink:0}}>
-                            <div style={{width:32,height:32,borderRadius:6,background:bgVal(e[key]),border:"1px solid "+colorVal(e[key])+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:14,fontWeight:800,color:colorVal(e[key]),fontFamily:"system-ui"}}>
-                              {e[key]||"—"}
+                        {resueltas.map((e,i)=>(
+                          <div key={e.id||i} style={{padding:"12px 18px",borderBottom:i<resueltas.length-1?"1px solid #f3f4f6":"none",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",background:i%2===0?"#fff":"#fafafa"}}>
+                            <div style={{flex:1,minWidth:160}}>
+                              <div style={{fontWeight:600,fontSize:13,fontFamily:"system-ui"}}>{e.modNombre}</div>
+                              <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:6,flexWrap:"wrap"}}>
+                                <span>{e.progNombre}</span>
+                                {e.docenteNombre&&<span>· {e.docenteNombre}</span>}
+                              </div>
+                              {e.comentarios&&<div style={{marginTop:4,fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic",background:"#f0f4ff",borderRadius:4,padding:"4px 8px"}}>"{e.comentarios}"</div>}
+                            </div>
+                            {DIM_KEYS.map(key=>(
+                              <div key={key} style={{textAlign:"center",minWidth:52,flexShrink:0}}>
+                                <div style={{width:32,height:32,borderRadius:6,background:bgVal(e[key]),border:"1px solid "+colorVal(e[key])+"33",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:14,fontWeight:800,color:colorVal(e[key]),fontFamily:"system-ui"}}>
+                                  {e[key]||"—"}
+                                </div>
+                              </div>
+                            ))}
+                            <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
+                              <div style={{width:40,height:32,borderRadius:6,background:colorVal(e.promedio),display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:14,fontWeight:800,color:"#fff",fontFamily:"system-ui"}}>
+                                {e.promedio}
+                              </div>
+                            </div>
+                            <div style={{minWidth:72,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",flexShrink:0}}>
+                              {e.fecha?fmtFecha(e.fecha):"—"}
                             </div>
                           </div>
                         ))}
-                        <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
-                          <div style={{width:40,height:32,borderRadius:6,background:colorVal(e.promedio),display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:14,fontWeight:800,color:"#fff",fontFamily:"system-ui"}}>
-                            {e.promedio}
-                          </div>
-                        </div>
-                        <div style={{minWidth:72,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",flexShrink:0}}>
-                          {e.fecha?fmtFecha(e.fecha):"—"}
-                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* ── PESTAÑA DOCENTES ── */}
               {evalTab==="docentes_eval"&&(
                 <div>
                   {docentesConEvals.length===0&&<div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>Sin evaluaciones registradas aún.</div>}
                   <div style={{display:"grid",gap:12}}>
-                    {docentesConEvals.map((d,rank)=>(
-                      <div key={d.id||d.nombre} style={{...S.card,padding:"18px 22px",borderLeft:"4px solid "+(d.prom>=4?"#16a34a":d.prom>=3?"#d97706":"#dc2626")}}>
-                        <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
-                          {/* Ranking */}
-                          <div style={{width:36,height:36,borderRadius:"50%",background:rank===0?"#fef9c3":rank===1?"#f3f4f6":rank===2?"#fef2f2":"#f9f9f9",border:"2px solid "+(rank===0?"#d97706":rank===1?"#9ca3af":rank===2?"#dc2626":"#e5e7eb"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:800,fontSize:16,fontFamily:"system-ui",color:rank===0?"#d97706":rank===1?"#6b7280":rank===2?"#dc2626":"#374151"}}>
-                            {rank+1}
-                          </div>
-                          <div style={{flex:1,minWidth:180}}>
-                            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{d.nombre}</div>
-                            <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginBottom:12}}>{d.evals.length} evaluación{d.evals.length!==1?"es":""} · {[...new Set(d.evals.map(e=>e.modId))].length} módulo{[...new Set(d.evals.map(e=>e.modId))].length!==1?"s":""}</div>
-                            {/* Barras por dimensión */}
-                            <div style={{display:"grid",gap:6}}>
-                              {DIM_KEYS.map((key,i)=>{
-                                const val=dimProm(d.evals,key);
-                                return(
-                                  <div key={key} style={{display:"flex",alignItems:"center",gap:10}}>
-                                    <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",minWidth:90}}>{DIM_LABELS[i]}</span>
-                                    <div style={{flex:1,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
-                                      <div style={{width:(val/5*100)+"%",height:"100%",background:colorVal(val),borderRadius:4,transition:"width 0.3s"}}/>
-                                    </div>
-                                    <span style={{fontSize:12,fontWeight:700,color:colorVal(val),fontFamily:"system-ui",minWidth:24}}>{val}</span>
-                                  </div>
-                                );
-                              })}
+                    {docentesConEvals.map((d,rank)=>{
+                      const enviarResumenWA = () => {
+                        const dimLines=DIM_KEYS.map((k,i)=>`• ${DIM_LABELS[i]}: ${dimProm(d.evals,k)||"—"}/5`).join("\n");
+                        const comentarios=d.evals.filter(e=>e.comentarios).slice(-3).map(e=>`"${e.comentarios}"`).join("\n");
+                        const modulosUnicos=[...new Set(d.evals.map(e=>e.mod||e.modId))].filter(Boolean).join(", ");
+                        const doc=(docentes||[]).find(dc=>dc.id===d.id||dc.nombre===d.nombre);
+                        const msg=`📊 *Resultados de evaluación — ${d.nombre}*\n${d.evals.length} respuesta${d.evals.length!==1?"s":""} · Promedio general: *${d.prom}/5*${modulosUnicos?"\nMódulos: "+modulosUnicos:""}\n\n${dimLines}${comentarios?"\n\n💬 *Comentarios:*\n"+comentarios:""}\n\n_IBERO Tijuana — Educación Continua_`;
+                        const tel=(doc?.telefono||"").replace(/\D/g,"");
+                        window.open(tel?"https://wa.me/52"+tel+"?text="+encodeURIComponent(msg):"https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+                      };
+                      const enviarResumenEmail = () => {
+                        const dimLines=DIM_KEYS.map((k,i)=>`  • ${DIM_LABELS[i]}: ${dimProm(d.evals,k)||"—"}/5`).join("\n");
+                        const comentarios=d.evals.filter(e=>e.comentarios).slice(-3).map(e=>`  • "${e.comentarios}"`).join("\n");
+                        const doc=(docentes||[]).find(dc=>dc.id===d.id||dc.nombre===d.nombre);
+                        const subject=encodeURIComponent(`Resultados de evaluación — ${d.nombre}`);
+                        const body=encodeURIComponent(`Estimado/a ${d.nombre},\n\nA continuación compartimos los resultados de evaluación correspondientes a su(s) módulo(s) en IBERO Tijuana Educación Continua.\n\nTotal de respuestas: ${d.evals.length}\nPromedio general: ${d.prom}/5\n\nResultados por dimensión:\n${dimLines}${comentarios?"\n\nComentarios de participantes:\n"+comentarios:""}\n\nGracias por su valiosa colaboración.\n\nAtentamente,\nCoordinación de Educación Continua\nIBERO Tijuana`);
+                        const to=encodeURIComponent(doc?.email||"");
+                        window.open(`mailto:${to}?subject=${subject}&body=${body}`,"_blank");
+                      };
+                      return(
+                        <div key={d.id||d.nombre} style={{...S.card,padding:"18px 22px",borderLeft:"4px solid "+(d.prom>=4?"#16a34a":d.prom>=3?"#d97706":"#dc2626")}}>
+                          <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
+                            {/* Ranking */}
+                            <div style={{width:36,height:36,borderRadius:"50%",background:rank===0?"#fef9c3":rank===1?"#f3f4f6":rank===2?"#fef2f2":"#f9f9f9",border:"2px solid "+(rank===0?"#d97706":rank===1?"#9ca3af":rank===2?"#dc2626":"#e5e7eb"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:800,fontSize:16,fontFamily:"system-ui",color:rank===0?"#d97706":rank===1?"#6b7280":rank===2?"#dc2626":"#374151"}}>
+                              {rank+1}
                             </div>
-                            {/* Comentarios recientes */}
-                            {d.evals.filter(e=>e.comentarios).length>0&&(
-                              <div style={{marginTop:12}}>
-                                <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>COMENTARIOS RECIENTES</div>
-                                {d.evals.filter(e=>e.comentarios).slice(-2).map((e,i)=>(
-                                  <div key={i} style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic",background:"#f9f9f9",borderRadius:4,padding:"6px 10px",marginBottom:4}}>
-                                    "{e.comentarios}" <span style={{color:"#9ca3af",fontStyle:"normal"}}>— {e.mod}</span>
-                                  </div>
-                                ))}
+                            <div style={{flex:1,minWidth:180}}>
+                              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+                                <div style={{fontWeight:700,fontSize:16}}>{d.nombre}</div>
+                                <div style={{display:"flex",gap:6}}>
+                                  <button onClick={enviarResumenWA} style={S.btn("#f0fdf4","#16a34a",{padding:"3px 10px",fontSize:11,border:"1px solid #bbf7d0"})}>WA</button>
+                                  <button onClick={enviarResumenEmail} style={S.btn("#f5f3ff","#7c3aed",{padding:"3px 10px",fontSize:11,border:"1px solid #ddd6fe"})}>✉ Email</button>
+                                </div>
                               </div>
-                            )}
-                          </div>
-                          {/* Promedio grande */}
-                          <div style={{textAlign:"center",flexShrink:0}}>
-                            <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>PROMEDIO GENERAL</div>
-                            <div style={{fontSize:44,fontWeight:800,color:colorVal(d.prom),fontFamily:"Georgia,serif",lineHeight:1}}>{d.prom}</div>
-                            <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>/5</div>
+                              <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginBottom:12}}>{d.evals.length} evaluación{d.evals.length!==1?"es":""} · {[...new Set(d.evals.map(e=>e.modId))].length} módulo{[...new Set(d.evals.map(e=>e.modId))].length!==1?"s":""}</div>
+                              {/* Barras por dimensión */}
+                              <div style={{display:"grid",gap:6}}>
+                                {DIM_KEYS.map((key,i)=>{
+                                  const val=dimProm(d.evals,key);
+                                  return(
+                                    <div key={key} style={{display:"flex",alignItems:"center",gap:10}}>
+                                      <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",minWidth:90}}>{DIM_LABELS[i]}</span>
+                                      <div style={{flex:1,height:6,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                                        <div style={{width:(val/5*100)+"%",height:"100%",background:colorVal(val),borderRadius:4,transition:"width 0.3s"}}/>
+                                      </div>
+                                      <span style={{fontSize:12,fontWeight:700,color:colorVal(val),fontFamily:"system-ui",minWidth:24}}>{val}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {/* Comentarios recientes */}
+                              {d.evals.filter(e=>e.comentarios).length>0&&(
+                                <div style={{marginTop:12}}>
+                                  <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>COMENTARIOS RECIENTES</div>
+                                  {d.evals.filter(e=>e.comentarios).slice(-3).map((ev,i)=>{
+                                    const progObj=(programas||[]).find(p=>p.id===ev.progId);
+                                    const modObj=progObj?mods(progObj).find(m=>m.id===ev.modId):null;
+                                    return(
+                                      <div key={i} style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",fontStyle:"italic",background:"#f9f9f9",borderRadius:4,padding:"6px 10px",marginBottom:4}}>
+                                        "{ev.comentarios}" <span style={{color:"#9ca3af",fontStyle:"normal"}}>— {modObj?.nombre||ev.mod||"Módulo"}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                            {/* Promedio grande */}
+                            <div style={{textAlign:"center",flexShrink:0}}>
+                              <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>PROMEDIO GENERAL</div>
+                              <div style={{fontSize:44,fontWeight:800,color:colorVal(d.prom),fontFamily:"Georgia,serif",lineHeight:1}}>{d.prom}</div>
+                              <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>/5</div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
