@@ -75,7 +75,7 @@ const syncToSupabase = async (programas) => {
     carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
     requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
     fuente: e.fuente||"", programa_interes: e.programa_interes||"",
-    forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+    forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0, forma_cobro: e.forma_cobro||"",
     razon_social: e.razon_social||"", rfc: e.rfc||"", regimen_fiscal: e.regimen_fiscal||"",
     codigo_postal: e.codigo_postal||"", calle: e.calle||"", num_exterior: e.num_exterior||"",
     num_interior: e.num_interior||"", colonia: e.colonia||"", ciudad: e.ciudad||"",
@@ -2318,7 +2318,7 @@ export default function App() {
                 grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
                 requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
                 fuente: e.fuente||"", programa_interes: e.programa_interes||"",
-                forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0,
+                forma_pago_crm: e.forma_pago_crm||"", monto_ghl: e.monto_ghl||0, forma_cobro: e.forma_cobro||"",
                 razon_social: e.razon_social||"", rfc: e.rfc||"", regimen_fiscal: e.regimen_fiscal||"",
                 codigo_postal: e.codigo_postal||"", calle: e.calle||"", num_exterior: e.num_exterior||"",
                 num_interior: e.num_interior||"", colonia: e.colonia||"", ciudad: e.ciudad||"",
@@ -3523,6 +3523,28 @@ export default function App() {
             sinconfig:{bg:"#f3f4f6",color:"#9ca3af",label:"Sin configurar"},
           };
 
+          const calcEtiquetas=(est,p,mf,estado)=>{
+            const etiquetas=[];
+            const hoy=today();
+            // Verde: al corriente
+            if(estado==="ok"&&mf>0) etiquetas.push({label:"Al corriente",bg:"#f0fdf4",color:"#16a34a"});
+            // Amarillo: vence en 1-2 días
+            const venceProto=(p.parcialidades||[]).some(parc=>!parc.pagado&&parc.fecha_vencimiento&&(()=>{
+              const diff=Math.round((new Date(parc.fecha_vencimiento+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));
+              return diff>=0&&diff<=2;
+            })());
+            if(venceProto&&estado!=="vencido"&&estado!=="critico") etiquetas.push({label:"Vence pronto",bg:"#fffbeb",color:"#d97706"});
+            // Rojo: vencida
+            if(estado==="vencido"||estado==="critico") etiquetas.push({label:estado==="critico"?"Crítico":"Vencida",bg:"#fef2f2",color:"#dc2626"});
+            // Azul: requiere factura
+            if(est.requiere_factura==="Sí") etiquetas.push({label:"Factura",bg:"#eff6ff",color:"#2563eb"});
+            // Morado: transferencia o depósito
+            if(est.forma_cobro==="Transferencia"||est.forma_cobro==="Depósito") etiquetas.push({label:est.forma_cobro,bg:"#f5f3ff",color:"#7c3aed"});
+            // Naranja: descuento 90%+
+            if((p.descuento_pct||0)>=90) etiquetas.push({label:"Descuento especial",bg:"#fff7ed",color:"#c2410c"});
+            return etiquetas;
+          };
+
           const calcInfoEst=(est,prog)=>{
             const ep=calcEstadoPagos(est);
             const p=est.pago||{};
@@ -3617,7 +3639,15 @@ export default function App() {
                 </select>
                 <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                   <option value="">Todos los estados</option>
-                  {Object.entries(estadoStyle).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                  <option value="ok">Al corriente</option>
+                  <option value="vence_pronto">Vence pronto</option>
+                  <option value="vencido">Vencida</option>
+                  <option value="critico">Crítico</option>
+                  <option value="factura">Requiere factura</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="deposito">Depósito</option>
+                  <option value="descuento_especial">Descuento especial</option>
+                  <option value="sinconfig">Sin configurar</option>
                   <option value="inactivo">Inactivos</option>
                 </select>
                 {(busqP||progSelP||filtroEstado)&&<button onClick={()=>{setBusqP("");setProgSelP("");setFiltroEstado("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
@@ -3636,6 +3666,14 @@ export default function App() {
                     if(busqP&&!(est.nombre?.toLowerCase().includes(ql)||est.empresa?.toLowerCase().includes(ql)||est.email?.toLowerCase().includes(ql)))return false;
                     if(filtroEstado==="inactivo")return est.estatus==="inactivo";
                     if(est.estatus==="inactivo"&&filtroEstado!=="inactivo")return false;
+                    if(filtroEstado==="factura")return est.requiere_factura==="Sí";
+                    if(filtroEstado==="transferencia")return est.forma_cobro==="Transferencia";
+                    if(filtroEstado==="deposito")return est.forma_cobro==="Depósito";
+                    if(filtroEstado==="descuento_especial")return (est.pago?.descuento_pct||0)>=90;
+                    if(filtroEstado==="vence_pronto"){
+                      const p=est.pago||{};const hoy=today();
+                      return (p.parcialidades||[]).some(parc=>!parc.pagado&&parc.fecha_vencimiento&&(()=>{const diff=Math.round((new Date(parc.fecha_vencimiento+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));return diff>=0&&diff<=2;})());
+                    }
                     if(filtroEstado){const {estado}=calcInfoEst(est,prog);return estado===filtroEstado;}
                     return true;
                   });
@@ -3702,7 +3740,9 @@ export default function App() {
                                       <span style={{fontWeight:600,fontSize:13}}>{est.nombre}</span>
                                       {esInactivo
                                         ?<span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Inactivo</span>
-                                        :<span style={{fontSize:10,background:st.bg,color:st.color,borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>{st.label}</span>
+                                        :calcEtiquetas(est,p,mf,estado).map((et,i)=>(
+                                          <span key={i} style={{fontSize:10,background:et.bg,color:et.color,borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>{et.label}</span>
+                                        ))
                                       }
                                       {pctAsist!==null&&pctAsist<80&&!esInactivo&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Asist. {pctAsist}%</span>}
                                     </div>
@@ -3735,6 +3775,14 @@ export default function App() {
                                     <div style={{padding:"10px 28px",display:"flex",gap:8,flexWrap:"wrap",borderBottom:"1px solid #f3f4f6",alignItems:"center"}}>
                                       <button onClick={e=>{e.stopPropagation();setEditEstModal({est,prog});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar datos</button>
                                       {!esInactivo&&<button onClick={e=>{e.stopPropagation();setPagoModal({est,prog});}} style={S.btn(estado==="critico"||estado==="vencido"?RED:"#f3f4f6",estado==="critico"||estado==="vencido"?"#fff":"#374151",{padding:"5px 12px",fontSize:12})}>{mf===0?"Configurar pago":"Editar pago"}</button>}
+                                      <select value={est.forma_cobro||""} onChange={ev=>{ev.stopPropagation();saveEstudiante(prog.id,est.id,{forma_cobro:ev.target.value});}}
+                                        style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 10px",fontSize:12,fontFamily:"system-ui",background:"#fff",color:"#374151",cursor:"pointer"}}>
+                                        <option value="">Forma de cobro...</option>
+                                        <option value="Transferencia">Transferencia</option>
+                                        <option value="Depósito">Depósito</option>
+                                        <option value="Tarjeta">Tarjeta</option>
+                                        <option value="Efectivo">Efectivo</option>
+                                      </select>
                                       {/* Correos mailto */}
                                       {est.email&&!esInactivo&&(estado==="pendiente"||estado==="ok")&&(p.parcialidades||[]).some(x=>!x.pagado&&x.fecha_vencimiento>=today())&&(
                                         <button onClick={e=>{e.stopPropagation();abrirCorreo("proximo",est,prog);}} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>✉ Recordatorio pago</button>
