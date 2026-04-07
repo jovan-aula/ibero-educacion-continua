@@ -358,35 +358,52 @@ const calcEstadoPagos = (est) => {
 
 const getAlertas = programas => {
   const alerts = [];
+  const hoy = today();
   (programas||[]).forEach(prog => {
     mods(prog).forEach(mod => {
-      if (!mod.docente && mod.fechaInicio) {
-        const diff = Math.round((new Date(mod.fechaInicio) - new Date(today()))/(86400000));
-        if (diff >= 0 && diff <= 14) alerts.push({tipo:"sin_docente",prog,mod,dias:diff});
+      if (!mod.fechaInicio) return;
+      const diff = Math.round((new Date(mod.fechaInicio+"T12:00:00") - new Date(hoy+"T12:00:00"))/(86400000));
+      if (diff < 0 || diff > 14) return;
+      if (!mod.docente) {
+        // Sin docente asignado
+        alerts.push({tipo:"sin_docente",prog,mod,dias:diff});
+      } else if (mod.estatus==="propuesta") {
+        // Docente asignado pero no confirmado
+        alerts.push({tipo:"sin_confirmar",prog,mod,dias:diff});
       }
     });
+    if (progStatus(prog)!=="activo") return;
     ests(prog).forEach(est => {
-      const pct = calcPct(est, mods(prog));
-      if (pct !== null && pct < 80 && progStatus(prog)==="activo")
-        alerts.push({tipo:"asistencia",prog,est,pct});
+      if (est.estatus==="baja"||est.estatus==="inactivo") return;
 
-      // Alertas de pago
+      // Asistencia: más de 3 faltas en cualquier módulo con clases ya transcurridas
+      let maxFaltas=0, modFaltas=null;
+      mods(prog).forEach(mod=>{
+        const pasadas=getFechasMod(mod).filter(f=>f<=hoy);
+        if(!pasadas.length)return;
+        const v=est.asistencia&&est.asistencia["mod_"+mod.id];
+        const presentes=Array.isArray(v)?v.length:(v||0);
+        const faltas=pasadas.length-presentes;
+        if(faltas>maxFaltas){maxFaltas=faltas;modFaltas=mod;}
+      });
+      if(maxFaltas>3&&modFaltas) alerts.push({tipo:"asistencia",prog,est,faltas:maxFaltas,mod:modFaltas});
+
+      // Pagos vencidos desde día 16
       const ep = calcEstadoPagos(est);
       if (!ep) return;
       const mf = (est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
       const montoParcialidad = ep.total ? mf/ep.total : 0;
       const recargo = montoParcialidad * (RECARGO_PCT/100);
-
       if (ep.conRecargo.length >= 2) {
-        // Alerta roja: 2+ mensualidades sin pagar después del día 15
         alerts.push({tipo:"pago_critico",prog,est,vencidas:ep.conRecargo.length,montoParcialidad,recargo:recargo*ep.conRecargo.length});
       } else if (ep.conRecargo.length === 1) {
-        // Alerta amarilla: 1 mensualidad vencida después del día 15
         alerts.push({tipo:"pago_recargo",prog,est,vencidas:ep.conRecargo,montoParcialidad,recargo});
       }
     });
   });
-  return alerts;
+  // Ordenar: crítico > recargo > asistencia > sin_confirmar > sin_docente
+  const prioridad = {pago_critico:0,pago_recargo:1,asistencia:2,sin_confirmar:3,sin_docente:4};
+  return alerts.sort((a,b)=>(prioridad[a.tipo]??9)-(prioridad[b.tipo]??9));
 };
 
 // ─── COMPONENTES BASE ─────────────────────────────────
@@ -2479,6 +2496,19 @@ export default function App() {
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
   };
 
+  const abrirWAAsistencia = (est, prog, faltas) => {
+    const msg = [
+      `Hola ${est.nombre},`,``,
+      `Desde la Coordinación de Educación Continua de IBERO Tijuana queremos estar en contacto contigo.`,``,
+      `Hemos notado que tienes ${faltas} inasistencia${faltas!==1?"s":""} en *${prog.nombre}*. Sabemos que a veces la vida se complica y queremos saber cómo estás.`,``,
+      `¿Hay algo en lo que te podamos apoyar para que puedas continuar con tu programa sin contratiempos?`,``,
+      `Quedamos al pendiente. Con gusto nos coordinamos.`
+    ].join("\n");
+    const tel=(est.telefono||"").replace(/\D/g,"");
+    const num=tel.startsWith("52")?tel:"52"+tel;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
+  };
+
   const abrirCorreo = (tipo, est, prog) => {
     const mf  = ((est.pago?.monto_acordado||0)*(1-(est.pago?.descuento_pct||0)/100));
     const n   = (est.pago?.parcialidades||[]).length;
@@ -2627,10 +2657,11 @@ export default function App() {
 
   const prog    = getProg();
   const alertaKey = a => {
-    if(a.tipo==="sin_docente")  return `sin_docente_${a.mod.id}`;
-    if(a.tipo==="asistencia")   return `asistencia_${a.est.id}_${a.prog.id}`;
-    if(a.tipo==="pago_recargo") return `pago_recargo_${a.est.id}`;
-    if(a.tipo==="pago_critico") return `pago_critico_${a.est.id}`;
+    if(a.tipo==="sin_docente")   return `sin_docente_${a.mod.id}`;
+    if(a.tipo==="sin_confirmar") return `sin_confirmar_${a.mod.id}`;
+    if(a.tipo==="asistencia")    return `asistencia_${a.est.id}_${a.prog.id}`;
+    if(a.tipo==="pago_recargo")  return `pago_recargo_${a.est.id}`;
+    if(a.tipo==="pago_critico")  return `pago_critico_${a.est.id}`;
     return `alerta_${Math.random()}`;
   };
   const descartarAlerta = key => {
@@ -3073,19 +3104,52 @@ export default function App() {
                   {alertas.length>0&&<button onClick={descartarTodas} style={{fontSize:11,color:"#9CA3AF",background:"none",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:500}}>Borrar todas</button>}
                 </div>
                 {alertas.length===0&&<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Todo en orden ✓</div>}
-                <div style={{maxHeight:360,overflowY:"auto"}}>
-                  {alertas.map((a,i)=>(
-                    <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:a.tipo==="sin_docente"?"#f59e0b":a.tipo==="pago_recargo"?"#d97706":"#dc2626",marginTop:5,flexShrink:0}}/>
-                      <div style={{flex:1,fontFamily:FONT_BODY}}>
-                        {a.tipo==="sin_docente"&&<><div style={{fontWeight:600,fontSize:13}}>Módulo sin docente</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre}<br/>{a.prog.nombre} · Inicia en {a.dias} días</div></>}
-                        {a.tipo==="asistencia"&&<><div style={{fontWeight:600,fontSize:13,color:"#dc2626"}}>Asistencia baja: {a.pct}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre}<br/>{a.prog.nombre}</div></>}
-                        {a.tipo==="pago_recargo"&&<><div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>Pago vencido — recargo {RECARGO_PCT}%</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo: {fmtMXN(a.recargo)}</div></>}
-                        {a.tipo==="pago_critico"&&<><div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>Acción requerida — {a.vencidas} pagos sin cubrir</div><div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.est.nombre} · {a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div></>}
+                <div style={{maxHeight:400,overflowY:"auto"}}>
+                  {alertas.map((a,i)=>{
+                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="asistencia"?"#ea580c":a.tipo==="sin_confirmar"?"#f59e0b":"#6b7280";
+                    const irA = () => {
+                      if(a.tipo==="pago_critico"||a.tipo==="pago_recargo"){setView("pagos_global");setProgPagos(a.prog.id);setShowAl(false);}
+                      else if(a.tipo==="asistencia"){setView("asistencia");setShowAl(false);}
+                      else if(a.tipo==="sin_docente"||a.tipo==="sin_confirmar"){setSelProg(a.prog.id);setProgTab("modulos");setView("programa");setShowAl(false);}
+                    };
+                    return(
+                      <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:dot,marginTop:5,flexShrink:0}}/>
+                        <div style={{flex:1,fontFamily:FONT_BODY,minWidth:0}}>
+                          {a.tipo==="sin_docente"&&<>
+                            <div style={{fontWeight:600,fontSize:13,color:"#374151"}}>Sin docente asignado</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                          </>}
+                          {a.tipo==="sin_confirmar"&&<>
+                            <div style={{fontWeight:600,fontSize:13,color:"#92400e"}}>Docente sin confirmar</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""} — estatus: propuesta</div>
+                          </>}
+                          {a.tipo==="asistencia"&&<>
+                            <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.faltas} falta{a.faltas!==1?"s":""}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre} · {a.mod?.nombre||""}</div>
+                          </>}
+                          {a.tipo==="pago_recargo"&&<>
+                            <div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>{a.est.nombre} — 1 pago vencido</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}<br/>Recargo: {fmtMXN(a.recargo)}</div>
+                          </>}
+                          {a.tipo==="pago_critico"&&<>
+                            <div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>{a.est.nombre} — {a.vencidas} pagos vencidos</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div>
+                          </>}
+                          <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                            <button onClick={irA} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F7F7F8",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#374151"}}>Ver</button>
+                            {(a.tipo==="pago_recargo"||a.tipo==="pago_critico")&&(
+                              <button onClick={()=>abrirWhatsApp("vencido",a.est,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WhatsApp recordatorio</button>
+                            )}
+                            {a.tipo==="asistencia"&&(
+                              <button onClick={()=>abrirWAAsistencia(a.est,a.prog,a.faltas)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WhatsApp seguimiento</button>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
                       </div>
-                      <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
