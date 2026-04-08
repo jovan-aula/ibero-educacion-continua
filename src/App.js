@@ -2365,7 +2365,7 @@ const PERSONAS_DEFAULT=[
   "Jován Misael Naranjo Vega",
 ];
 
-function HonorariosView({programas,docentes,onToggle,session}) {
+function HonorariosView({programas,docentes,onToggle,session,setCS}) {
   const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
   const getMesOff=off=>{const d=new Date(today().substring(0,7)+"-01");d.setMonth(d.getMonth()+off);return d.toISOString().substring(0,7);};
   const mesOpts=[-2,-1,0,1,2,3,4,5].map(i=>getMesOff(i));
@@ -2898,13 +2898,13 @@ function FiscalFormPage() {
                   <input value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Calle" style={inp}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-                  <div><label style={lbl}>No. Ext.</label><input value={form.num_exterior} onChange={e=>setForm({...form,num_exterior:e.target.value})} style={inp}/></div>
-                  <div><label style={lbl}>No. Int.</label><input value={form.num_interior} onChange={e=>setForm({...form,num_interior:e.target.value})} style={inp}/></div>
-                  <div><label style={lbl}>C.P.</label><input value={form.codigo_postal} onChange={e=>setForm({...form,codigo_postal:e.target.value})} style={inp}/></div>
+                  <div><label style={lbl}>No. Ext.</label><input value={form.num_exterior} onChange={e=>setForm({...form,num_exterior:e.target.value})} placeholder="Ej. 123" style={inp}/></div>
+                  <div><label style={lbl}>No. Int.</label><input value={form.num_interior} onChange={e=>setForm({...form,num_interior:e.target.value})} placeholder="Ej. 4A" style={inp}/></div>
+                  <div><label style={lbl}>C.P.</label><input value={form.codigo_postal} onChange={e=>setForm({...form,codigo_postal:e.target.value})} placeholder="Ej. 22000" style={inp}/></div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><label style={lbl}>Colonia</label><input value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} style={inp}/></div>
-                  <div><label style={lbl}>Ciudad</label><input value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} style={inp}/></div>
+                  <div><label style={lbl}>Colonia</label><input value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Ej. Zona Centro" style={inp}/></div>
+                  <div><label style={lbl}>Ciudad</label><input value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} placeholder="Ej. Tijuana" style={inp}/></div>
                 </div>
                 <div>
                   <label style={lbl}>Estado</label>
@@ -5575,7 +5575,7 @@ export default function App() {
         })()}
 
         {/* HONORARIOS DOCENTES */}
-        {view==="honorarios"&&<HonorariosView programas={programas} docentes={docentes} onToggle={toggleHonorario} session={session}/>}
+        {view==="honorarios"&&<HonorariosView programas={programas} docentes={docentes} onToggle={toggleHonorario} session={session} setCS={setCS}/>}
 
         {/* EVALUACIONES */}
         {view==="evaluaciones"&&(()=>{
