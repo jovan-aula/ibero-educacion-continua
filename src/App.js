@@ -1604,19 +1604,22 @@ function CalendarioView({programas}) {
 
   const RenderDia = () => {
     const evs=getEvts(mes,anio,dia), isT=dia===TD&&mes===TM&&anio===TY;
+    const iso=anio+"-"+String(mes+1).padStart(2,"0")+"-"+String(dia).padStart(2,"0");
+    const fest=isFestivo(iso);
     return(
       <div style={{...S.card,padding:24}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-          <div style={{width:48,height:48,borderRadius:12,background:isT?RED:"#f3f4f6",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-            <span style={{fontSize:20,fontWeight:800,color:isT?"#fff":"#1a1a1a",fontFamily:"system-ui",lineHeight:1}}>{dia}</span>
-            <span style={{fontSize:9,color:isT?"rgba(255,255,255,0.8)":"#9ca3af",fontFamily:"system-ui"}}>{DIAS_S[(new Date(anio,mes,dia).getDay()+6)%7]}</span>
+          <div style={{width:48,height:48,borderRadius:12,background:fest?"#fef3c7":isT?RED:"#f3f4f6",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:20,fontWeight:800,color:fest?"#92400e":isT?"#fff":"#1a1a1a",fontFamily:"system-ui",lineHeight:1}}>{dia}</span>
+            <span style={{fontSize:9,color:fest?"#b45309":isT?"rgba(255,255,255,0.8)":"#9ca3af",fontFamily:"system-ui"}}>{DIAS_S[(new Date(anio,mes,dia).getDay()+6)%7]}</span>
           </div>
           <div>
             <div style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>{dia+" de "+MESES_L[mes]+" de "+anio}</div>
+            {fest&&<div style={{fontSize:12,fontWeight:600,color:"#d97706",fontFamily:"system-ui",marginBottom:2}}>🇲🇽 {fest} — Día inhábil</div>}
             <div style={{fontSize:13,color:"#9ca3af",fontFamily:"system-ui"}}>{evs.length} clases</div>
           </div>
         </div>
-        {evs.length===0?<div style={{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontFamily:"system-ui"}}>Sin clases este día.</div>:evs.map((e,i)=><EvCard key={i} e={e}/>)}
+        {evs.length===0?<div style={{textAlign:"center",color:"#9ca3af",padding:"32px 0",fontFamily:"system-ui"}}>{fest?"Día festivo — no hay clases.":"Sin clases este día."}</div>:evs.map((e,i)=><EvCard key={i} e={e}/>)}
       </div>
     );
   };
@@ -1626,18 +1629,28 @@ function CalendarioView({programas}) {
     return(
       <div style={{...S.card,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",borderBottom:"1px solid #e5e7eb"}}>
-          {dSem.map((d,i)=>{const isT=d.getDate()===TD&&d.getMonth()===TM&&d.getFullYear()===TY;return(
-            <div key={i} style={{padding:"10px 8px",textAlign:"center",background:isT?"#fef2f2":"#fff",borderRight:i<6?"1px solid #f3f4f6":"none"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#6b7280",fontFamily:"system-ui",marginBottom:4}}>{DIAS_S[i]}</div>
+          {dSem.map((d,i)=>{
+            const isT=d.getDate()===TD&&d.getMonth()===TM&&d.getFullYear()===TY;
+            const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+            const fest=isFestivo(iso);
+            return(
+            <div key={i} style={{padding:"10px 8px",textAlign:"center",background:fest?"#fef3c7":isT?"#fef2f2":"#fff",borderRight:i<6?"1px solid #f3f4f6":"none"}}>
+              <div style={{fontSize:11,fontWeight:700,color:fest?"#b45309":"#6b7280",fontFamily:"system-ui",marginBottom:4}}>{DIAS_S[i]}</div>
               <div style={{width:28,height:28,borderRadius:"50%",background:isT?RED:"transparent",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto"}}>
-                <span style={{fontSize:14,fontWeight:isT?700:400,color:isT?"#fff":"#1a1a1a",fontFamily:"system-ui"}}>{d.getDate()}</span>
+                <span style={{fontSize:14,fontWeight:isT?700:400,color:isT?"#fff":fest?"#92400e":"#1a1a1a",fontFamily:"system-ui"}}>{d.getDate()}</span>
               </div>
+              {fest&&<div style={{fontSize:9,color:"#d97706",fontFamily:"system-ui",marginTop:3,lineHeight:1.2,fontWeight:600}}>{fest}</div>}
             </div>
           );})}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
-          {dSem.map((d,i)=>{const evs=getEvts(d.getMonth(),d.getFullYear(),d.getDate());return(
-            <div key={i} style={{minHeight:120,padding:"8px 6px",borderRight:i<6?"1px solid #f3f4f6":"none"}}>
+          {dSem.map((d,i)=>{
+            const evs=getEvts(d.getMonth(),d.getFullYear(),d.getDate());
+            const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+            const fest=isFestivo(iso);
+            return(
+            <div key={i} style={{minHeight:120,padding:"8px 6px",borderRight:i<6?"1px solid #f3f4f6":"none",background:fest?"#fffbeb":"#fff"}}>
+              {fest&&<div style={{fontSize:9,color:"#d97706",fontFamily:"system-ui",fontWeight:700,marginBottom:4,padding:"2px 4px",background:"#fef3c7",borderRadius:3}}>🇲🇽 Festivo</div>}
               {evs.map((e,j)=>(
                 <div key={j} style={{background:e.prog.color,color:"#fff",borderRadius:4,padding:"3px 6px",fontSize:10,fontFamily:"system-ui",fontWeight:600,marginBottom:3,lineHeight:1.3}}>
                   <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.mod.numero}</div>
@@ -1665,14 +1678,17 @@ function CalendarioView({programas}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
             {Array.from({length:tot}).map((_,i)=>{
               const d=i-off+1,valid=d>=1&&d<=uD.getDate(),isT=valid&&d===TD&&mes===TM&&anio===TY,ev=valid?(byD[d]||[]):[],isSel=selDia===d;
+              const iso=valid?anio+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0"):null;
+              const fest=iso?isFestivo(iso):null;
               return(
-                <div key={i} onClick={()=>valid&&setSelDia(isSel?null:d)} style={{minHeight:88,padding:"6px 8px",borderRight:(i+1)%7!==0?"1px solid #f3f4f6":"none",borderBottom:i<tot-7?"1px solid #f3f4f6":"none",background:isSel?"#fef2f2":isT?"#fffbeb":"#fff",cursor:valid?"pointer":"default"}}>
+                <div key={i} onClick={()=>valid&&setSelDia(isSel?null:d)} style={{minHeight:88,padding:"6px 8px",borderRight:(i+1)%7!==0?"1px solid #f3f4f6":"none",borderBottom:i<tot-7?"1px solid #f3f4f6":"none",background:isSel?"#fef2f2":fest?"#fef3c7":isT?"#fffbeb":"#fff",cursor:valid?"pointer":"default"}}>
                   {valid&&<>
-                    <div style={{width:24,height:24,borderRadius:"50%",background:isT?RED:"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:4}}>
-                      <span style={{fontSize:12,fontWeight:isT?800:400,color:isT?"#fff":"#374151",fontFamily:"system-ui"}}>{d}</span>
+                    <div style={{width:24,height:24,borderRadius:"50%",background:isT?RED:"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:2}}>
+                      <span style={{fontSize:12,fontWeight:isT?800:400,color:isT?"#fff":fest?"#92400e":"#374151",fontFamily:"system-ui"}}>{d}</span>
                     </div>
-                    {ev.slice(0,3).map((e,j)=><div key={j} style={{background:e.prog.color,color:"#fff",borderRadius:3,padding:"2px 5px",fontSize:10,fontFamily:"system-ui",fontWeight:600,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.mod.numero+" · "+e.mod.nombre.split(" ").slice(0,2).join(" ")}</div>)}
-                    {ev.length>3&&<div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>+{ev.length-3} más</div>}
+                    {fest&&<div style={{fontSize:9,color:"#d97706",fontFamily:"system-ui",fontWeight:700,marginBottom:3,lineHeight:1.2}}>🇲🇽 {fest}</div>}
+                    {ev.slice(0,2).map((e,j)=><div key={j} style={{background:e.prog.color,color:"#fff",borderRadius:3,padding:"2px 5px",fontSize:10,fontFamily:"system-ui",fontWeight:600,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.mod.numero+" · "+e.mod.nombre.split(" ").slice(0,2).join(" ")}</div>)}
+                    {ev.length>2&&<div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>+{ev.length-2} más</div>}
                   </>}
                 </div>
               );
@@ -1704,11 +1720,13 @@ function CalendarioView({programas}) {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
                   {Array.from({length:tot}).map((_,i)=>{
                     const d=i-off+1,valid=d>=1&&d<=uD.getDate(),isT=valid&&d===TD&&m===TM&&anio===TY,hEv=valid&&(byD[d]||[]).length>0,cols=[...new Set((byD[d]||[]).map(e=>e.prog.color))];
+                    const iso=valid?anio+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0"):null;
+                    const fest=iso?isFestivo(iso):null;
                     return(
                       <div key={i} style={{height:18,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        {valid&&<div style={{width:16,height:16,borderRadius:"50%",background:isT?RED:"transparent",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
-                          <span style={{fontSize:9,color:isT?"#fff":"#374151",fontFamily:"system-ui"}}>{d}</span>
-                          {hEv&&!isT&&<div style={{position:"absolute",bottom:-2,left:"50%",transform:"translateX(-50%)",display:"flex",gap:1}}>{cols.slice(0,3).map((c,ci)=><div key={ci} style={{width:3,height:3,borderRadius:"50%",background:c}}/>)}</div>}
+                        {valid&&<div style={{width:16,height:16,borderRadius:"50%",background:isT?RED:fest?"#fde68a":"transparent",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+                          <span style={{fontSize:9,color:isT?"#fff":fest?"#92400e":"#374151",fontFamily:"system-ui"}}>{d}</span>
+                          {hEv&&!isT&&!fest&&<div style={{position:"absolute",bottom:-2,left:"50%",transform:"translateX(-50%)",display:"flex",gap:1}}>{cols.slice(0,3).map((c,ci)=><div key={ci} style={{width:3,height:3,borderRadius:"50%",background:c}}/>)}</div>}
                         </div>}
                       </div>
                     );
@@ -1744,6 +1762,31 @@ function CalendarioView({programas}) {
           <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui"}}>{titulo()}</span>
         </div>
       </div>
+      {/* Leyenda festivos del mes visible */}
+      {(()=>{
+        const mesV=modo==="anio"?null:mes, anioV=anio;
+        const festMes=[];
+        if(mesV!==null){
+          const uD=new Date(anioV,mesV+1,0);
+          for(let d=1;d<=uD.getDate();d++){
+            const iso=anioV+"-"+String(mesV+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+            const f=isFestivo(iso);
+            if(f)festMes.push({d,nombre:f,iso});
+          }
+        }
+        if(!festMes.length)return null;
+        return(
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+            {festMes.map(f=>(
+              <div key={f.iso} style={{display:"flex",alignItems:"center",gap:6,background:"#fef3c7",border:"1px solid #fde68a",borderRadius:6,padding:"4px 10px",fontSize:12,fontFamily:"system-ui"}}>
+                <span>🇲🇽</span>
+                <span style={{fontWeight:700,color:"#92400e"}}>{f.d} {MESES_C[mesV]}</span>
+                <span style={{color:"#b45309"}}>{f.nombre}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
         {progs.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:6,fontFamily:"system-ui",fontSize:12}}><div style={{width:10,height:10,borderRadius:"50%",background:p.color}}/><span style={{color:"#374151"}}>{p.nombre}</span></div>)}
       </div>
