@@ -1278,11 +1278,22 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     setBusy(true); setErr("");
     try {
       if (hasApi) {
-        let url="https://services.leadconnectorhq.com/opportunities/search?location_id="+notifConfig.locationId+"&pipeline_id="+filters.pipelineId+"&status="+filters.status;
-        if (filters.stageId) url+="&pipeline_stage_id="+filters.stageId;
-        const r=await fetch(url,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
-        const d=await r.json();
-        const enriched=await Promise.all((d.opportunities||[]).map(async op=>{
+        let baseUrl="https://services.leadconnectorhq.com/opportunities/search?location_id="+notifConfig.locationId+"&pipeline_id="+filters.pipelineId+"&status="+filters.status+"&limit=100";
+        if (filters.stageId) baseUrl+="&pipeline_stage_id="+filters.stageId;
+        // Paginar hasta traer todos los resultados
+        let allOpps=[]; let startAfter=""; let startAfterId="";
+        while(true){
+          let url=baseUrl;
+          if(startAfter) url+="&startAfter="+startAfter+"&startAfterId="+startAfterId;
+          const r=await fetch(url,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
+          const d=await r.json();
+          const page=d.opportunities||[];
+          allOpps=[...allOpps,...page];
+          const meta=d.meta||{};
+          if(page.length<100||!meta.startAfter)break;
+          startAfter=meta.startAfter; startAfterId=meta.startAfterId||"";
+        }
+        const enriched=await Promise.all(allOpps.map(async op=>{
           try{
             const cr=await fetch("https://services.leadconnectorhq.com/contacts/"+op.contactId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}});
             const cd=await cr.json();
@@ -3045,7 +3056,8 @@ export default function App() {
   const [filtroPagos,setFiltroPagos] = useState("");
   const [filtroFactProg,setFiltroFactProg] = useState("");
   const [busqFacturacion,setBusqFacturacion] = useState("");
-  const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "factura"=requieren factura, "enviada"=enviadas, "pendiente"=sin enviar
+  const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "pagaron"=pagaron este mes, "pendiente"=factura pendiente, "enviada"=enviada
+  const [filtroFactMes,setFiltroFactMes] = useState(today().substring(0,7)); // YYYY-MM
   const [fiscalModal,setFiscalModal] = useState(null); // {progId, est}
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
@@ -5201,11 +5213,17 @@ export default function App() {
           const todos = (programas||[]).flatMap(prog=>
             ests(prog).filter(e=>e.estatus!=="baja").map(e=>({e,prog}))
           );
+          // Helper: pagó algo en el mes seleccionado
+          const pagoEnMes=(e,mes)=>{
+            const p=e.pago||{};
+            if(p.tipo==="unico") return (p.parcialidades||[]).some(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mes));
+            return (p.parcialidades||[]).some(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mes));
+          };
           const lista = todos.filter(({e,prog})=>{
             if(filtroFactProg&&prog.id!==filtroFactProg)return false;
-            if(filtroFactTipo==="factura"&&e.requiere_factura!=="Sí")return false;
+            if(filtroFactTipo==="pagaron"&&!pagoEnMes(e,filtroFactMes))return false;
+            if(filtroFactTipo==="pendiente"&&!(e.requiere_factura==="Sí"&&pagoEnMes(e,filtroFactMes)&&!e.factura_enviada))return false;
             if(filtroFactTipo==="enviada"&&!e.factura_enviada)return false;
-            if(filtroFactTipo==="pendiente"&&e.factura_enviada)return false;
             if(busqFacturacion){
               const q=busqFacturacion.toLowerCase();
               const tieneFolio=(e.pago?.parcialidades||[]).some(parc=>parc.folio?.toLowerCase().includes(q));
@@ -5213,6 +5231,10 @@ export default function App() {
             }
             return true;
           });
+          // Contadores para badges
+          const cPagaron=todos.filter(({e})=>pagoEnMes(e,filtroFactMes)).length;
+          const cPendiente=todos.filter(({e})=>e.requiere_factura==="Sí"&&pagoEnMes(e,filtroFactMes)&&!e.factura_enviada).length;
+          const cEnviada=todos.filter(({e})=>e.factura_enviada).length;
 
           const toggleEnviada=(progId,estId)=>{
             const ahora=today();
@@ -5238,26 +5260,44 @@ export default function App() {
 
           return(
             <div>
-              {/* Encabezado + filtro + exportar */}
+              {/* Encabezado */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:16,flexWrap:"wrap",gap:10}}>
                 <div>
                   <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Facturación</h1>
-                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{lista.length} estudiante{lista.length!==1?"s":""} · {todos.filter(({e})=>e.factura_enviada).length} con factura enviada</p>
+                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{lista.length} estudiante{lista.length!==1?"s":""} mostrados</p>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, correo, teléfono, folio..." style={{...S.inp,minWidth:200,fontSize:13}}/>
-                  <select value={filtroFactTipo} onChange={e=>setFiltroFactTipo(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
-                    <option value="">Todos</option>
-                    <option value="factura">Requieren factura</option>
-                    <option value="enviada">Factura enviada</option>
-                    <option value="pendiente">Factura pendiente</option>
-                  </select>
+                  <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, folio..." style={{...S.inp,minWidth:180,fontSize:13}}/>
                   <select value={filtroFactProg} onChange={e=>setFiltroFactProg(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                     <option value="">Todos los programas</option>
                     {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
                   </select>
                   {(filtroFactProg||busqFacturacion||filtroFactTipo)&&<button onClick={()=>{setFiltroFactProg("");setBusqFacturacion("");setFiltroFactTipo("");}} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
                   <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
+                </div>
+              </div>
+
+              {/* Selector de mes + filtros tipo */}
+              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:"1px solid #e5e7eb",borderRadius:8,padding:"6px 12px"}}>
+                  <span style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>Mes:</span>
+                  <input type="month" value={filtroFactMes} onChange={e=>setFiltroFactMes(e.target.value)} style={{border:"none",outline:"none",fontSize:13,fontFamily:"system-ui",color:"#111",background:"transparent",cursor:"pointer"}}/>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {[
+                    {v:"",label:"Todos",count:todos.length,bg:"#f3f4f6",color:"#374151",activeBg:"#374151",activeColor:"#fff"},
+                    {v:"pagaron",label:"Pagaron este mes",count:cPagaron,bg:"#eff6ff",color:"#2563eb",activeBg:"#2563eb",activeColor:"#fff"},
+                    {v:"pendiente",label:"Factura pendiente",count:cPendiente,bg:"#fffbeb",color:"#d97706",activeBg:"#d97706",activeColor:"#fff"},
+                    {v:"enviada",label:"Factura enviada",count:cEnviada,bg:"#f0fdf4",color:"#16a34a",activeBg:"#16a34a",activeColor:"#fff"},
+                  ].map(({v,label,count,bg,color,activeBg,activeColor})=>{
+                    const activo=filtroFactTipo===v;
+                    return(
+                      <button key={v} onClick={()=>setFiltroFactTipo(v)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",fontFamily:"system-ui",fontSize:12,fontWeight:700,background:activo?activeBg:bg,color:activo?activeColor:color,transition:"all .15s"}}>
+                        {label}
+                        <span style={{background:activo?"rgba(255,255,255,0.25)":"rgba(0,0,0,0.08)",borderRadius:10,padding:"1px 7px",fontSize:11}}>{count}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
