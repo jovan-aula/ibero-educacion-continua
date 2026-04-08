@@ -3819,17 +3819,14 @@ export default function App() {
       modFinal.fechaFin    = modFinal.fechasClase[modFinal.fechasClase.length-1];
     }
     // Si el docente fue escrito manualmente y no existe en el catálogo, crearlo automáticamente
+    // No asignamos docenteId al módulo todavía para evitar FK issues — la vinculación es por nombre
     if(!modFinal.docenteId && modFinal.docente){
       const yaExiste=(docentes||[]).find(d=>d.nombre.trim().toLowerCase()===modFinal.docente.trim().toLowerCase());
       if(!yaExiste){
         const nuevoDoc={id:newId(),nombre:modFinal.docente,email:modFinal.emailDocente||"",telefono:"",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorariosPorHora:0,banco:"",clabe:"",rfc:"",perfil_incompleto:true};
-        const nuevosDocentes=[...(docentes||[]),nuevoDoc];
-        setDocentes(nuevosDocentes);
-        supa.upsert("docentes",[{id:nuevoDoc.id,nombre:nuevoDoc.nombre,email:nuevoDoc.email,telefono:"",grado:"Licenciatura",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorarios_por_hora:0,banco:"",clabe:"",rfc:"",perfil_incompleto:true}]).catch(e=>console.error("Auto-create docente:",e));
-        modFinal={...modFinal,docenteId:nuevoDoc.id};
+        setDocentes([...(docentes||[]),nuevoDoc]);
+        supa.upsert("docentes",[{id:nuevoDoc.id,nombre:nuevoDoc.nombre,email:nuevoDoc.email,telefono:"",grado:"Licenciatura",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorarios_por_hora:0,banco:"",clabe:"",rfc:""}]).catch(e=>console.error("Auto-create docente:",e));
         notify("Docente creado — completa su perfil en la sección Docentes","warning");
-      } else {
-        modFinal={...modFinal,docenteId:yaExiste.id};
       }
     }
     save((programas||[]).map(p=>p.id===selProg?{...p,modulos:editMod?mods(p).map(m=>m.id===editMod?modFinal:m):[...mods(p),modFinal]}:p));
