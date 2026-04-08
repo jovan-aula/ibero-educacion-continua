@@ -2388,12 +2388,10 @@ function HonorariosView({programas,docentes,onToggle,session}) {
       .finally(()=>setCargandoOrd(false));
   },[honTab]);
 
-  const eliminarOrden=async id=>{
-    if(!window.confirm("¿Eliminar esta orden de pago? Esta acción no se puede deshacer."))return;
-    try{
-      await supa.del("ordenes_pago",id);
-      setListaOrdenes(prev=>prev.filter(o=>o.id!==id));
-    }catch(e){alert("Error al eliminar la orden.");}
+  const eliminarOrden=id=>{
+    setCS({titulo:"Eliminar orden de pago",mensaje:"¿Estás seguro de que deseas eliminar esta orden? Si ya fue firmada se perderá el registro. Esta acción es irreversible.",onConfirm:async()=>{
+      try{await supa.del("ordenes_pago",id);setListaOrdenes(prev=>prev.filter(o=>o.id!==id));}catch(e){alert("Error al eliminar la orden.");}
+    }});
   };
 
   const abrirSolicitud=()=>setSolicitudCfg({
@@ -4608,6 +4606,7 @@ export default function App() {
                             <select value={e.estatus||"activo"} onChange={ev=>{
                                 const nuevo=ev.target.value;
                                 if(nuevo==="inactivo"){setInactivoRazon("");setInactivoModal({est:e,prog});}
+                                else if(nuevo==="baja"){setCS({titulo:"Dar de baja",mensaje:`¿Dar de baja a "${e.nombre}"? Se excluirá de todos los reportes y pagos. Esta acción se puede revertir cambiando su estatus manualmente.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:"baja"}:es)}:p))});}
                                 else save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:nuevo}:es)}:p));
                               }}
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
@@ -5179,8 +5178,8 @@ export default function App() {
                                       )}
                                       {/* Botón Activo / Inactivo */}
                                       {esInactivo
-                                        ?<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"activo");}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
-                                        :<button onClick={e=>{e.stopPropagation();marcarInactivo(prog.id,est.id,"inactivo");}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
+                                        ?<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${est.nombre}"? Volverá a aparecer en reportes y control de pagos.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"activo")});}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
+                                        :<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Marcar como inactivo",mensaje:`¿Marcar a "${est.nombre}" como inactivo? Saldrá de los reportes activos y contará en la tasa de deserción.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"inactivo")});}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
                                       }
                                       {esInactivo&&<span style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",fontStyle:"italic"}}>Cuenta en tasa de deserción en Reportes</span>}
                                       {estado==="critico"&&!esInactivo&&<span style={{fontSize:11,color:"#dc2626",fontFamily:"system-ui",fontStyle:"italic"}}>2+ pagos vencidos — considera marcar inactivo</span>}
