@@ -4080,7 +4080,7 @@ export default function App() {
       {/* ── SIDEBAR ───────────────────────────────────────── */}
       <div style={{position:"fixed",left:0,top:0,bottom:0,width:240,background:"#fff",borderRight:"1px solid #EBEBEB",display:"flex",flexDirection:"column",zIndex:100}}>
         {/* Logo */}
-        <div style={{background:"#eb1d33",padding:"20px 20px 16px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:8}} onClick={()=>setView("lista")}>
+        <div style={{background:"#eb1d33",padding:"20px 20px 16px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:8}} onClick={()=>setView("dashboard")}>
           <img src="https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png" alt="IBERO Tijuana" style={{height:52,width:"auto"}} onError={e=>{e.target.style.display="none";}}/>
           <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.75)",letterSpacing:"0.16em",textTransform:"uppercase",fontFamily:FONT_BODY}}>Educación Continua</div>
         </div>
@@ -4088,6 +4088,7 @@ export default function App() {
         <div style={{flex:1,padding:"8px 10px",overflowY:"auto"}}>
           {([
             {group:"Coordinación",items:[
+              {v:"dashboard",l:"Dashboard",  perm:"verProgramas"},
               {v:"lista",   l:"Programas",  perm:"verProgramas"},
               {v:"hoy",     l:"Hoy",        perm:"verProgramas"},
               {v:"calendario",l:"Calendario",perm:"verProgramas"},
@@ -4157,7 +4158,7 @@ export default function App() {
         {/* TOP BAR */}
         <div style={{height:54,background:"#fff",borderBottom:"1px solid #EBEBEB",padding:"0 32px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:90,flexShrink:0}}>
           <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
-            {view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
+            {view==="dashboard"?"Dashboard":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
           </div>
           {/* Alertas */}
           <div ref={alertRef} style={{position:"relative"}}>
@@ -4254,6 +4255,204 @@ export default function App() {
         <div style={{padding:"28px 32px",flex:1}}>
 
         {view==="calendario"&&<CalendarioView programas={programas}/>}
+
+        {/* DASHBOARD */}
+        {view==="dashboard"&&(()=>{
+          const hoy=today();
+          const mesActual=hoy.substring(0,7);
+          const MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+          // ── Datos globales ──
+          const todosEsts=(programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo").map(e=>({e,prog:p})));
+          const activos=todosEsts.filter(({prog})=>progStatus(prog)==="activo");
+
+          // KPIs de pagos
+          let cobradoMes=0,esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
+          let cntVencidos=0,cntCriticos=0;
+          todosEsts.forEach(({e,prog})=>{
+            const p=e.pago||{};
+            const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+            const pagadas=(p.parcialidades||[]).filter(x=>x.pagado);
+            const total=(p.parcialidades||[]).length;
+            const cobrado=p.tipo==="unico"?(pagadas.length>0?mf:0):(total?mf/total*pagadas.length:0);
+            esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=(mf-cobrado);
+            // Cobrado este mes
+            pagadas.forEach(parc=>{if(parc.fecha_pago&&parc.fecha_pago.startsWith(mesActual))cobradoMes+=total?mf/total:mf;});
+            // Vencidos
+            const ep=calcEstadoPagos(e);
+            if(ep?.conRecargo?.length>=2)cntCriticos++;
+            else if(ep?.conRecargo?.length>=1)cntVencidos++;
+          });
+
+          // Facturas pendientes
+          const factPendientes=todosEsts.filter(({e})=>e.requiere_factura==="Sí"&&!e.factura_enviada).length;
+
+          // Programas activos
+          const progsActivos=(programas||[]).filter(p=>progStatus(p)==="activo");
+          const progsProximos=(programas||[]).filter(p=>progStatus(p)==="proximo");
+
+          // Módulos esta semana
+          const enUnaSemana=new Date(hoy); enUnaSemana.setDate(enUnaSemana.getDate()+7);
+          const semanaStr=enUnaSemana.toISOString().split("T")[0];
+          const modsSemana=(programas||[]).flatMap(prog=>mods(prog).filter(m=>m.fechaInicio&&m.fechaInicio>=hoy&&m.fechaInicio<=semanaStr).map(m=>({m,prog})));
+
+          // Sin docente confirmado
+          const sinConfirmar=(programas||[]).flatMap(prog=>mods(prog).filter(m=>m.estatus!=="confirmado"&&m.docente&&progStatus(prog)!=="finalizado").map(m=>({m,prog})));
+
+          // Gráfica últimos 6 meses
+          const meses6=Array.from({length:6},(_,i)=>{
+            const d=new Date(); d.setMonth(d.getMonth()-5+i);
+            return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+          });
+          const datosMeses=meses6.map(mes=>{
+            let cobrado=0,esperado=0;
+            todosEsts.forEach(({e})=>{
+              const p=e.pago||{};
+              const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+              const total=(p.parcialidades||[]).length;
+              (p.parcialidades||[]).forEach(parc=>{
+                if(parc.pagado&&parc.fecha_pago&&parc.fecha_pago.startsWith(mes))cobrado+=total?mf/total:mf;
+              });
+              // Esperado: módulos que inician en ese mes
+            });
+            esperado=cobrado*1.15; // estimado simple
+            return{mes,cobrado,esperado};
+          });
+          const maxBar=Math.max(...datosMeses.map(d=>d.cobrado),1);
+
+          const KPICard=({label,value,sub,color,onClick,activo})=>(
+            <div onClick={onClick} style={{...S.card,padding:"18px 20px",cursor:onClick?"pointer":"default",borderLeft:"4px solid "+(color||"#e5e7eb"),transition:"box-shadow .15s",boxShadow:activo?"0 0 0 3px "+(color||RED)+"33":"none"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>{label.toUpperCase()}</div>
+              <div style={{fontSize:22,fontWeight:800,color:color||"#111",fontFamily:"system-ui"}}>{value}</div>
+              {sub&&<div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:4}}>{sub}</div>}
+            </div>
+          );
+
+          return(
+            <div>
+              <div style={{marginBottom:24}}>
+                <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Dashboard</h1>
+                <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{new Date().toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+              </div>
+
+              {/* KPIs fila 1 */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
+                <KPICard label="Cobrado este mes" value={fmtMXN(cobradoMes)} color="#16a34a"/>
+                <KPICard label="Pendiente total" value={fmtMXN(pendienteTotal)} color="#d97706" onClick={()=>setView("pagos_global")}/>
+                <KPICard label="Vencidos" value={cntVencidos+cntCriticos} sub={cntCriticos>0?cntCriticos+" críticos":""} color="#dc2626" onClick={()=>{setView("pagos_global");setFiltroPagos("vencido");}}/>
+                <KPICard label="Estudiantes activos" value={activos.length} color={RED}/>
+                <KPICard label="Programas activos" value={progsActivos.length} sub={progsProximos.length>0?progsProximos.length+" próximos":""} color="#2563eb" onClick={()=>setView("lista")}/>
+                <KPICard label="Facturas pendientes" value={factPendientes} color="#7c3aed" onClick={()=>{setView("facturacion");setFiltroFactTipo("pendiente");}}/>
+              </div>
+
+              {/* Gráfica + Pendientes */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+
+                {/* Gráfica cobros */}
+                <div style={{...S.card,padding:"20px 22px"}}>
+                  <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,marginBottom:16}}>Cobros últimos 6 meses</div>
+                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:120}}>
+                    {datosMeses.map(({mes,cobrado})=>{
+                      const pct=Math.round((cobrado/maxBar)*100);
+                      const esMesAct=mes===mesActual;
+                      return(
+                        <div key={mes} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                          <div style={{fontSize:9,fontWeight:700,color:esMesAct?RED:"#9ca3af",fontFamily:"system-ui"}}>{cobrado>0?fmtMXN(cobrado).replace("$","$"):""}</div>
+                          <div style={{width:"100%",background:esMesAct?RED:"#e5e7eb",borderRadius:"4px 4px 0 0",height:Math.max(pct/100*90,4),transition:"height .3s"}}/>
+                          <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{MESES[parseInt(mes.split("-")[1])-1]}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
+                    <span>Total cobrado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
+                    <span>Esperado: <strong>{fmtMXN(esperadoTotal)}</strong></span>
+                  </div>
+                </div>
+
+                {/* Pendientes del día */}
+                <div style={{...S.card,padding:"20px 22px"}}>
+                  <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,marginBottom:14}}>Pendientes</div>
+                  <div style={{display:"grid",gap:8}}>
+                    {modsSemana.length>0&&(
+                      <div onClick={()=>setView("hoy")} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:"#eff6ff",borderRadius:8,cursor:"pointer",border:"1px solid #bfdbfe"}}>
+                        <span style={{fontSize:18}}>📅</span>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"#2563eb",fontFamily:"system-ui"}}>{modsSemana.length} módulo{modsSemana.length!==1?"s":""} esta semana</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{modsSemana.slice(0,2).map(({m,prog})=>m.docente||"Sin docente").join(", ")}{modsSemana.length>2?" +más":""}</div>
+                        </div>
+                      </div>
+                    )}
+                    {sinConfirmar.length>0&&(
+                      <div onClick={()=>setView("lista")} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:"#fffbeb",borderRadius:8,cursor:"pointer",border:"1px solid #fde68a"}}>
+                        <span style={{fontSize:18}}>⚠️</span>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"#d97706",fontFamily:"system-ui"}}>{sinConfirmar.length} docente{sinConfirmar.length!==1?"s":""} sin confirmar</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{sinConfirmar.slice(0,2).map(({m})=>m.docente).join(", ")}{sinConfirmar.length>2?" +más":""}</div>
+                        </div>
+                      </div>
+                    )}
+                    {cntVencidos+cntCriticos>0&&(
+                      <div onClick={()=>{setView("pagos_global");setFiltroPagos("vencido");}} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:"#fef2f2",borderRadius:8,cursor:"pointer",border:"1px solid #fca5a5"}}>
+                        <span style={{fontSize:18}}>🔴</span>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"#dc2626",fontFamily:"system-ui"}}>{cntVencidos+cntCriticos} pago{cntVencidos+cntCriticos!==1?"s":""} vencido{cntVencidos+cntCriticos!==1?"s":""}</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{fmtMXN(pendienteTotal)} pendiente en total</div>
+                        </div>
+                      </div>
+                    )}
+                    {factPendientes>0&&(
+                      <div onClick={()=>{setView("facturacion");setFiltroFactTipo("pendiente");}} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:"#f5f3ff",borderRadius:8,cursor:"pointer",border:"1px solid #ddd6fe"}}>
+                        <span style={{fontSize:18}}>🧾</span>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"#7c3aed",fontFamily:"system-ui"}}>{factPendientes} factura{factPendientes!==1?"s":""} por enviar</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>Ir a Facturación →</div>
+                        </div>
+                      </div>
+                    )}
+                    {modsSemana.length===0&&sinConfirmar.length===0&&cntVencidos+cntCriticos===0&&factPendientes===0&&(
+                      <div style={{textAlign:"center",padding:20,color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Todo al corriente ✓</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Programas activos */}
+              {progsActivos.length>0&&(
+                <div style={{...S.card,padding:"20px 22px"}}>
+                  <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,marginBottom:14}}>Programas activos</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
+                    {progsActivos.map(prog=>{
+                      const estsP=ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo");
+                      const mf_total=estsP.reduce((a,e)=>{const p=e.pago||{};return a+(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);},0);
+                      const cobrado=estsP.reduce((a,e)=>{const p=e.pago||{};const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;const tot=(p.parcialidades||[]).length;return a+(p.tipo==="unico"?(pag>0?mf:0):(tot?mf/tot*pag:0));},0);
+                      const pct=mf_total>0?Math.round(cobrado/mf_total*100):0;
+                      const proxMod=mods(prog).filter(m=>m.fechaInicio&&m.fechaInicio>=hoy).sort((a,b)=>a.fechaInicio.localeCompare(b.fechaInicio))[0];
+                      return(
+                        <div key={prog.id} onClick={()=>{setSelProg(prog.id);setView("programa");}} style={{padding:"14px 16px",borderRadius:10,border:"1px solid #e5e7eb",cursor:"pointer",background:"#fafafa",transition:"box-shadow .15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 12px rgba(0,0,0,0.08)"}
+                          onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                            <div style={{width:10,height:10,borderRadius:"50%",background:prog.color||RED,flexShrink:0}}/>
+                            <div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",flex:1,lineHeight:1.3}}>{prog.nombre}</div>
+                          </div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:8}}>{estsP.length} estudiantes · {prog.generacion||""}</div>
+                          <div style={{background:"#f3f4f6",borderRadius:4,height:6,marginBottom:6}}>
+                            <div style={{height:6,borderRadius:4,background:pct>=80?"#16a34a":pct>=50?"#d97706":RED,width:pct+"%",transition:"width .4s"}}/>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontFamily:"system-ui",color:"#9ca3af"}}>
+                            <span>{pct}% cobrado</span>
+                            {proxMod&&<span>Próx: {proxMod.docente||"Sin docente"}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {view==="docentes"&&<DocentesView docentes={docentes} saveDocentes={saveDoc} programas={programas} npsData={npsData} setCS={setCS}/>}
         {view==="asistencia"&&<AsistenciaGlobal programas={programas} generarLink={generarLink} linkCopiado={linkCopiado} onToggleAsist={toggleAsistFecha} onRegEval={({prog,mod})=>setNpsModal({prog,mod})} onEnviarEval={enviarEvalPorCorreo}/>}
 
