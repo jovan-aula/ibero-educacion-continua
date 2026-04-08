@@ -1168,8 +1168,14 @@ function PagoModal({est,prog,onSave,onClose}) {
             <div style={{display:"flex",gap:8}}>
               {[["unico","Pago único"],["parcialidades","Parcialidades"]].map(([v,l])=>(
                 <button key={v} onClick={()=>{
-                  if(v==="parcialidades"&&pago.parcialidades.length===0) generarParcialidades(parcDefault);
-                  else setPago({...pago,tipo:v});
+                  if(v===pago.tipo) return; // ya está seleccionado
+                  if(v==="parcialidades"){
+                    // Al cambiar a parcialidades siempre regenerar
+                    generarParcialidades(parcDefault);
+                  } else {
+                    // Al cambiar a único: 1 parcialidad ya pagada
+                    setPago({...pago, tipo:"unico", parcialidades:[{id:newId(),numero:1,pagado:true,fecha_pago:today(),fecha_vencimiento:""}]});
+                  }
                 }} style={{flex:1,border:"2px solid "+(pago.tipo===v?RED:"#e5e7eb"),borderRadius:8,padding:"10px",cursor:"pointer",fontFamily:"system-ui",fontWeight:700,fontSize:13,background:pago.tipo===v?"#fef2f2":"#fff",color:pago.tipo===v?RED:"#6b7280"}}>{l}</button>
               ))}
             </div>
@@ -1197,14 +1203,21 @@ function PagoModal({est,prog,onSave,onClose}) {
                   )}
                 </div>
               </div>
-              {totalParcialidades>0&&(
-                <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:8,display:"flex",gap:16}}>
-                  <span>{fmtMXN(montoFinal/totalParcialidades)} por parcialidad</span>
-                  <span style={{color:"#16a34a"}}>1ª parcialidad cubierta al inscribirse · Las siguientes vencen el día 15 de cada mes</span>
-                </div>
-              )}
+              {totalParcialidades>0&&(()=>{
+                const montoCustomTotal=(pago.parcialidades||[]).reduce((a,p)=>a+(p.monto_custom||0),0);
+                const tieneCustom=(pago.parcialidades||[]).some(p=>p.monto_custom>0);
+                return(
+                  <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:8,display:"flex",gap:16,flexWrap:"wrap"}}>
+                    <span>{fmtMXN(montoFinal/totalParcialidades)} por parcialidad (base)</span>
+                    {tieneCustom&&<span style={{color:montoCustomTotal===montoFinal?"#16a34a":"#d97706",fontWeight:600}}>Total personalizado: {fmtMXN(montoCustomTotal)} {montoCustomTotal!==montoFinal?"⚠ no coincide con monto acordado":""}</span>}
+                    <span style={{color:"#16a34a"}}>Las siguientes vencen el día 15 de cada mes</span>
+                  </div>
+                );
+              })()}
               <div style={{display:"grid",gap:6}}>
                 {(pago.parcialidades||[]).map((p,i)=>{
+                  const montoParcBase=totalParcialidades?montoFinal/totalParcialidades:0;
+                  const montoMostrar=p.monto_custom>0?p.monto_custom:montoParcBase;
                   const vencido = !p.pagado && p.fecha_vencimiento && p.fecha_vencimiento < today();
                   const hoy15 = today().substring(0,8)+"15";
                   const proxima = !p.pagado && p.fecha_vencimiento && p.fecha_vencimiento >= today() && p.fecha_vencimiento <= hoy15;
@@ -1213,9 +1226,17 @@ function PagoModal({est,prog,onSave,onClose}) {
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
                         <button onClick={()=>toggleParcialidad(p.id)} style={{width:24,height:24,borderRadius:"50%",border:"2px solid "+(p.pagado?"#16a34a":vencido?"#dc2626":"#d1d5db"),background:p.pagado?"#16a34a":"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:12,color:"#fff",fontWeight:700}}>{p.pagado?"✓":""}</button>
                         <div style={{flex:1}}>
-                          <div style={{fontFamily:"system-ui",fontSize:13,fontWeight:600}}>
-                            Parcialidad {p.numero} — {fmtMXN(totalParcialidades?montoFinal/totalParcialidades:0)}
-                            {p.numero===1&&<span style={{fontSize:11,color:"#16a34a",marginLeft:6,fontWeight:400}}>(primer pago al inscribirse)</span>}
+                          <div style={{fontFamily:"system-ui",fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            Parcialidad {p.numero}
+                            <input
+                              type="number" min="0"
+                              value={p.monto_custom>0?p.monto_custom:montoParcBase}
+                              onChange={e=>{const parcs=[...(pago.parcialidades||[])];parcs[i]={...parcs[i],monto_custom:parseFloat(e.target.value)||0};setPago({...pago,parcialidades:parcs});}}
+                              style={{width:90,border:"1px solid #e5e7eb",borderRadius:4,padding:"2px 6px",fontSize:12,fontFamily:"system-ui",fontWeight:700,color:"#111"}}
+                              title="Monto de esta parcialidad"
+                            />
+                            {p.monto_custom>0&&p.monto_custom!==montoParcBase&&<span style={{fontSize:10,color:"#d97706",fontWeight:700}}>personalizado</span>}
+                            {p.numero===1&&<span style={{fontSize:11,color:"#16a34a",fontWeight:400}}>(primer pago)</span>}
                           </div>
                           {p.fecha_vencimiento&&(
                             <div style={{fontSize:11,color:vencido?"#dc2626":proxima?"#d97706":"#9ca3af",fontFamily:"system-ui",marginTop:2}}>
