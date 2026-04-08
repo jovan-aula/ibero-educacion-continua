@@ -335,7 +335,7 @@ const proyeccionMensual = (programas, docentes) => {
           const mesKey=(parc.fecha_vencimiento||parc.fecha_pago||"").substring(0,7);
           if(!mesKey)return;
           if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
-          const montoParcialidad=mf/(p.parcialidades.length||1);
+          const montoParcialidad=getMontoParc(parc,mf,p.parcialidades.length||1);
           byMes[mesKey].esperado+=montoParcialidad;
           if(parc.pagado)byMes[mesKey].cobrado+=montoParcialidad;
         });
@@ -355,6 +355,20 @@ const proyeccionMensual = (programas, docentes) => {
 };
 
 // Calcula el estado de pagos de un estudiante
+// Helper central — siempre usar monto_custom si existe, si no calcular base
+const getMontoParc = (parc, mf, total) => (parc?.monto_custom > 0) ? parc.monto_custom : (total ? mf / total : 0);
+const getMontoCobrado = (pago) => {
+  const mf = (pago.monto_acordado||0) * (1 - (pago.descuento_pct||0) / 100);
+  const total = (pago.parcialidades||[]).length;
+  if (pago.tipo === "unico") return (pago.parcialidades||[]).some(p=>p.pagado) ? mf : 0;
+  return (pago.parcialidades||[]).reduce((a, p) => a + (p.pagado ? getMontoParc(p, mf, total) : 0), 0);
+};
+const getMontoPendiente = (pago) => {
+  const mf = (pago.monto_acordado||0) * (1 - (pago.descuento_pct||0) / 100);
+  const total = (pago.parcialidades||[]).length;
+  return (pago.parcialidades||[]).reduce((a, p) => a + (!p.pagado ? getMontoParc(p, mf, total) : 0), 0);
+};
+
 const calcEstadoPagos = (est) => {
   const p = est.pago;
   if (!p||p.tipo!=="parcialidades"||!(p.parcialidades||[]).length) return null;
@@ -4372,14 +4386,15 @@ export default function App() {
             const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
             const pagadas=(p.parcialidades||[]).filter(x=>x.pagado);
             const total=(p.parcialidades||[]).length;
-            const cobrado=p.tipo==="unico"?(pagadas.length>0?mf:0):(total?mf/total*pagadas.length:0);
-            esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=(mf-cobrado);
+            const cobrado=getMontoCobrado(p);
+            const pendiente=getMontoPendiente(p);
+            esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=pendiente;
             // Cobrado este mes
-            pagadas.forEach(parc=>{if(parc.fecha_pago&&parc.fecha_pago.startsWith(mesActual))cobradoMes+=total?mf/total:mf;});
+            pagadas.forEach(parc=>{if(parc.fecha_pago&&parc.fecha_pago.startsWith(mesActual))cobradoMes+=getMontoParc(parc,mf,total);});
             // Vencidos — monto real de parcialidades vencidas
             const ep=calcEstadoPagos(e);
-            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=total?(mf/total)*ep.conRecargo.length:0;}
-            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=total?mf/total:0;}
+            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);}
+            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=getMontoParc(ep.conRecargo[0],mf,total);}
           });
 
           // Facturas pendientes
@@ -5202,8 +5217,8 @@ export default function App() {
             const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
             const pagadas=(p.parcialidades||[]).filter(x=>x.pagado).length;
             const total=(p.parcialidades||[]).length;
-            const cobrado=p.tipo==="unico"?(pagadas>0?mf:0):(total?mf/total*pagadas:0);
-            const pendiente=mf-cobrado;
+            const cobrado=getMontoCobrado(p);
+            const pendiente=getMontoPendiente(p);
             let estado="ok";
             if(ep&&ep.conRecargo.length>=2)estado="critico";
             else if(ep&&ep.conRecargo.length>=1)estado="vencido";
@@ -5602,7 +5617,7 @@ export default function App() {
                                                     <div style={{width:22,height:22,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:3,transition:"background .15s"}}>
                                                       <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{parc.pagado?"✓":parc.numero}</span>
                                                     </div>
-                                                    <div style={{fontSize:10,fontWeight:700,fontFamily:"system-ui",color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>{fmtMXN(total?mf/total:0)}</div>
+                                                    <div style={{fontSize:10,fontWeight:700,fontFamily:"system-ui",color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>{fmtMXN(getMontoParc(parc,mf,total))}</div>
                                                     <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
                                                   </div>
                                                   {/* Folio inline */}
@@ -5839,7 +5854,7 @@ export default function App() {
                                 return(
                                   <div key={parc.id} style={{display:"flex",gap:6,alignItems:"center",padding:"4px 7px",borderRadius:5,background:parc.pagado?"#f0fdf4":venc?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":venc?"#fca5a5":"#f3f4f6")}}>
                                     <div style={{width:12,height:12,borderRadius:"50%",background:parc.pagado?"#16a34a":venc?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:6,fontWeight:700}}>{parc.pagado?"✓":""}</span></div>
-                                    <span style={{fontFamily:"system-ui",fontSize:10,flex:1,fontWeight:600,color:parc.pagado?"#16a34a":venc?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(total?mf/total:0)}</span>
+                                    <span style={{fontFamily:"system-ui",fontSize:10,flex:1,fontWeight:600,color:parc.pagado?"#16a34a":venc?"#dc2626":"#374151"}}>#{parc.numero} · {fmtMXN(getMontoParc(parc,mf,total))}</span>
                                     <div style={{textAlign:"right"}}>
                                       <span style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",display:"block"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</span>
                                       {parc.pagado&&<span style={{fontSize:9,fontWeight:700,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706"}}>{parc.folio||"Folio pendiente"}</span>}
