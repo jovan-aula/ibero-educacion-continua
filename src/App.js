@@ -290,7 +290,7 @@ const calcPct = (est, modulos) => {
   return Math.min(100, Math.round(asist/total*100)); // cap a 100% por seguridad
 };
 
-const RECARGO_PCT = 6;
+const RECARGO_PCT = 6.5;
 
 // Helper central — siempre usar fechasClase confirmadas, generar como fallback
 const getFechasMod = mod => {
@@ -3196,6 +3196,8 @@ export default function App() {
   const [newResp,setNewResp]     = useState({nombre:"",email:""});
   const [users,setUsers]         = useState([]);
   const [newUser,setNewUser]     = useState({nombre:"",email:"",password:"",permisos:{...ADMIN_P}});
+  const [editUserIdx,setEditUserIdx] = useState(null);
+  const [editUserForm,setEditUserForm] = useState({});
   const [showUP,setShowUP]       = useState(false);
   const [newFM,setNewFM]         = useState({id:"",label:""});
   const [repExp,setRepExp]           = useState(null);
@@ -3211,6 +3213,7 @@ export default function App() {
   const [busqFacturacion,setBusqFacturacion] = useState("");
   const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "pagaron"=pagaron este mes, "pendiente"=factura pendiente, "enviada"=enviada
   const [filtroFactMes,setFiltroFactMes] = useState(today().substring(0,7)); // YYYY-MM
+  const [busqHoy,setBusqHoy] = useState("");
   const [cobranzaFiltroEst,setCobranzaFiltroEst] = useState(""); // "crítico","vencido","proximo","al_dia",""
   const [cobranzaFiltroProg,setCobranzaFiltroProg] = useState("");
   const [cobranzaBusq,setCobranzaBusq] = useState("");
@@ -3890,9 +3893,11 @@ export default function App() {
     <style>
       body{font-family:Georgia,serif;margin:0;padding:0;color:#1a1a1a;}
       .page{max-width:800px;margin:0 auto;padding:40px;}
-      .header{background:#C8102E;padding:24px 36px;margin-bottom:32px;}
-      .header h1{color:#fff;font-size:36px;font-weight:900;margin:0;letter-spacing:3px;}
-      .header p{color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:11px;letter-spacing:4px;font-family:Arial,sans-serif;}
+      .header{background:#C8102E;padding:20px 36px;margin-bottom:32px;display:flex;align-items:center;gap:24px;}
+      .header img{height:52px;width:auto;object-fit:contain;filter:brightness(0) invert(1);}
+      .header-text{}
+      .header h1{color:#fff;font-size:22px;font-weight:900;margin:0;letter-spacing:2px;font-family:Arial,sans-serif;}
+      .header p{color:rgba(255,255,255,0.8);margin:3px 0 0;font-size:10px;letter-spacing:3px;font-family:Arial,sans-serif;}
       .prog-title{font-size:22px;font-weight:700;margin-bottom:4px;}
       .prog-meta{font-size:13px;color:#6b7280;margin-bottom:24px;font-family:Arial,sans-serif;}
       .section-title{font-size:11px;font-weight:700;color:#C8102E;letter-spacing:1px;text-transform:uppercase;margin:24px 0 12px;font-family:Arial,sans-serif;}
@@ -3915,7 +3920,7 @@ export default function App() {
       .leyenda-dot{width:12px;height:12px;border-radius:3px;}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
     </style></head><body><div class="page">
-    <div class="header"><h1>IBERO</h1><p>TIJUANA &nbsp;·&nbsp; COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div>
+    <div class="header"><img src="${IBERO_LOGO}" alt="IBERO"/><div class="header-text"><h1>IBERO TIJUANA</h1><p>COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div></div>
     <div class="prog-title">${prog.nombre}</div>
     <div class="prog-meta">${prog.tipo}${prog.modalidad?" · "+prog.modalidad:""}${prog.generacion?" · "+prog.generacion+" generación":""}</div>`;
 
@@ -4501,11 +4506,17 @@ export default function App() {
 
           return(
             <div>
-              <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
+              <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
                 <div>
                   <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Lista de hoy</h1>
                   <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{fmtHoyLargo()} · {modulosHoy.length} {modulosHoy.length===1?"módulo":"módulos"} con clase</p>
                 </div>
+                <input
+                  value={busqHoy} onChange={e=>setBusqHoy(e.target.value)}
+                  placeholder="Buscar alumno..."
+                  style={{...S.inp,width:240,padding:"9px 14px",fontSize:14}}
+                  autoFocus
+                />
               </div>
 
               {modulosHoy.length===0&&(
@@ -4521,8 +4532,11 @@ export default function App() {
                 {modulosHoy.map(({prog,mod,fechas})=>{
                   const numClase=fechas.indexOf(hoy)+1;
                   const maxClases=fechas.length||mod.clases||0;
-                  const estudiantes=ests(prog);
-                  const presentes=estudiantes.filter(e=>presenteHoy(e,mod.id)).length;
+                  const todosEsts=ests(prog);
+                  const presentes=todosEsts.filter(e=>presenteHoy(e,mod.id)).length;
+                  const estudiantesFiltrados=busqHoy
+                    ? todosEsts.filter(e=>e.nombre.toLowerCase().includes(busqHoy.toLowerCase()))
+                    : todosEsts;
                   return(
                     <div key={prog.id+"_"+mod.id} style={{...S.card,overflow:"hidden"}}>
                       {/* Header del módulo */}
@@ -4537,23 +4551,27 @@ export default function App() {
                           </div>
                         </div>
                         <div style={{textAlign:"right",flexShrink:0}}>
-                          <div style={{fontWeight:800,fontSize:18,color:RED}}>{presentes}/{estudiantes.length}</div>
+                          <div style={{fontWeight:800,fontSize:18,color:RED}}>{presentes}/{todosEsts.length}</div>
                           <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Clase {numClase} de {maxClases}</div>
+                          {busqHoy&&<div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>{estudiantesFiltrados.length} resultado{estudiantesFiltrados.length!==1?"s":""}</div>}
                         </div>
                       </div>
 
                       {/* Lista de estudiantes */}
-                      {estudiantes.length===0&&(
+                      {todosEsts.length===0&&(
                         <div style={{padding:"24px",textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Sin estudiantes importados.</div>
                       )}
+                      {busqHoy&&estudiantesFiltrados.length===0&&(
+                        <div style={{padding:"18px 20px",textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Sin resultados para "{busqHoy}"</div>
+                      )}
                       <div style={{display:"grid",gap:0}}>
-                        {estudiantes.map((e,i)=>{
+                        {estudiantesFiltrados.map((e,i)=>{
                           const presente=presenteHoy(e,mod.id);
                           const tot=Array.isArray(e.asistencia&&e.asistencia["mod_"+mod.id])?(e.asistencia["mod_"+mod.id]).length:((e.asistencia&&e.asistencia["mod_"+mod.id])||0);
                           const pct=maxClases?Math.round(tot/maxClases*100):0;
                           return(
                             <div key={e.id} onClick={()=>toggleHoy(prog.id,mod.id,e.id)}
-                              style={{padding:"12px 20px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",borderBottom:i<estudiantes.length-1?"1px solid #f3f4f6":"none",background:presente?"#f0fdf4":"#fff",transition:"background 0.1s"}}>
+                              style={{padding:"12px 20px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",borderBottom:i<estudiantesFiltrados.length-1?"1px solid #f3f4f6":"none",background:presente?"#f0fdf4":"#fff",transition:"background 0.1s"}}>
                               <div style={{width:28,height:28,borderRadius:"50%",background:presente?"#16a34a":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700,fontSize:13,color:presente?"#fff":"#9ca3af"}}>
                                 {presente?"✓":""}
                               </div>
@@ -6950,18 +6968,44 @@ export default function App() {
                 <p style={{fontSize:13,color:"#9ca3af",margin:"0 0 18px",fontFamily:"system-ui"}}>Gestiona accesos y permisos por usuario.</p>
                 {(users||[]).map((u,i)=>(
                   <div key={i} style={{marginBottom:12,padding:"14px 16px",background:"#f9f9f9",borderRadius:6}}>
-                    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                      <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14,fontFamily:"system-ui"}}>{u.nombre}</div><div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{u.email}</div></div>
-                      {u.email!==session.email&&<button onClick={()=>setCS({titulo:"Eliminar usuario",mensaje:`¿Estás seguro de que deseas eliminar al usuario "${u.nombre}"? Perderá acceso al sistema.`,onConfirm:()=>saveUsers((users||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
-                    </div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                      {ALL_PERMISOS.map(p=>(
-                        <label key={p.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:u.email===session.email?"default":"pointer",background:u.permisos&&u.permisos[p.key]?"#fef2f2":"#f3f4f6",padding:"3px 10px",borderRadius:4,border:"1px solid "+(u.permisos&&u.permisos[p.key]?"#fca5a5":"#e5e7eb"),color:u.permisos&&u.permisos[p.key]?"#1a1a1a":"#9ca3af",fontFamily:"system-ui"}}>
-                          <input type="checkbox" checked={!!(u.permisos&&u.permisos[p.key])} disabled={u.email===session.email} onChange={e=>saveUsers((users||[]).map((uu,j)=>j===i?{...uu,permisos:{...(uu.permisos||{}),[p.key]:e.target.checked}}:uu))} style={{margin:0}}/>
-                          {p.label}
-                        </label>
-                      ))}
-                    </div>
+                    {editUserIdx===i ? (
+                      // ── Modo edición ──
+                      <div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                          <div><label style={S.lbl}>Nombre</label><input value={editUserForm.nombre||""} onChange={e=>setEditUserForm({...editUserForm,nombre:e.target.value})} style={S.inp}/></div>
+                          <div><label style={S.lbl}>Correo</label><input value={editUserForm.email||""} onChange={e=>setEditUserForm({...editUserForm,email:e.target.value})} style={S.inp}/></div>
+                        </div>
+                        <div style={{marginBottom:10}}><label style={S.lbl}>Nueva contraseña <span style={{color:"#9ca3af",fontWeight:400}}>(dejar vacío para no cambiar)</span></label><input type="password" value={editUserForm.newPassword||""} onChange={e=>setEditUserForm({...editUserForm,newPassword:e.target.value})} placeholder="••••••" style={S.inp}/></div>
+                        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+                          <button onClick={()=>{setEditUserIdx(null);setEditUserForm({});}} style={S.btn("#f3f4f6","#374151",{padding:"6px 14px",fontSize:12})}>Cancelar</button>
+                          <button onClick={async()=>{
+                            if(!editUserForm.nombre||!editUserForm.email){notify("Nombre y correo son obligatorios","error");return;}
+                            if(editUserForm.newPassword&&editUserForm.newPassword.length<6){notify("La contraseña debe tener mínimo 6 caracteres","error");return;}
+                            const updated={...u,nombre:editUserForm.nombre,email:editUserForm.email.toLowerCase()};
+                            await saveUsers((users||[]).map((uu,j)=>j===i?updated:uu));
+                            setEditUserIdx(null);setEditUserForm({});
+                            notify("Usuario actualizado.");
+                          }} style={S.btn(RED,"#fff",{padding:"6px 14px",fontSize:12})}>Guardar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      // ── Modo lectura ──
+                      <>
+                        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                          <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14,fontFamily:"system-ui"}}>{u.nombre}</div><div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{u.email}</div></div>
+                          <button onClick={()=>{setEditUserIdx(i);setEditUserForm({nombre:u.nombre,email:u.email,newPassword:""});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar</button>
+                          {u.email!==session.email&&<button onClick={()=>setCS({titulo:"Eliminar usuario",mensaje:`¿Estás seguro de que deseas eliminar al usuario "${u.nombre}"? Perderá acceso al sistema.`,onConfirm:()=>saveUsers((users||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
+                        </div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                          {ALL_PERMISOS.map(p=>(
+                            <label key={p.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:u.email===session.email?"default":"pointer",background:u.permisos&&u.permisos[p.key]?"#fef2f2":"#f3f4f6",padding:"3px 10px",borderRadius:4,border:"1px solid "+(u.permisos&&u.permisos[p.key]?"#fca5a5":"#e5e7eb"),color:u.permisos&&u.permisos[p.key]?"#1a1a1a":"#9ca3af",fontFamily:"system-ui"}}>
+                              <input type="checkbox" checked={!!(u.permisos&&u.permisos[p.key])} disabled={u.email===session.email} onChange={e=>saveUsers((users||[]).map((uu,j)=>j===i?{...uu,permisos:{...(uu.permisos||{}),[p.key]:e.target.checked}}:uu))} style={{margin:0}}/>
+                              {p.label}
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
                 <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginTop:8}}>
