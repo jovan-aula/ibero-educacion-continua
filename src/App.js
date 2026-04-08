@@ -952,6 +952,59 @@ function EditEstModal({est,prog,onSave,onClose}) {
   );
 }
 
+function FiscalModal({est,onSave,onClose}) {
+  const [form,setForm] = useState({
+    requiere_factura: est.requiere_factura||"",
+    rfc: est.rfc||"", razon_social: est.razon_social||"",
+    regimen_fiscal: est.regimen_fiscal||"", uso_cfdi: est.uso_cfdi||"",
+    calle: est.calle||"", num_exterior: est.num_exterior||"",
+    num_interior: est.num_interior||"", colonia: est.colonia||"",
+    ciudad: est.ciudad||"", estado: est.estado||"",
+    codigo_postal: est.codigo_postal||"", csf_url: est.csf_url||"",
+  });
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1500,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+        <div style={{padding:"18px 24px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>Datos fiscales</div>
+            <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{est.nombre}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
+        </div>
+        <div style={{padding:"20px 24px",display:"grid",gap:12}}>
+          <div>
+            <label style={S.lbl}>¿Requiere factura?</label>
+            <div style={{display:"flex",gap:8}}>
+              {["Sí","No"].map(v=>(
+                <button key={v} onClick={()=>setForm({...form,requiere_factura:v})} style={{border:"2px solid "+(form.requiere_factura===v?RED:"#e5e7eb"),borderRadius:6,padding:"7px 18px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.requiere_factura===v?"#fef2f2":"#fff",color:form.requiere_factura===v?RED:"#9ca3af"}}>{v}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>Razón social</label><input value={form.razon_social} onChange={e=>setForm({...form,razon_social:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>RFC</label><input value={form.rfc} onChange={e=>setForm({...form,rfc:e.target.value.toUpperCase()})} style={S.inp}/></div>
+            <div><label style={S.lbl}>Régimen fiscal</label><input value={form.regimen_fiscal} onChange={e=>setForm({...form,regimen_fiscal:e.target.value})} style={S.inp}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>Uso del CFDI</label><input value={form.uso_cfdi} onChange={e=>setForm({...form,uso_cfdi:e.target.value})} style={S.inp}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>Calle</label><input value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>No. Ext.</label><input value={form.num_exterior} onChange={e=>setForm({...form,num_exterior:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>No. Int.</label><input value={form.num_interior} onChange={e=>setForm({...form,num_interior:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>Colonia</label><input value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>Ciudad</label><input value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>Estado</label><input value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})} style={S.inp}/></div>
+            <div><label style={S.lbl}>Código postal</label><input value={form.codigo_postal} onChange={e=>setForm({...form,codigo_postal:e.target.value})} style={S.inp}/></div>
+            <div style={{gridColumn:"1/-1"}}><label style={S.lbl}>URL del CSF</label><input value={form.csf_url} onChange={e=>setForm({...form,csf_url:e.target.value})} placeholder="https://..." style={S.inp}/></div>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+            <button onClick={onClose} style={S.btn("#f3f4f6","#374151",{padding:"9px 20px"})}>Cancelar</button>
+            <button onClick={()=>onSave(form)} style={S.btn(RED,"#fff",{padding:"9px 20px",fontWeight:700})}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PagoModal({est,prog,onSave,onClose}) {
   const precioL = prog.precioLista||0;
   const montoGHL = est.monto_ghl||0;
@@ -2993,6 +3046,7 @@ export default function App() {
   const [filtroFactProg,setFiltroFactProg] = useState("");
   const [busqFacturacion,setBusqFacturacion] = useState("");
   const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "factura"=requieren factura, "enviada"=enviadas, "pendiente"=sin enviar
+  const [fiscalModal,setFiscalModal] = useState(null); // {progId, est}
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [evalTab,setEvalTab]           = useState("modulos");
@@ -5038,7 +5092,7 @@ export default function App() {
                                                 :[{id:est.id+"_p1",numero:1,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}];
                                               savePago(prog.id,est.id,{...p,parcialidades:newParcs});
                                             };
-                                            if(marcando&&est.requiere_factura==="Sí"){
+                                            if(marcando){
                                               setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("")});
                                             } else { aplicar(""); }
                                           };
@@ -5066,7 +5120,7 @@ export default function App() {
                                                   const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}:x);
                                                   savePago(prog.id,est.id,{...p,parcialidades:newParcs});
                                                 };
-                                                if(marcando&&est.requiere_factura==="Sí"){
+                                                if(marcando){
                                                   setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("")});
                                                 } else { aplicar(""); }
                                               };
@@ -5231,7 +5285,10 @@ export default function App() {
 
                         {/* 2. Datos fiscales */}
                         <div style={{padding:"14px 16px",borderRight:"1px solid #f3f4f6"}}>
-                          <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>DATOS FISCALES</div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                            <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px"}}>DATOS FISCALES</div>
+                            <button onClick={()=>setFiscalModal({progId:prog.id,est:e})} style={{background:"none",border:"1px solid #e5e7eb",borderRadius:4,padding:"1px 7px",cursor:"pointer",fontSize:10,fontFamily:"system-ui",color:"#6b7280",fontWeight:600}}>Editar</button>
+                          </div>
                           <div style={{display:"grid",gap:3,fontFamily:"system-ui",fontSize:11}}>
                             {e.rfc&&<div><span style={{color:"#9ca3af"}}>RFC: </span><span style={{fontWeight:700,letterSpacing:"0.5px"}}>{e.rfc}</span></div>}
                             {e.razon_social&&<div><span style={{color:"#9ca3af"}}>Razón social: </span><span style={{fontWeight:600}}>{e.razon_social}</span></div>}
@@ -6375,8 +6432,8 @@ export default function App() {
       {folioModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{folioModal.onSkip();setFolioModal(null);}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,padding:28,width:360,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:"system-ui"}}>
-            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>Ingresar folio de factura</div>
-            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 16px"}}>Este pago requiere factura. Ingresa el folio para registrarlo.</p>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>Ingresar folio</div>
+            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 16px"}}>Ingresa el folio correspondiente a este pago, o omite si no aplica.</p>
             <input id="folio-input" autoFocus placeholder="Ej. F-001, A-2024-15..." style={{...S.inp,marginBottom:16,fontSize:14}} defaultValue=""/>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <button onClick={()=>{folioModal.onSkip();setFolioModal(null);}} style={S.btn("#f3f4f6","#6b7280",{padding:"8px 16px"})}>Omitir por ahora</button>
@@ -6385,6 +6442,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {fiscalModal&&<FiscalModal est={fiscalModal.est} onSave={datos=>{save((programas||[]).map(p=>p.id!==fiscalModal.progId?p:{...p,estudiantes:ests(p).map(e=>e.id!==fiscalModal.est.id?e:{...e,...datos})}));setFiscalModal(null);}} onClose={()=>setFiscalModal(null)}/>}
       {npsModal&&<NPSModal prog={npsModal.prog} mod={npsModal.mod} onSave={resp=>saveNPS(npsModal.prog.id,npsModal.mod.id,npsModal.mod.docenteId||"",npsModal.mod.docente||"",resp)} onClose={()=>setNpsModal(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
