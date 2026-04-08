@@ -4345,7 +4345,7 @@ export default function App() {
 
           // KPIs de pagos
           let cobradoMes=0,esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
-          let cntVencidos=0,cntCriticos=0;
+          let cntVencidos=0,cntCriticos=0,montoVencido=0;
           todosEsts.forEach(({e,prog})=>{
             const p=e.pago||{};
             const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
@@ -4355,10 +4355,10 @@ export default function App() {
             esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=(mf-cobrado);
             // Cobrado este mes
             pagadas.forEach(parc=>{if(parc.fecha_pago&&parc.fecha_pago.startsWith(mesActual))cobradoMes+=total?mf/total:mf;});
-            // Vencidos
+            // Vencidos — monto real de parcialidades vencidas
             const ep=calcEstadoPagos(e);
-            if(ep?.conRecargo?.length>=2)cntCriticos++;
-            else if(ep?.conRecargo?.length>=1)cntVencidos++;
+            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=total?(mf/total)*ep.conRecargo.length:0;}
+            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=total?mf/total:0;}
           });
 
           // Facturas pendientes
@@ -4452,11 +4452,11 @@ export default function App() {
                   <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,marginBottom:14}}>Pendientes</div>
                   <div style={{display:"grid",gap:8}}>
                     {modsSemana.length>0&&(
-                      <div onClick={()=>setView("hoy")} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:"#eff6ff",borderRadius:8,cursor:"pointer",border:"1px solid #bfdbfe"}}>
+                      <div onClick={()=>setView("calendario")} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:"#eff6ff",borderRadius:8,cursor:"pointer",border:"1px solid #bfdbfe"}}>
                         <span style={{fontSize:18}}>📅</span>
                         <div>
                           <div style={{fontWeight:700,fontSize:13,color:"#2563eb",fontFamily:"system-ui"}}>{modsSemana.length} módulo{modsSemana.length!==1?"s":""} esta semana</div>
-                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{modsSemana.slice(0,2).map(({m,prog})=>m.docente||"Sin docente").join(", ")}{modsSemana.length>2?" +más":""}</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{modsSemana.slice(0,2).map(({m})=>m.docente||"Sin docente").join(", ")}{modsSemana.length>2?" +más":""}</div>
                         </div>
                       </div>
                     )}
@@ -4474,7 +4474,7 @@ export default function App() {
                         <span style={{fontSize:18}}>🔴</span>
                         <div>
                           <div style={{fontWeight:700,fontSize:13,color:"#dc2626",fontFamily:"system-ui"}}>{cntVencidos+cntCriticos} pago{cntVencidos+cntCriticos!==1?"s":""} vencido{cntVencidos+cntCriticos!==1?"s":""}</div>
-                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{fmtMXN(pendienteTotal)} pendiente en total</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{fmtMXN(montoVencido)} vencido · {fmtMXN(pendienteTotal)} pendiente total</div>
                         </div>
                       </div>
                     )}
