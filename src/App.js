@@ -958,16 +958,20 @@ function PagoModal({est,prog,onSave,onClose}) {
   // Si el pago aún no tiene descuento configurado y tenemos datos del CRM, calcular automáticamente
   const pago0 = (()=>{
     const base = est.pago||{tipo:"unico",monto_acordado:montoGHL,descuento_pct:0,promocion_id:"",parcialidades:[],notas:""};
+    // Auto-calcular descuento desde CRM si aún no se ha configurado
     if(base.descuento_pct===0 && precioL>0 && montoGHL>0){
       const numParcs = (base.parcialidades||[]).length || (prog.parcialidadesDefault||5);
-      // Para parcialidades, monto_ghl es UNA parcialidad → total = monto × n
-      // Para pago único, monto_ghl es el total
       const totalAcordado = base.tipo==="parcialidades" ? montoGHL*numParcs : montoGHL;
       if(totalAcordado>0 && totalAcordado<=precioL){
         const descAuto=Math.round((1-totalAcordado/precioL)*100);
         const matchPromo=PROMOS_FIJAS.find(pr=>pr.descuento===descAuto)||(descAuto>=90?PROMOS_FIJAS.find(pr=>pr.id==="promo_beca"):null);
         return {...base, monto_acordado:precioL, descuento_pct:descAuto, promocion_id:matchPromo?matchPromo.id:base.promocion_id||""};
       }
+    }
+    // Si ya tiene descuento pero sin promo seleccionada, mapear automáticamente
+    if(base.descuento_pct>0 && !base.promocion_id){
+      const matchPromo=PROMOS_FIJAS.find(pr=>pr.descuento===base.descuento_pct)||(base.descuento_pct>=90?PROMOS_FIJAS.find(pr=>pr.id==="promo_beca"):null);
+      if(matchPromo) return {...base, promocion_id:matchPromo.id};
     }
     return base;
   })();
