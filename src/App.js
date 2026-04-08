@@ -60,6 +60,7 @@ const syncToSupabase = async (programas) => {
     parcialidades_default: p.parcialidadesDefault||5, estatus: p.estatus||"activo",
     colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
     precio_lista: p.precioLista||0, tipo_custom: p.tipoCustom||"",
+    notas_internas: p.notas_internas||"",
   }));
   const okProgs = await supa.upsert("programas", progs);
   if(!okProgs) throw new Error("Error al guardar programas");
@@ -90,6 +91,10 @@ const syncToSupabase = async (programas) => {
     estatus: e.estatus||"activo", asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
     fiscal_token: e.fiscal_token||null,
     fiscal_completado: e.fiscal_completado||false,
+    cobranza_estado: e.cobranza_estado||null,
+    cobranza_ultimo_contacto: e.cobranza_ultimo_contacto||null,
+    cobranza_comprometio: e.cobranza_comprometio||null,
+    cobranza_nota: e.cobranza_nota||"",
   })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
@@ -1049,10 +1054,9 @@ function PagoModal({est,prog,onSave,onClose}) {
   // Calcula fecha de vencimiento mensual a partir del mes siguiente al inicio del programa
   const calcFechasVencimiento = (n, fechaInicioProg) => {
     const base = fechaInicioProg ? new Date(fechaInicioProg+"T12:00:00") : new Date();
-    // Primera parcialidad ya está pagada (pago al inscribirse)
-    // Vencen el día 15 del mes siguiente, mes a mes
+    // Parcialidad 1 = mes de inicio del programa, luego mes a mes consecutivo
     return Array.from({length:n},(_,i)=>{
-      const d = new Date(base.getFullYear(), base.getMonth()+i+1, 1);
+      const d = new Date(base.getFullYear(), base.getMonth()+i, 1);
       return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15";
     });
   };
@@ -1173,10 +1177,21 @@ function PagoModal({est,prog,onSave,onClose}) {
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <label style={S.lbl}>Parcialidades ({pagosPagados}/{totalParcialidades} pagadas)</label>
-                <div style={{display:"flex",gap:6}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                   {[3,5,6,10,12].map(n=>(
                     <button key={n} onClick={()=>generarParcialidades(n)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:totalParcialidades===n?"#fef2f2":"#fff",color:totalParcialidades===n?RED:"#6b7280",fontWeight:totalParcialidades===n?700:400}}>{n}</button>
                   ))}
+                  {totalParcialidades>0&&(
+                    <button onClick={()=>{
+                      const nuevasFechas=calcFechasVencimiento(totalParcialidades,fechaInicioProg);
+                      setPago({...pago,parcialidades:(pago.parcialidades||[]).map((p,i)=>({
+                        ...p,
+                        fecha_vencimiento:p.pagado?p.fecha_vencimiento:(nuevasFechas[i]||p.fecha_vencimiento),
+                      }))});
+                    }} style={{border:"1px solid #bfdbfe",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:"#eff6ff",color:"#2563eb",fontWeight:500,marginLeft:4}}>
+                      Recalcular fechas
+                    </button>
+                  )}
                 </div>
               </div>
               {totalParcialidades>0&&(
@@ -1351,11 +1366,11 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
     // Fecha de inicio del primer módulo del programa
     const fechaInicioPrograma = (prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"";
 
-    // Genera fechas de vencimiento mensuales a partir del mes siguiente al inicio
+    // Genera fechas de vencimiento mensuales desde el mes de inicio, consecutivas
     const calcVencimientosImport = (n, fechaBase) => {
       const base = fechaBase ? new Date(fechaBase+"T12:00:00") : new Date();
       return Array.from({length:n},(_,i)=>{
-        const d = new Date(base.getFullYear(), base.getMonth()+i+1, 1);
+        const d = new Date(base.getFullYear(), base.getMonth()+i, 1);
         return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15";
       });
     };
@@ -3160,7 +3175,7 @@ export default function App() {
   const [docentes,setDocentes]   = useState([]);
   const [ordenes,setOrdenes]     = useState([]);
   const [showApiKey,setShowAK]   = useState(false);
-  const [view,setView]           = useState("lista");
+  const [view,setView]           = useState("dashboard");
   const [selProg,setSelProg]     = useState(null);
   const [progTab,setProgTab]     = useState("modulos");
   const [showModM,setShowModM]   = useState(false);
@@ -3196,6 +3211,11 @@ export default function App() {
   const [busqFacturacion,setBusqFacturacion] = useState("");
   const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "pagaron"=pagaron este mes, "pendiente"=factura pendiente, "enviada"=enviada
   const [filtroFactMes,setFiltroFactMes] = useState(today().substring(0,7)); // YYYY-MM
+  const [cobranzaFiltroEst,setCobranzaFiltroEst] = useState(""); // "crítico","vencido","proximo","al_dia",""
+  const [cobranzaFiltroProg,setCobranzaFiltroProg] = useState("");
+  const [cobranzaBusq,setCobranzaBusq] = useState("");
+  const [cobranzaNotaModal,setCobranzaNotaModal] = useState(null); // {est, prog}
+  const [cobranzaNotaText,setCobranzaNotaText] = useState("");
   const [fiscalModal,setFiscalModal] = useState(null); // {progId, est}
   const [fiscalSolicitudModal,setFiscalSolicitudModal] = useState(null); // {progId, est, url}
   const [expandido,setExpandido]       = useState(null); // programa abierto
@@ -3217,7 +3237,7 @@ export default function App() {
   const alertRef = useRef(null);
 
   const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:4,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,colaboracion:false,socio:"",pct_socio:0};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,colaboracion:false,socio:"",pct_socio:0,notas_internas:""};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -3319,6 +3339,7 @@ export default function App() {
             estatus: p.estatus||"activo",
             colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
             precioLista: p.precio_lista||0, tipoCustom: p.tipo_custom||"",
+            notas_internas: p.notas_internas||"",
             promociones: p.promociones||[],
             modulos: (supaModulos||[]).filter(m=>m.programa_id===p.id).map(m=>({
               id: m.id, numero: m.numero||"", nombre: m.nombre||"",
@@ -4099,6 +4120,7 @@ export default function App() {
             ]},
             {group:"Finanzas",items:[
               {v:"pagos_global",l:"Pagos",       perm:"verPagos"},
+              {v:"cobranza",    l:"Cobranza",    perm:"verPagos"},
               {v:"facturacion", l:"Facturación", perm:"verFacturacion"},
               {v:"honorarios",  l:"Honorarios",  perm:"verFacturacion"},
             ]},
@@ -4158,7 +4180,7 @@ export default function App() {
         {/* TOP BAR */}
         <div style={{height:54,background:"#fff",borderBottom:"1px solid #EBEBEB",padding:"0 32px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:90,flexShrink:0}}>
           <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
-            {view==="dashboard"?"Dashboard":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
+            {view==="dashboard"?"Dashboard":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="cobranza"?"Cobranza":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
           </div>
           {/* Alertas */}
           <div ref={alertRef} style={{position:"relative"}}>
@@ -5776,6 +5798,230 @@ export default function App() {
         {/* HONORARIOS DOCENTES */}
         {view==="honorarios"&&<HonorariosView programas={programas} docentes={docentes} onToggle={toggleHonorario} session={session} setCS={setCS}/>}
 
+        {/* COBRANZA */}
+        {view==="cobranza"&&(()=>{
+          const hoy=today();
+
+          // ─ Helpers ─
+          const diasDesde = fecha => {
+            if(!fecha) return null;
+            const diff = Math.round((new Date(hoy+"T12:00:00")-new Date(fecha+"T12:00:00"))/86400000);
+            return diff;
+          };
+
+          // ─ Construir lista de estudiantes con balance pendiente ─
+          const lista=[];
+          (programas||[]).forEach(prog=>{
+            (prog.estudiantes||[]).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo").forEach(est=>{
+              const p=est.pago||{};
+              const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+              if(!mf) return;
+              const parcialidades=p.parcialidades||[];
+              const pagadas=parcialidades.filter(x=>x.pagado);
+              let pendienteMonto=0, vencidas=[], proximas=[];
+              if(p.tipo==="unico"){
+                if(pagadas.length) return; // único ya pagó
+                pendienteMonto=mf;
+                // fecha vencimiento: primera parcialidad si existe
+                const fv=parcialidades[0]?.fecha_vencimiento;
+                if(fv&&fv<hoy) vencidas=[parcialidades[0]];
+                else if(fv) proximas=[parcialidades[0]];
+              } else {
+                // parcialidades
+                const noPag=parcialidades.filter(x=>!x.pagado);
+                if(!noPag.length) return; // todas pagadas
+                pendienteMonto=(mf/parcialidades.length||1)*noPag.length;
+                vencidas=noPag.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento<hoy);
+                proximas=noPag.filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento>=hoy);
+              }
+              // Urgencia
+              let urgencia, urgLabel, urgColor, urgBg;
+              if(vencidas.length>=2){urgencia=0;urgLabel="Crítico";urgColor="#dc2626";urgBg="#fef2f2";}
+              else if(vencidas.length===1){urgencia=1;urgLabel="Vencido";urgColor="#d97706";urgBg="#fffbeb";}
+              else if(proximas.length&&proximas[0].fecha_vencimiento){
+                const dias=Math.round((new Date(proximas[0].fecha_vencimiento+"T12:00:00")-new Date(hoy+"T12:00:00"))/86400000);
+                if(dias<=7){urgencia=2;urgLabel="Vence pronto";urgColor="#2563eb";urgBg="#eff6ff";}
+                else{urgencia=3;urgLabel="Al día";urgColor="#16a34a";urgBg="#f0fdf4";}
+              } else {urgencia=3;urgLabel="Al día";urgColor="#16a34a";urgBg="#f0fdf4";}
+              const diasUltimoContacto=diasDesde(est.cobranza_ultimo_contacto);
+              lista.push({est,prog,pendienteMonto,vencidas,proximas,urgencia,urgLabel,urgColor,urgBg,diasUltimoContacto});
+            });
+          });
+
+          // Ordenar: más urgente primero
+          lista.sort((a,b)=>a.urgencia-b.urgencia||(b.pendienteMonto-a.pendienteMonto));
+
+          // ─ Filtros ─
+          const filtrada=lista.filter(({est,prog,urgencia,urgLabel,diasUltimoContacto})=>{
+            if(cobranzaFiltroEst==="critico"&&urgencia!==0) return false;
+            if(cobranzaFiltroEst==="vencido"&&urgencia!==1) return false;
+            if(cobranzaFiltroEst==="proximo"&&urgencia!==2) return false;
+            if(cobranzaFiltroEst==="al_dia"&&urgencia!==3) return false;
+            if(cobranzaFiltroProg&&prog.id!==cobranzaFiltroProg) return false;
+            if(cobranzaBusq){const q=cobranzaBusq.toLowerCase();if(!est.nombre.toLowerCase().includes(q)&&!prog.nombre.toLowerCase().includes(q))return false;}
+            return true;
+          });
+
+          // ─ KPIs ─
+          const cCritico=lista.filter(x=>x.urgencia===0).length;
+          const cVencido=lista.filter(x=>x.urgencia===1).length;
+          const cProximo=lista.filter(x=>x.urgencia===2).length;
+          const totalPendiente=lista.reduce((a,x)=>a+x.pendienteMonto,0);
+
+          const actualizarEstCobranza=(est,prog,campos)=>{
+            const nuevo={...est,...campos};
+            const nuevosProgs=(programas||[]).map(pr=>{
+              if(pr.id!==prog.id)return pr;
+              return {...pr,estudiantes:(pr.estudiantes||[]).map(e=>e.id===est.id?nuevo:e)};
+            });
+            setProgramas(nuevosProgs);
+            syncToSupabase(nuevosProgs).catch(err=>console.error(err));
+          };
+
+          const contactadoHoy=(est,prog)=>{
+            actualizarEstCobranza(est,prog,{
+              cobranza_ultimo_contacto:hoy,
+              cobranza_estado:est.cobranza_estado||"contactado",
+            });
+          };
+
+          const setEstadoCobranza=(est,prog,estado)=>{
+            actualizarEstCobranza(est,prog,{cobranza_estado:estado});
+          };
+
+          const guardarNota=()=>{
+            if(!cobranzaNotaModal)return;
+            const{est,prog}=cobranzaNotaModal;
+            actualizarEstCobranza(est,prog,{cobranza_nota:cobranzaNotaText});
+            setCobranzaNotaModal(null);
+            setCobranzaNotaText("");
+          };
+
+          const ESTADO_OPTS=[
+            {v:"pendiente",   l:"Pendiente",        color:"#6b7280",bg:"#f3f4f6"},
+            {v:"contactado",  l:"Contactado",        color:"#2563eb",bg:"#eff6ff"},
+            {v:"comprometio", l:"Comprometió pago",  color:"#d97706",bg:"#fffbeb"},
+            {v:"pagó",        l:"Pagó",              color:"#16a34a",bg:"#f0fdf4"},
+          ];
+          const estadoOpt=v=>ESTADO_OPTS.find(o=>o.v===v)||ESTADO_OPTS[0];
+
+          const progOpts=[...new Map((programas||[]).map(p=>[p.id,p])).values()];
+
+          return(
+            <div>
+              {/* KPIs */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:22}}>
+                {[
+                  {label:"Críticos",val:cCritico,color:"#dc2626",filtro:"critico"},
+                  {label:"Vencidos",val:cVencido,color:"#d97706",filtro:"vencido"},
+                  {label:"Vencen pronto",val:cProximo,color:"#2563eb",filtro:"proximo"},
+                  {label:"Total pendiente",val:fmtMXN(totalPendiente),color:"#111",filtro:""},
+                ].map(k=>(
+                  <div key={k.label} onClick={()=>setCobranzaFiltroEst(cobranzaFiltroEst===k.filtro?"":k.filtro||"")} style={{...S.card,padding:"16px 18px",cursor:"pointer",borderLeft:"4px solid "+k.color,boxShadow:cobranzaFiltroEst===k.filtro?"0 0 0 3px "+k.color+"33":"none"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px",marginBottom:5,fontFamily:"system-ui"}}>{k.label.toUpperCase()}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:k.color,fontFamily:"system-ui"}}>{k.val}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filtros */}
+              <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+                <input value={cobranzaBusq} onChange={e=>setCobranzaBusq(e.target.value)} placeholder="Buscar alumno o programa..." style={{...S.inp,width:220,padding:"7px 12px",fontSize:13}}/>
+                <select value={cobranzaFiltroProg} onChange={e=>setCobranzaFiltroProg(e.target.value)} style={{...S.inp,padding:"7px 10px",fontSize:13,width:"auto"}}>
+                  <option value="">Todos los programas</option>
+                  {progOpts.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+                <div style={{display:"flex",gap:6}}>
+                  {[{v:"",l:"Todos"},{v:"critico",l:"Críticos"},{v:"vencido",l:"Vencidos"},{v:"proximo",l:"Pronto"}].map(f=>(
+                    <button key={f.v} onClick={()=>setCobranzaFiltroEst(f.v)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,fontFamily:"system-ui",borderRadius:7,border:"1px solid "+(cobranzaFiltroEst===f.v?"#c8102e":"#e5e7eb"),background:cobranzaFiltroEst===f.v?"#fef2f2":"#fff",color:cobranzaFiltroEst===f.v?RED:"#374151",cursor:"pointer"}}>{f.l}</button>
+                  ))}
+                </div>
+                <div style={{marginLeft:"auto",fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{filtrada.length} alumno{filtrada.length!==1?"s":""}</div>
+              </div>
+
+              {/* Lista */}
+              {filtrada.length===0&&(
+                <div style={{textAlign:"center",padding:"60px 0",color:"#9ca3af",fontFamily:"system-ui",fontSize:14}}>
+                  No hay alumnos con pagos pendientes en este filtro
+                </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {filtrada.map(({est,prog,pendienteMonto,vencidas,proximas,urgencia,urgLabel,urgColor,urgBg,diasUltimoContacto})=>{
+                  const ep=estadoOpt(est.cobranza_estado);
+                  const proxVenc=proximas.length?proximas[0].fecha_vencimiento:null;
+                  const noContactado=est.cobranza_ultimo_contacto===null&&urgencia<=2;
+                  const sinContacto7=diasUltimoContacto!==null&&diasUltimoContacto>=7;
+                  return(
+                    <div key={est.id} style={{...S.card,padding:"16px 20px",borderLeft:"4px solid "+urgColor}}>
+                      <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                        {/* Info principal */}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}}>
+                            <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#111"}}>{est.nombre.toUpperCase()}</span>
+                            <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:99,background:urgBg,color:urgColor,fontFamily:"system-ui"}}>{urgLabel}</span>
+                            {(noContactado||sinContacto7)&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#f3f4f6",color:"#6b7280",fontFamily:"system-ui"}}>Sin contacto {sinContacto7?`+${diasUltimoContacto}d`:""}</span>}
+                          </div>
+                          <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:6}}>{prog.nombre}{prog.generacion?` · ${prog.generacion} gen.`:""}</div>
+                          <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                            <span style={{fontSize:13,fontWeight:700,color:urgColor,fontFamily:"system-ui"}}>{fmtMXN(pendienteMonto)} pendiente</span>
+                            {vencidas.length>0&&<span style={{fontSize:12,color:"#dc2626",fontFamily:"system-ui"}}>{vencidas.length} pago{vencidas.length!==1?"s":""} vencido{vencidas.length!==1?"s":""}</span>}
+                            {proxVenc&&urgencia>=2&&<span style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui"}}>Próx. vence: {fmtFecha(proxVenc)}</span>}
+                            {est.cobranza_ultimo_contacto&&<span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>Contactado: {fmtFecha(est.cobranza_ultimo_contacto)}</span>}
+                          </div>
+                          {est.cobranza_nota&&<div style={{marginTop:8,fontSize:12,color:"#374151",fontFamily:"system-ui",background:"#f9fafb",borderRadius:6,padding:"6px 10px",borderLeft:"3px solid #e5e7eb"}}>{est.cobranza_nota}</div>}
+                        </div>
+
+                        {/* Acciones derecha */}
+                        <div style={{display:"flex",flexDirection:"column",gap:7,flexShrink:0,alignItems:"flex-end"}}>
+                          {/* Estado selector */}
+                          <select value={est.cobranza_estado||"pendiente"} onChange={e=>setEstadoCobranza(est,prog,e.target.value)}
+                            style={{fontSize:11,fontWeight:600,padding:"4px 8px",borderRadius:7,border:"1px solid #e5e7eb",background:ep.bg,color:ep.color,fontFamily:"system-ui",cursor:"pointer",outline:"none"}}>
+                            {ESTADO_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                          </select>
+                          {/* Botones acción */}
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                            {est.telefono&&(
+                              <button onClick={()=>abrirWhatsApp(vencidas.length?"vencido":proxVenc?"proximo":"proximo",est,prog)}
+                                style={{fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:7,border:"1px solid #86efac",background:"#f0fdf4",color:"#16a34a",fontFamily:"system-ui",cursor:"pointer"}}>
+                                WA
+                              </button>
+                            )}
+                            <button onClick={()=>contactadoHoy(est,prog)}
+                              style={{fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:7,border:"1px solid #bfdbfe",background:"#eff6ff",color:"#2563eb",fontFamily:"system-ui",cursor:"pointer"}}>
+                              Contactado hoy
+                            </button>
+                            <button onClick={()=>{setCobranzaNotaModal({est,prog});setCobranzaNotaText(est.cobranza_nota||"");}}
+                              style={{fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:7,border:"1px solid #e5e7eb",background:"#f9fafb",color:"#374151",fontFamily:"system-ui",cursor:"pointer"}}>
+                              {est.cobranza_nota?"Editar nota":"+ Nota"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Modal nota */}
+              {cobranzaNotaModal&&(
+                <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}}>
+                  <div style={{background:"#fff",borderRadius:16,padding:28,width:420,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+                    <div style={{fontWeight:700,fontSize:15,fontFamily:"system-ui",marginBottom:6}}>Nota de seguimiento</div>
+                    <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:14}}>{cobranzaNotaModal.est.nombre}</div>
+                    <textarea value={cobranzaNotaText} onChange={e=>setCobranzaNotaText(e.target.value)} rows={4}
+                      placeholder="Escribe una nota interna sobre este alumno..."
+                      style={{...S.inp,width:"100%",resize:"vertical",marginBottom:16}}/>
+                    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                      <button onClick={()=>setCobranzaNotaModal(null)} style={S.btn("#f3f4f6","#374151",{padding:"8px 18px"})}>Cancelar</button>
+                      <button onClick={guardarNota} style={S.btn(RED,"#fff",{padding:"8px 18px"})}>Guardar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* EVALUACIONES */}
         {view==="evaluaciones"&&(()=>{
           // estados al nivel del App: evalTab, filtroDocEval, filtroProgEval
@@ -7050,6 +7296,7 @@ export default function App() {
             </div>
             <div style={{padding:"20px 24px"}}>
               <div style={{marginBottom:14}}><label style={S.lbl}>Nombre del programa</label><input value={progForm.nombre||""} onChange={e=>setProgForm({...progForm,nombre:e.target.value})} style={S.inp}/></div>
+              <div style={{marginBottom:14}}><label style={S.lbl}>Notas internas</label><textarea value={progForm.notas_internas||""} onChange={e=>setProgForm({...progForm,notas_internas:e.target.value})} placeholder="Apuntes internos del coordinador — no visible para estudiantes ni docentes..." rows={3} style={{...S.inp,resize:"vertical",lineHeight:1.5,fontFamily:"system-ui"}}/></div>
               <div style={{marginBottom:14}}>
                 <label style={S.lbl}>Tipo de programa</label>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:progForm.tipo==="Otro"?8:0}}>
