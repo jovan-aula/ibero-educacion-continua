@@ -522,12 +522,15 @@ function LoginScreen({onLogin}) {
     // 2. Obtener permisos y rol del usuario desde la tabla usuarios
     const res = await supa.get("usuarios", `?email=eq.${encodeURIComponent(email.toLowerCase())}&activo=eq.true&select=*`);
     const u = res&&res.length>0 ? res[0] : null;
+    // Parsear permisos — Supabase a veces devuelve JSON como string
+    let permisos = u?.permisos || {};
+    if (typeof permisos === "string") { try { permisos = JSON.parse(permisos); } catch(e) { permisos = {}; } }
     const sesion = {
       id: auth.user.id,
       nombre: u?.nombre || auth.user.email,
       email: auth.user.email,
       rol: u?.rol || "auxiliar",
-      permisos: u?.permisos || {},
+      permisos,
     };
     localStorage.setItem(SK2, JSON.stringify(sesion));
     onLogin(sesion);
@@ -3490,9 +3493,13 @@ export default function App() {
         body: JSON.stringify({ email, password }),
       });
       const d = await r.json();
-      if (!r.ok) return { error: d.error_description || d.msg || d.message || "Error al crear usuario" };
+      if (!r.ok) return { error: d.error_description || d.msg || d.message || "Error al crear usuario ("+r.status+")" };
+      // Supabase devuelve 200 con identities:[] si el usuario ya existe sin contraseña seteada
+      if (d.identities && d.identities.length === 0) {
+        return { error: "El correo ya existe en el sistema. Ve a Supabase → Authentication → Users → busca el usuario → Update user para setear su contraseña manualmente." };
+      }
       return { ok: true };
-    } catch(e) { return { error: "Error de conexión" }; }
+    } catch(e) { return { error: "Error de conexión: "+e.message }; }
   };
 
   const saveUsers = async d => {
@@ -3539,14 +3546,14 @@ export default function App() {
     const gen        = prog.generacion ? ` (${prog.generacion} generación)` : "";
     let msg = "";
     if(tipo==="proximo"){
-      msg = [`Hola ${est.nombre},`,``,`Te recordamos que tienes una parcialidad próxima a vencer en *${prog.nombre}${gen}*:`,``,`• Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya realizaste tu pago, puedes ignorar este mensaje o avisarnos para confirmarlo.`].join("\n");
+      msg = [`Hola ${est.nombre},`,``,`Te recordamos que tienes una parcialidad próxima a vencer en *${prog.nombre}${gen}*:`,``,`• Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6.5%.`,``,`Si ya realizaste tu pago, puedes ignorar este mensaje o avisarnos para confirmarlo.`].join("\n");
     } else if(tipo==="mensualidad"){
       const totalPend = mp*vencidas.length;
       msg = [`Hola ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en *${prog.nombre}${gen}*:`,``,`• Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad para evitar un recargo adicional.`,``,`Si ya lo realizaste, avísanos para registrarlo. Cualquier duda con gusto te atendemos.`].join("\n");
     } else if(tipo==="vencido"){
       const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
       const totalPend = mp*vencidas.length;
-      msg = [`Hola ${est.nombre},`,``,`Te contactamos porque tienes *${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""}* en *${prog.nombre}${gen}*:`,``,`• Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos. Si tienes alguna situacion especial, con gusto nos coordinamos.`].join("\n");
+      msg = [`Hola ${est.nombre},`,``,`Te contactamos porque tienes *${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""}* en *${prog.nombre}${gen}*:`,``,`• Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Recargo por mora (6.5%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos. Si tienes alguna situacion especial, con gusto nos coordinamos.`].join("\n");
     }
     const tel = (est.telefono||"").replace(/\D/g,"");
     const num = tel.startsWith("52") ? tel : "52"+tel;
@@ -3577,7 +3584,7 @@ export default function App() {
     let subject="", body="";
     if(tipo==="proximo"){
       subject = `Recordatorio de pago — ${prog.nombre}`;
-      body = [`Estimado/a ${est.nombre},`,``,`Esperamos que estés aprovechando al máximo el ${prog.nombre}${gen}.`,``,`Te recordamos que tienes una parcialidad próxima a vencer:`,``,`  • Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6%.`,``,`Si ya realizaste tu pago, ignora este mensaje o escríbenos para confirmarlo.`].join("\n");
+      body = [`Estimado/a ${est.nombre},`,``,`Esperamos que estés aprovechando al máximo el ${prog.nombre}${gen}.`,``,`Te recordamos que tienes una parcialidad próxima a vencer:`,``,`  • Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6.5%.`,``,`Si ya realizaste tu pago, ignora este mensaje o escríbenos para confirmarlo.`].join("\n");
     } else if(tipo==="mensualidad"){
       const totalPend = mp*vencidas.length;
       subject = `Aviso de mensualidad vencida — ${prog.nombre}`;
@@ -3586,7 +3593,7 @@ export default function App() {
       const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
       const totalPend = mp*vencidas.length;
       subject = `Aviso de pago vencido — ${prog.nombre}`;
-      body = [`Estimado/a ${est.nombre},`,``,`Nos comunicamos contigo porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en el programa ${prog.nombre}${gen}.`,``,`  • Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Recargo por mora (6%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos.`,``,`Si tienes alguna situación especial, con gusto podemos coordinarnos.`].join("\n");
+      body = [`Estimado/a ${est.nombre},`,``,`Nos comunicamos contigo porque tienes ${vencidas.length} pago${vencidas.length!==1?"s":""} vencido${vencidas.length!==1?"s":""} en el programa ${prog.nombre}${gen}.`,``,`  • Monto vencido: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Recargo por mora (6.5%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Total a regularizar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos regularizar tu situación a la brevedad para continuar sin contratiempos.`,``,`Si tienes alguna situación especial, con gusto podemos coordinarnos.`].join("\n");
     }
     window.open(`mailto:${est.email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
   };
@@ -5601,7 +5608,7 @@ export default function App() {
                                         )}
                                         {recargo>0&&(
                                           <div style={{marginTop:8,padding:"6px 10px",background:"#fef2f2",borderRadius:6,fontFamily:"system-ui",fontSize:11,color:"#dc2626",display:"flex",justifyContent:"space-between"}}>
-                                            <span>Recargo acumulado (6%)</span>
+                                            <span>Recargo acumulado (6.5%)</span>
                                             <strong>{fmtMXN(recargo)}</strong>
                                           </div>
                                         )}
@@ -6940,7 +6947,7 @@ export default function App() {
                         </div>
                         <div style={{overflowX:"auto"}}>
                           <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13}}>
-                            <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#fef2f2"}}>{["Estudiante","Programa","Pagos vencidos","Monto/parcialidad","Recargo (6%)","Total a cobrar","Acción"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                            <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#fef2f2"}}>{["Estudiante","Programa","Pagos vencidos","Monto/parcialidad","Recargo (6.5%)","Total a cobrar","Acción"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                             <tbody>
                               {morosos.map(({est,prog,ep,montoParcialidad,recargo,critico},i)=>(
                                 <tr key={i} style={{borderBottom:"1px solid #f3f4f6",background:critico?"#fff5f5":"#fff"}}>
