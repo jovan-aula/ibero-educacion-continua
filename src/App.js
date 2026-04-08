@@ -1218,12 +1218,13 @@ function PagoModal({est,prog,onSave,onClose}) {
                 </div>
               </div>
               {totalParcialidades>0&&(()=>{
-                const montoCustomTotal=(pago.parcialidades||[]).reduce((a,p)=>a+(p.monto_custom||0),0);
                 const tieneCustom=(pago.parcialidades||[]).some(p=>p.monto_custom>0);
+                const montoEfectivo=(pago.parcialidades||[]).reduce((a,p)=>a+getMontoParc(p,montoFinal,totalParcialidades),0);
+                const descuadrado=tieneCustom&&Math.abs(montoEfectivo-montoFinal)>1;
                 return(
                   <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:8,display:"flex",gap:16,flexWrap:"wrap"}}>
-                    <span>{fmtMXN(montoFinal/totalParcialidades)} por parcialidad (base)</span>
-                    {tieneCustom&&<span style={{color:montoCustomTotal===montoFinal?"#16a34a":"#d97706",fontWeight:600}}>Total personalizado: {fmtMXN(montoCustomTotal)} {montoCustomTotal!==montoFinal?"⚠ no coincide con monto acordado":""}</span>}
+                    <span>{fmtMXN(montoFinal/totalParcialidades)} por parcialidad</span>
+                    {tieneCustom&&<span style={{color:descuadrado?"#d97706":"#16a34a",fontWeight:600}}>{descuadrado?`⚠ Total personalizado ${fmtMXN(montoEfectivo)} no coincide con monto acordado`:"✓ Montos personalizados cuadran"}</span>}
                     <span style={{color:"#16a34a"}}>Las siguientes vencen el día 15 de cada mes</span>
                   </div>
                 );
@@ -1244,7 +1245,8 @@ function PagoModal({est,prog,onSave,onClose}) {
                             Parcialidad {p.numero}
                             <input
                               type="number" min="0"
-                              value={p.monto_custom>0?p.monto_custom:montoParcBase}
+                              value={p.monto_custom>0?p.monto_custom:""}
+                              placeholder={String(Math.round(montoParcBase))}
                               onChange={e=>{const parcs=[...(pago.parcialidades||[])];parcs[i]={...parcs[i],monto_custom:parseFloat(e.target.value)||0};setPago({...pago,parcialidades:parcs});}}
                               style={{width:90,border:"1px solid #e5e7eb",borderRadius:4,padding:"2px 6px",fontSize:12,fontFamily:"system-ui",fontWeight:700,color:"#111"}}
                               title="Monto de esta parcialidad"
