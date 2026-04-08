@@ -60,7 +60,6 @@ const syncToSupabase = async (programas) => {
     parcialidades_default: p.parcialidadesDefault||5, estatus: p.estatus||"activo",
     colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
     precio_lista: p.precioLista||0, tipo_custom: p.tipoCustom||"",
-    promociones: p.promociones||[],
   }));
   const okProgs = await supa.upsert("programas", progs);
   if(!okProgs) throw new Error("Error al guardar programas");
@@ -116,6 +115,7 @@ const syncDocentesToSupabase = async (docentes) => {
       grado: d.grados&&d.grados.length>0?d.grados[d.grados.length-1]:(d.grado||"Licenciatura"),
       grados: d.grados||[], programas_egreso: d.programas_egreso||{},
       categoria: d.categoria||"A", semblanza: d.semblanza||"",
+      perfil_incompleto: d.perfil_incompleto||false,
     }));
     await supa.upsert("docentes", rows);
   } catch(e) { console.error("Sync docentes error:", e); }
@@ -145,14 +145,13 @@ const MODALIDADES = [
 const GENERACIONES = ["Primera","Segunda","Tercera","Cuarta","Quinta","Sexta","Séptima","Octava","Novena","Décima"];
 const NUMEROS_MOD  = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 const HORARIOS_PRE = ["18:00 – 22:00","09:00 – 13:00","08:00 – 14:00","07:00 – 13:00","16:00 – 20:00","Otro"];
-const PROMOCIONES_DEFAULT = [
-  {id:"promo_pronto",     nombre:"Pronto pago",              descuento:20, editable:false},
-  {id:"promo_alumni",     nombre:"Alumni IBERO",             descuento:30, editable:false},
-  {id:"promo_contado",    nombre:"Pago de contado",          descuento:25, editable:false},
-  {id:"promo_grupal2",    nombre:"Descuento grupal (2 pax)", descuento:30, editable:false},
-  {id:"promo_grupal5",    nombre:"Descuento grupal (5+ pax)",descuento:40, editable:false},
-  {id:"promo_colaborador",nombre:"Colaborador IBERO",        descuento:90, editable:false},
-  {id:"promo_beca",       nombre:"Beca especial",            descuento:0,  editable:true},
+// Promociones fijas — no configurables por programa, se auto-seleccionan según % calculado del CRM
+const PROMOS_FIJAS = [
+  {id:"promo_pronto",     nombre:"Pronto pago",      descuento:20},
+  {id:"promo_contado",    nombre:"Pago de contado",  descuento:25},
+  {id:"promo_grupal",     nombre:"Beca grupal",      descuento:30},
+  {id:"promo_colaborador",nombre:"Colaborador IBERO",descuento:90},
+  {id:"promo_beca",       nombre:"Beca especial",    descuento:null}, // cualquier % alto o personalizado
 ];
 
 // ─── FESTIVOS MÉXICO ──────────────────────────────────
@@ -966,26 +965,26 @@ function PagoModal({est,prog,onSave,onClose}) {
       const totalAcordado = base.tipo==="parcialidades" ? montoGHL*numParcs : montoGHL;
       if(totalAcordado>0 && totalAcordado<=precioL){
         const descAuto=Math.round((1-totalAcordado/precioL)*100);
-        const matchPromo=(prog.promociones||[]).find(pr=>pr.descuento===descAuto);
+        const matchPromo=PROMOS_FIJAS.find(pr=>pr.descuento===descAuto)||(descAuto>=90?PROMOS_FIJAS.find(pr=>pr.id==="promo_beca"):null);
         return {...base, monto_acordado:precioL, descuento_pct:descAuto, promocion_id:matchPromo?matchPromo.id:base.promocion_id||""};
       }
     }
     return base;
   })();
   const [pago,setPago] = useState(pago0);
-  const [newPromo,setNewPromo] = useState({nombre:"",descuento:0});
 
   const precioLista = prog.precioLista||0;
   const parcDefault = prog.parcialidadesDefault||5;
-  const promociones = prog.promociones||[];
 
   const montoFinal = pago.monto_acordado * (1 - (pago.descuento_pct||0)/100);
   const montoParcialidad = pago.tipo==="parcialidades" && pago.parcialidades.length>0
     ? montoFinal / pago.parcialidades.length : 0;
 
   const aplicarPromocion = id => {
-    const pr = promociones.find(p=>p.id===id);
-    setPago({...pago,promocion_id:id,descuento_pct:pr?pr.descuento:0});
+    const pr = PROMOS_FIJAS.find(p=>p.id===id);
+    // Beca especial (descuento:null) deja el % como está para que el usuario lo edite
+    if(pr&&pr.descuento!==null) setPago({...pago,promocion_id:id,descuento_pct:pr.descuento});
+    else setPago({...pago,promocion_id:id});
   };
 
   // Calcula fecha de vencimiento mensual a partir del mes siguiente al inicio del programa
@@ -1077,9 +1076,11 @@ function PagoModal({est,prog,onSave,onClose}) {
           <div style={{marginBottom:14}}>
             <label style={S.lbl}>Promoción aplicada</label>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-              <button onClick={()=>setPago({...pago,promocion_id:"",descuento_pct:0})} style={{border:"2px solid "+(pago.promocion_id===""?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:pago.promocion_id===""?"#fef2f2":"#fff",color:pago.promocion_id===""?RED:"#6b7280",fontWeight:600}}>Sin promoción</button>
-              {promociones.map(pr=>(
-                <button key={pr.id} onClick={()=>aplicarPromocion(pr.id)} style={{border:"2px solid "+(pago.promocion_id===pr.id?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:pago.promocion_id===pr.id?"#fef2f2":"#fff",color:pago.promocion_id===pr.id?RED:"#6b7280",fontWeight:600}}>{pr.nombre} {pr.descuento}%</button>
+              <button onClick={()=>setPago({...pago,promocion_id:"",descuento_pct:0})} style={{border:"2px solid "+(pago.promocion_id===""?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:pago.promocion_id===""?"#fef2f2":"#fff",color:pago.promocion_id===""?RED:"#6b7280",fontWeight:600}}>Sin descuento</button>
+              {PROMOS_FIJAS.map(pr=>(
+                <button key={pr.id} onClick={()=>aplicarPromocion(pr.id)} style={{border:"2px solid "+(pago.promocion_id===pr.id?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:pago.promocion_id===pr.id?"#fef2f2":"#fff",color:pago.promocion_id===pr.id?RED:"#6b7280",fontWeight:600}}>
+                  {pr.nombre}{pr.descuento!==null?" "+pr.descuento+"%":""}
+                </button>
               ))}
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1680,7 +1681,14 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
 
   const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
-  const saveDoc = () => { if(!form.nombre)return; editId?saveDocentes((docentes||[]).map(d=>d.id===editId?form:d)):saveDocentes([...(docentes||[]),form]); setShowM(false); };
+  const saveDoc = () => {
+    if(!form.nombre)return;
+    // Si ya tiene campos clave, limpiar la bandera de incompleto
+    const completo=!!(form.banco&&form.clabe&&form.rfc&&(form.honorariosPorHora||form.honorarios_por_hora));
+    const formFinal={...form,perfil_incompleto:completo?false:(form.perfil_incompleto||false)};
+    editId?saveDocentes((docentes||[]).map(d=>d.id===editId?formFinal:d)):saveDocentes([...(docentes||[]),formFinal]);
+    setShowM(false);
+  };
   const delDoc  = id => {
     saveDocentes((docentes||[]).filter(d=>d.id!==id));
     supa.del("docentes",id).catch(e=>console.error("Del doc:",e));
@@ -1724,6 +1732,9 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                     <span style={{fontWeight:700,fontSize:16}}>{doc.nombre}</span>
                     {docGrados.map(g=>{const c=GRADO_C[g]||GRADO_C.Licenciatura;return<span key={g} style={{background:c.bg,color:c.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{g}</span>;})}
                     <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{cat.label} · {fmtMXN(cat.tarifa)}/hr</span>
+                    {(doc.perfil_incompleto||!doc.banco||!doc.clabe||!doc.rfc||!(doc.honorariosPorHora||doc.honorarios_por_hora))&&(
+                      <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700,border:"1px solid #fde68a"}}>Perfil incompleto</span>
+                    )}
                   </div>
                   <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
                     {doc.email&&<span>{doc.email}</span>}{doc.telefono&&<span>{doc.telefono}</span>}
@@ -2997,7 +3008,7 @@ export default function App() {
   const alertRef = useRef(null);
 
   const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:4,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,promociones:PROMOCIONES_DEFAULT.map(p=>({...p,id:p.id+"_"+newId()})),colaboracion:false,socio:"",pct_socio:0};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,colaboracion:false,socio:"",pct_socio:0};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -3063,6 +3074,7 @@ export default function App() {
         grados:Array.isArray(d.grados)?d.grados:(d.grado?[d.grado]:[]),
         programas_egreso:d.programas_egreso||{},
         categoria:d.categoria||"A", semblanza:d.semblanza||"",
+        perfil_incompleto:d.perfil_incompleto||false,
       })));
     } else {
       setDocentes([]);
@@ -3805,6 +3817,20 @@ export default function App() {
     if(modFinal.fechasClase&&modFinal.fechasClase.length>0){
       modFinal.fechaInicio = modFinal.fechasClase[0];
       modFinal.fechaFin    = modFinal.fechasClase[modFinal.fechasClase.length-1];
+    }
+    // Si el docente fue escrito manualmente y no existe en el catálogo, crearlo automáticamente
+    if(!modFinal.docenteId && modFinal.docente){
+      const yaExiste=(docentes||[]).find(d=>d.nombre.trim().toLowerCase()===modFinal.docente.trim().toLowerCase());
+      if(!yaExiste){
+        const nuevoDoc={id:newId(),nombre:modFinal.docente,email:modFinal.emailDocente||"",telefono:"",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorariosPorHora:0,banco:"",clabe:"",rfc:"",perfil_incompleto:true};
+        const nuevosDocentes=[...(docentes||[]),nuevoDoc];
+        setDocentes(nuevosDocentes);
+        supa.upsert("docentes",[{id:nuevoDoc.id,nombre:nuevoDoc.nombre,email:nuevoDoc.email,telefono:"",grado:"Licenciatura",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorarios_por_hora:0,banco:"",clabe:"",rfc:"",perfil_incompleto:true}]).catch(e=>console.error("Auto-create docente:",e));
+        modFinal={...modFinal,docenteId:nuevoDoc.id};
+        notify("Docente creado — completa su perfil en la sección Docentes","warning");
+      } else {
+        modFinal={...modFinal,docenteId:yaExiste.id};
+      }
     }
     save((programas||[]).map(p=>p.id===selProg?{...p,modulos:editMod?mods(p).map(m=>m.id===editMod?modFinal:m):[...mods(p),modFinal]}:p));
     setShowModM(false);
@@ -6580,32 +6606,6 @@ export default function App() {
                     <label style={S.lbl}>Parcialidades default</label>
                     <input type="number" min="1" max="24" value={progForm.parcialidadesDefault||5} onChange={e=>setProgForm({...progForm,parcialidadesDefault:parseInt(e.target.value)||5})} style={S.inp}/>
                   </div>
-                </div>
-                <div>
-                  <label style={S.lbl}>Promociones / descuentos disponibles</label>
-                  <div style={{display:"grid",gap:6,marginBottom:10}}>
-                    {(progForm.promociones||[]).map((pr,i)=>(
-                      <div key={pr.id||i} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 10px",background:pr.editable?"#fffbeb":"#f9f9f9",borderRadius:6,border:"1px solid "+(pr.editable?"#fde68a":"#e5e7eb")}}>
-                        {/* Nombre — solo editable si es beca especial o personalizada */}
-                        <input value={pr.nombre}
-                          onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],nombre:e.target.value};setProgForm({...progForm,promociones:p});}}
-                          readOnly={!pr.editable&&pr.id&&pr.id.startsWith("promo_")&&pr.nombre!==""}
-                          style={{...S.inp,flex:2,background:(!pr.editable&&pr.id?.startsWith("promo_"))?"#f3f4f6":"#fff",color:"#1a1a1a"}}/>
-                        {/* Descuento */}
-                        <div style={{display:"flex",alignItems:"center",gap:4,width:80}}>
-                          <input type="number" min="0" max="100" value={pr.descuento}
-                            onChange={e=>{const p=[...(progForm.promociones||[])];p[i]={...p[i],descuento:parseFloat(e.target.value)||0};setProgForm({...progForm,promociones:p});}}
-                            style={{...S.inp,textAlign:"center",padding:"8px 4px"}}/>
-                          <span style={{fontFamily:"system-ui",fontSize:13,color:"#6b7280",flexShrink:0}}>%</span>
-                        </div>
-                        {pr.editable&&<span style={{fontSize:10,color:"#d97706",fontFamily:"system-ui",fontWeight:700,flexShrink:0}}>EDITABLE</span>}
-                        <button onClick={()=>setProgForm({...progForm,promociones:(progForm.promociones||[]).filter((_,j)=>j!==i)})}
-                          style={{background:"none",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#dc2626",fontWeight:700,flexShrink:0,fontSize:16}}>×</button>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={()=>setProgForm({...progForm,promociones:[...(progForm.promociones||[]),{id:newId(),nombre:"",descuento:0,editable:true}]})}
-                    style={{...S.btn("#f3f4f6","#374151",{fontSize:12})}}>+ Agregar promoción especial</button>
                 </div>
               </div>
 
