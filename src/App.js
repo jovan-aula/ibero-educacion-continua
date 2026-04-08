@@ -88,6 +88,8 @@ const syncToSupabase = async (programas) => {
     num_interior: e.num_interior||"", colonia: e.colonia||"", ciudad: e.ciudad||"",
     estado: e.estado||"", uso_cfdi: e.uso_cfdi||"",
     estatus: e.estatus||"activo", asistencia: e.asistencia||{}, campos_extra: e.campos_extra||{},
+    fiscal_token: e.fiscal_token||null,
+    fiscal_completado: e.fiscal_completado||false,
   })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
@@ -2793,6 +2795,143 @@ function HonorariosView({programas,docentes,onToggle,session}) {
 }
 
 // ─── ORDEN DE PAGO (vista pública) ───────────────────
+function FiscalFormPage() {
+  const token = new URLSearchParams(window.location.search).get("fiscal");
+  const [est,setEst]         = useState(null);
+  const [cargando,setCargando] = useState(true);
+  const [enviado,setEnviado]   = useState(false);
+  const [err,setErr]           = useState("");
+  const [form,setForm]         = useState({
+    rfc:"",razon_social:"",regimen_fiscal:"",uso_cfdi:"",
+    calle:"",num_exterior:"",num_interior:"",colonia:"",
+    ciudad:"",estado:"",codigo_postal:"",csf_url:""
+  });
+
+  useEffect(()=>{
+    if(!token){setErr("Enlace inválido.");setCargando(false);return;}
+    supa.get("estudiantes","?fiscal_token=eq."+token).then(data=>{
+      if(data&&data.length>0){
+        const e=data[0];
+        setEst(e);
+        setForm({
+          rfc:e.rfc||"",razon_social:e.razon_social||"",
+          regimen_fiscal:e.regimen_fiscal||"",uso_cfdi:e.uso_cfdi||"",
+          calle:e.calle||"",num_exterior:e.num_exterior||"",
+          num_interior:e.num_interior||"",colonia:e.colonia||"",
+          ciudad:e.ciudad||"",estado:e.estado||"",
+          codigo_postal:e.codigo_postal||"",csf_url:e.csf_url||""
+        });
+      } else { setErr("Enlace no encontrado o ya utilizado."); }
+      setCargando(false);
+    }).catch(()=>{setErr("Error al cargar. Intenta de nuevo.");setCargando(false);});
+  },[]);
+
+  const guardar=async()=>{
+    if(!form.rfc||!form.razon_social){alert("RFC y Razón social son obligatorios.");return;}
+    const ok=await supa.upsert("estudiantes",[{...est,...form,fiscal_completado:true}]);
+    if(ok) setEnviado(true);
+    else alert("Error al guardar. Intenta de nuevo.");
+  };
+
+  const inp={width:"100%",boxSizing:"border-box",border:"1px solid #e5e7eb",borderRadius:8,padding:"10px 14px",fontSize:14,fontFamily:"system-ui",outline:"none",marginTop:4};
+  const lbl={fontSize:11,fontWeight:700,color:"#6b7280",fontFamily:"system-ui",letterSpacing:"0.5px",textTransform:"uppercase"};
+
+  if(cargando) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:"#9ca3af"}}>Cargando…</div>;
+  if(err)      return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:"#dc2626",fontSize:16,textAlign:"center",padding:24}}>{err}</div>;
+
+  if(enviado) return(
+    <div style={{minHeight:"100vh",background:"#F5F5F7",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:"#fff",borderRadius:16,padding:"40px 32px",maxWidth:440,width:"100%",textAlign:"center",boxShadow:"0 4px 32px rgba(0,0,0,0.10)"}}>
+        <div style={{width:64,height:64,borderRadius:"50%",background:"#f0fdf4",border:"3px solid #16a34a",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
+        <div style={{fontFamily:"Georgia,serif",fontWeight:700,fontSize:22,marginBottom:8}}>¡Datos recibidos!</div>
+        <p style={{fontFamily:"system-ui",fontSize:14,color:"#6b7280",lineHeight:1.6}}>Tus datos fiscales han sido guardados correctamente. El equipo de Educación Continua IBERO Tijuana los procesará a la brevedad.</p>
+        <img src={IBERO_LOGO} alt="IBERO Tijuana" style={{height:40,marginTop:24,opacity:0.6}} onError={e=>e.target.style.display="none"}/>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:"#F5F5F7",padding:"32px 16px",fontFamily:"system-ui"}}>
+      <div style={{maxWidth:560,margin:"0 auto"}}>
+        {/* Header */}
+        <div style={{background:"#fff",borderRadius:16,overflow:"hidden",boxShadow:"0 4px 32px rgba(0,0,0,0.10)",marginBottom:16}}>
+          <div style={{background:"#eb1d33",padding:"20px 28px",display:"flex",alignItems:"center",gap:16}}>
+            <img src={IBERO_LOGO} alt="IBERO" style={{height:44,width:"auto"}} onError={e=>e.target.style.display="none"}/>
+            <div>
+              <div style={{color:"#fff",fontFamily:"Georgia,serif",fontWeight:700,fontSize:18}}>Datos Fiscales</div>
+              <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>Educación Continua · IBERO Tijuana</div>
+            </div>
+          </div>
+          <div style={{padding:"20px 28px",borderBottom:"1px solid #f3f4f6"}}>
+            <p style={{margin:0,fontSize:14,color:"#374151",lineHeight:1.6}}>
+              Hola <strong>{est?.nombre}</strong>, por favor completa tus datos fiscales para emitir tu factura correctamente.
+            </p>
+          </div>
+        </div>
+
+        {/* Formulario */}
+        <div style={{background:"#fff",borderRadius:16,padding:"24px 28px",boxShadow:"0 4px 32px rgba(0,0,0,0.10)"}}>
+          <div style={{display:"grid",gap:14}}>
+            {/* RFC y Razón social */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <label style={lbl}>RFC *</label>
+                <input value={form.rfc} onChange={e=>setForm({...form,rfc:e.target.value.toUpperCase()})} placeholder="XXXX000000XX0" style={inp}/>
+              </div>
+              <div>
+                <label style={lbl}>Régimen fiscal</label>
+                <input value={form.regimen_fiscal} onChange={e=>setForm({...form,regimen_fiscal:e.target.value})} placeholder="Ej. 612 - Personas físicas" style={inp}/>
+              </div>
+            </div>
+            <div>
+              <label style={lbl}>Razón social *</label>
+              <input value={form.razon_social} onChange={e=>setForm({...form,razon_social:e.target.value})} placeholder="Nombre o razón social completa" style={inp}/>
+            </div>
+            <div>
+              <label style={lbl}>Uso del CFDI</label>
+              <input value={form.uso_cfdi} onChange={e=>setForm({...form,uso_cfdi:e.target.value})} placeholder="Ej. D10 - Pagos por servicios educativos" style={inp}/>
+            </div>
+
+            <div style={{borderTop:"1px solid #f3f4f6",paddingTop:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",marginBottom:12,letterSpacing:"0.5px"}}>DOMICILIO FISCAL</div>
+              <div style={{display:"grid",gap:12}}>
+                <div>
+                  <label style={lbl}>Calle</label>
+                  <input value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Calle" style={inp}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                  <div><label style={lbl}>No. Ext.</label><input value={form.num_exterior} onChange={e=>setForm({...form,num_exterior:e.target.value})} style={inp}/></div>
+                  <div><label style={lbl}>No. Int.</label><input value={form.num_interior} onChange={e=>setForm({...form,num_interior:e.target.value})} style={inp}/></div>
+                  <div><label style={lbl}>C.P.</label><input value={form.codigo_postal} onChange={e=>setForm({...form,codigo_postal:e.target.value})} style={inp}/></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div><label style={lbl}>Colonia</label><input value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} style={inp}/></div>
+                  <div><label style={lbl}>Ciudad</label><input value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} style={inp}/></div>
+                </div>
+                <div>
+                  <label style={lbl}>Estado</label>
+                  <input value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})} placeholder="Ej. Baja California" style={inp}/>
+                </div>
+              </div>
+            </div>
+
+            <div style={{borderTop:"1px solid #f3f4f6",paddingTop:14}}>
+              <label style={lbl}>URL de tu Constancia de Situación Fiscal (CSF)</label>
+              <input value={form.csf_url} onChange={e=>setForm({...form,csf_url:e.target.value})} placeholder="https://..." style={inp}/>
+              <p style={{margin:"6px 0 0",fontSize:11,color:"#9ca3af"}}>Puedes subir tu CSF a Google Drive o Dropbox y pegar el enlace aquí.</p>
+            </div>
+
+            <button onClick={guardar} style={{marginTop:8,width:"100%",background:"#eb1d33",color:"#fff",border:"none",borderRadius:10,padding:"14px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:"-0.3px"}}>
+              Guardar datos fiscales
+            </button>
+            <p style={{textAlign:"center",fontSize:11,color:"#9ca3af",margin:0}}>Tus datos están protegidos y solo serán utilizados para emisión de facturas.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrdenPago() {
   const ordenId = new URLSearchParams(window.location.search).get("orden");
   const [orden,setOrden]       = useState(null);
@@ -3050,15 +3189,17 @@ export default function App() {
   const [linkCopiado,setLinkCop]     = useState("");
   const [repVistaFin,setRepVistaFin] = useState("global");
   const [repMesFin,setRepMesFin]     = useState(today().substring(0,7));
-  const [busqGlobal,setBusqGlobal]   = useState("");
-  const [busqPagos,setBusqPagos]     = useState("");
-  const [progPagos,setProgPagos]     = useState("");
-  const [filtroPagos,setFiltroPagos] = useState("");
+  const [busqGlobal,setBusqGlobal]     = useState("");
+  const [busqPagos,setBusqPagos]       = useState("");
+  const [progPagos,setProgPagos]       = useState("");
+  const [filtroPagos,setFiltroPagos]   = useState("");
+  const [filtroTipoPago,setFiltroTipoPago] = useState(""); // ""=todos, "unico", "parcialidades"
   const [filtroFactProg,setFiltroFactProg] = useState("");
   const [busqFacturacion,setBusqFacturacion] = useState("");
   const [filtroFactTipo,setFiltroFactTipo] = useState(""); // ""=todos, "pagaron"=pagaron este mes, "pendiente"=factura pendiente, "enviada"=enviada
   const [filtroFactMes,setFiltroFactMes] = useState(today().substring(0,7)); // YYYY-MM
   const [fiscalModal,setFiscalModal] = useState(null); // {progId, est}
+  const [fiscalSolicitudModal,setFiscalSolicitudModal] = useState(null); // {progId, est, url}
   const [expandido,setExpandido]       = useState(null); // programa abierto
   const [expandidoEst,setExpandidoEst] = useState(null); // estudiante abierto
   const [evalTab,setEvalTab]           = useState("modulos");
@@ -3502,8 +3643,10 @@ export default function App() {
   const isPublic = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
   const isEval   = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("eval");
   const isOrden  = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("orden");
+  const isFiscal = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("fiscal");
   if (!ready) return null;
   if (isOrden)  return <OrdenPago/>;
+  if (isFiscal) return <FiscalFormPage/>;
   if (isEval)   return <EvaluacionDocente programas={programas}/>;
   if (isPublic) return <ListaDocente programas={programas} onSave={saveAsistDocente}/>;
   if (!session) return <LoginScreen onLogin={u=>setSession(u)}/>;
@@ -4681,7 +4824,7 @@ export default function App() {
                     <div key={i} style={{...S.card,padding:"16px 20px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1,minWidth:200}}>
                         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
-                          <span style={{fontWeight:700,fontSize:15}}>{est.nombre}</span>
+                          <span style={{fontWeight:700,fontSize:15,textTransform:"uppercase"}}>{est.nombre}</span>
                           <span style={{fontSize:11,background:est.estatus==="baja"?"#fef2f2":est.estatus==="egresado"?"#f0fdf4":"#eff6ff",color:est.estatus==="baja"?"#dc2626":est.estatus==="egresado"?"#16a34a":"#2563eb",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",fontWeight:700}}>{est.estatus==="baja"?"Baja":est.estatus==="egresado"?"Egresado EC":"Activo"}</span>
                         </div>
                         <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -4712,6 +4855,7 @@ export default function App() {
           const busqP=busqPagos, setBusqP=setBusqPagos;
           const progSelP=progPagos, setProgSelP=setProgPagos;
           const filtroEstado=filtroPagos, setFiltroEstado=setFiltroPagos;
+          const tipoPago=filtroTipoPago, setTipoPago=setFiltroTipoPago;
 
           const estadoStyle={
             ok:       {bg:"#f0fdf4",color:"#16a34a",label:"Al corriente"},
@@ -4875,7 +5019,12 @@ export default function App() {
                   <option value="sinconfig">Sin configurar</option>
                   <option value="inactivo">Inactivos</option>
                 </select>
-                {(busqP||progSelP||filtroEstado)&&<button onClick={()=>{setBusqP("");setProgSelP("");setFiltroEstado("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
+                <select value={tipoPago} onChange={e=>setTipoPago(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
+                  <option value="">Tipo de pago</option>
+                  <option value="unico">Pago único</option>
+                  <option value="parcialidades">Parcialidades</option>
+                </select>
+                {(busqP||progSelP||filtroEstado||tipoPago)&&<button onClick={()=>{setBusqP("");setProgSelP("");setFiltroEstado("");setTipoPago("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
               </div>
 
               {/* LISTA POR PROGRAMA */}
@@ -4900,8 +5049,9 @@ export default function App() {
                       return (p.parcialidades||[]).some(parc=>!parc.pagado&&parc.fecha_vencimiento&&(()=>{const diff=Math.round((new Date(parc.fecha_vencimiento+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));return diff>=0&&diff<=2;})());
                     }
                     if(filtroEstado){const {estado}=calcInfoEst(est,prog);return estado===filtroEstado;}
+                    if(tipoPago&&(est.pago?.tipo||"unico")!==tipoPago)return false;
                     return true;
-                  });
+                  }).sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
                   if(estsFiltrados.length===0)return null;
                   const totalProgEsp=estsFiltrados.reduce((a,e)=>{const {mf}=calcInfoEst(e,prog);return a+mf;},0);
                   const totalProgCob=estsFiltrados.reduce((a,e)=>{const {cobrado}=calcInfoEst(e,prog);return a+cobrado;},0);
@@ -4962,7 +5112,7 @@ export default function App() {
                                 <div onClick={()=>setExpandidoEst(estAbierto?null:estKey)} style={{padding:"12px 20px 12px 28px",display:"flex",gap:10,alignItems:"center",cursor:"pointer",opacity:esInactivo?0.65:1}}>
                                   <div style={{flex:1,minWidth:160}}>
                                     <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2,flexWrap:"wrap"}}>
-                                      <span style={{fontWeight:600,fontSize:13}}>{est.nombre}</span>
+                                      <span style={{fontWeight:600,fontSize:13,textTransform:"uppercase"}}>{est.nombre}</span>
                                       {esInactivo
                                         ?<span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",borderRadius:4,padding:"2px 7px",fontFamily:"system-ui",fontWeight:700}}>Inactivo</span>
                                         :calcEtiquetas(est,p,mf,estado).map((et,i)=>(
@@ -5327,7 +5477,18 @@ export default function App() {
                         <div style={{padding:"14px 16px",borderRight:"1px solid #f3f4f6"}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                             <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px"}}>DATOS FISCALES</div>
-                            <button onClick={()=>setFiscalModal({progId:prog.id,est:e})} style={{background:"none",border:"1px solid #e5e7eb",borderRadius:4,padding:"1px 7px",cursor:"pointer",fontSize:10,fontFamily:"system-ui",color:"#6b7280",fontWeight:600}}>Editar</button>
+                            <div style={{display:"flex",gap:4}}>
+                              {!e.rfc&&<button onClick={async()=>{
+                                const token=e.fiscal_token||newId();
+                                if(!e.fiscal_token){
+                                  save((programas||[]).map(p=>p.id!==prog.id?p:{...p,estudiantes:ests(p).map(x=>x.id!==e.id?x:{...x,fiscal_token:token})}));
+                                  await supa.upsert("estudiantes",[{id:e.id,fiscal_token:token}]).catch(()=>{});
+                                }
+                                const url=window.location.href.split("?")[0]+"?fiscal="+token;
+                                setFiscalSolicitudModal({progId:prog.id,est:{...e,fiscal_token:token},url});
+                              }} style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:4,padding:"1px 7px",cursor:"pointer",fontSize:10,fontFamily:"system-ui",color:"#d97706",fontWeight:600}}>Solicitar</button>}
+                              <button onClick={()=>setFiscalModal({progId:prog.id,est:e})} style={{background:"none",border:"1px solid #e5e7eb",borderRadius:4,padding:"1px 7px",cursor:"pointer",fontSize:10,fontFamily:"system-ui",color:"#6b7280",fontWeight:600}}>Editar</button>
+                            </div>
                           </div>
                           <div style={{display:"grid",gap:3,fontFamily:"system-ui",fontSize:11}}>
                             {e.rfc&&<div><span style={{color:"#9ca3af"}}>RFC: </span><span style={{fontWeight:700,letterSpacing:"0.5px"}}>{e.rfc}</span></div>}
@@ -6483,6 +6644,46 @@ export default function App() {
         </div>
       )}
       {fiscalModal&&<FiscalModal est={fiscalModal.est} onSave={datos=>{save((programas||[]).map(p=>p.id!==fiscalModal.progId?p:{...p,estudiantes:ests(p).map(e=>e.id!==fiscalModal.est.id?e:{...e,...datos})}));setFiscalModal(null);}} onClose={()=>setFiscalModal(null)}/>}
+      {fiscalSolicitudModal&&(()=>{
+        const {est,url}=fiscalSolicitudModal;
+        const nombre=est.nombre||"";
+        const msgWA=encodeURIComponent(`Hola ${nombre}, te escribimos del equipo de Educación Continua IBERO Tijuana.\n\nPara emitir tu factura necesitamos tus datos fiscales. Por favor completa el siguiente formulario, solo toma un momento:\n\n${url}\n\nCualquier duda estamos para apoyarte. ¡Gracias!`);
+        const msgEmail=`Hola ${nombre},\n\nTe escribimos del equipo de Educación Continua IBERO Tijuana.\n\nPara emitir tu factura correctamente, necesitamos que nos proporciones tus datos fiscales a través del siguiente enlace:\n\n${url}\n\nSolo toma un momento y tus datos estarán protegidos.\n\nQuedamos a tus órdenes.\n\nAtentamente,\nCoordinación de Educación Continua\nIBERO Tijuana`;
+        const tel=(est.telefono||"").replace(/\D/g,"");
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1500,padding:16}}>
+            <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:480,boxShadow:"0 20px 60px rgba(0,0,0,0.2)",overflow:"hidden"}}>
+              <div style={{background:"#eb1d33",padding:"18px 24px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{color:"#fff",fontWeight:700,fontSize:16,fontFamily:"Georgia,serif"}}>Solicitar datos fiscales</div>
+                <button onClick={()=>setFiscalSolicitudModal(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.8)",fontSize:22,cursor:"pointer"}}>×</button>
+              </div>
+              <div style={{padding:"20px 24px"}}>
+                <div style={{fontFamily:"system-ui",fontSize:13,color:"#374151",marginBottom:16}}>
+                  <strong>{nombre}</strong> — se enviará un enlace personalizado para que llene sus datos fiscales directamente.
+                </div>
+                <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:"10px 14px",marginBottom:16,fontFamily:"system-ui",fontSize:11,color:"#6b7280",wordBreak:"break-all"}}>
+                  {url}
+                  <button onClick={()=>{navigator.clipboard.writeText(url);}} style={{marginLeft:8,background:"none",border:"1px solid #e5e7eb",borderRadius:4,padding:"2px 8px",cursor:"pointer",fontSize:10,color:"#374151"}}>Copiar</button>
+                </div>
+                <div style={{display:"grid",gap:10}}>
+                  {tel&&<a href={`https://wa.me/${tel}?text=${msgWA}`} target="_blank" rel="noreferrer"
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,textDecoration:"none",cursor:"pointer"}}>
+                    <span style={{fontSize:24}}>💬</span>
+                    <div><div style={{fontWeight:700,fontSize:14,color:"#16a34a",fontFamily:"system-ui"}}>Enviar por WhatsApp</div><div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{est.telefono}</div></div>
+                  </a>}
+                  {est.email&&<a href={`mailto:${est.email}?subject=${encodeURIComponent("Solicitud de datos fiscales — IBERO Tijuana")}&body=${encodeURIComponent(msgEmail)}`}
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,textDecoration:"none",cursor:"pointer"}}>
+                    <span style={{fontSize:24}}>✉️</span>
+                    <div><div style={{fontWeight:700,fontSize:14,color:"#2563eb",fontFamily:"system-ui"}}>Enviar por correo</div><div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{est.email}</div></div>
+                  </a>}
+                  {!tel&&!est.email&&<div style={{padding:16,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui",fontSize:13}}>Este estudiante no tiene teléfono ni correo registrado.</div>}
+                </div>
+                <button onClick={()=>setFiscalSolicitudModal(null)} style={{marginTop:16,width:"100%",padding:"10px",background:"#f3f4f6",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"system-ui",fontSize:13,color:"#374151",fontWeight:600}}>Cerrar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {npsModal&&<NPSModal prog={npsModal.prog} mod={npsModal.mod} onSave={resp=>saveNPS(npsModal.prog.id,npsModal.mod.id,npsModal.mod.docenteId||"",npsModal.mod.docente||"",resp)} onClose={()=>setNpsModal(null)}/>}
       {showImport&&prog&&<ImportModal prog={prog} notifConfig={notifCfg} fieldMap={fieldMap} onImport={est=>updateEst(prog.id,est)} onClose={()=>setShowImp(false)}/>}
 
