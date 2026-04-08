@@ -2727,7 +2727,7 @@ function HonorariosView({programas,docentes,onToggle,session}) {
                   <tbody>
                     {listaOrdenes.map((o,i)=>{
                       const d=o.datos||{};
-                      const esMens=d.tipo==="mensual";
+                      const esMens=d.tipo==="mensual"||d.tipo==="seleccion";
                       const firmas=(o.firma_solicitante?1:0)+(o.firma_responsable?1:0);
                       const estLabel=o.estatus==="firmada"?"Firmada":firmas===1?"1 de 2 firmas":"Pendiente";
                       const estColor=o.estatus==="firmada"?"#16a34a":firmas===1?"#d97706":"#9CA3AF";
@@ -2738,7 +2738,7 @@ function HonorariosView({programas,docentes,onToggle,session}) {
                         <tr key={o.id} style={{background:i%2===0?"#fff":"#FAFAFA"}}>
                           <td style={tdStyle}>
                             <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,background:esMens?"#FFF5F5":"#EFF6FF",color:esMens?RED:"#2563EB"}}>
-                              {esMens?"Solicitud mensual":"Orden individual"}
+                              {d.tipo==="seleccion"?"Selección manual":d.tipo==="mensual"?"Solicitud mensual":"Orden individual"}
                             </span>
                             {esMens&&d.mes&&<div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>{["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][parseInt(d.mes.split("-")[1])-1]} {d.mes.split("-")[0]}</div>}
                           </td>
@@ -2803,7 +2803,7 @@ function OrdenPago() {
 
   useEffect(()=>{
     const s=document.createElement("style");s.id="orden-print-css";
-    s.textContent=`@media print{.no-print{display:none!important;}.orden-wrap{box-shadow:none!important;border-radius:0!important;}}`;
+    s.textContent=`@media print{.no-print{display:none!important;}.orden-wrap{box-shadow:none!important;border-radius:0!important;} .orden-tabla{width:100%!important;min-width:unset!important;font-size:9px!important;} .orden-tabla th,.orden-tabla td{padding:5px 5px!important;font-size:9px!important;} .orden-tabla-wrap{overflow:visible!important;} @page{size:A4 landscape;margin:12mm;}}`;
     document.head.appendChild(s);
     return()=>document.getElementById("orden-print-css")?.remove();
   },[]);
@@ -2917,8 +2917,8 @@ function OrdenPago() {
         {esMensual&&(
           <div style={{padding:"20px 28px",borderBottom:"1px solid #F0F0F0"}}>
             <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",letterSpacing:"1px",textTransform:"uppercase",marginBottom:12}}>Honorarios del mes · {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][parseInt((d.mes||"").split("-")[1])-1]} {(d.mes||"").split("-")[0]}</div>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",minWidth:620}}>
+            <div className="orden-tabla-wrap" style={{overflowX:"auto"}}>
+              <table className="orden-tabla" style={{width:"100%",borderCollapse:"collapse",minWidth:620}}>
                 <thead>
                   <tr style={{background:"#FAFAFA"}}>
                     {["#","Nombre del profesor","Diplomado","Módulo","Cat.","Inicio","Fin","Horas","Importe bruto","IVA $","Total + IVA"].map((h,i)=>(
