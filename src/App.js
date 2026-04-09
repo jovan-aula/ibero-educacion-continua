@@ -3247,6 +3247,155 @@ function OrdenPago() {
   );
 }
 
+// ─── REPORTE PÚBLICO DOCENTE ───────────────────────────
+function ReporteDocentePublico() {
+  const token = new URLSearchParams(window.location.search).get("reporte");
+  let data;
+  try { data = JSON.parse(atob(token)); } catch(e) { return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:"#C8102E"}}>Enlace inválido.</div>; }
+
+  const { docente, prom, dims, comentarios, notaCoord, totalResp, fecha } = data;
+  const colorVal = v => v>=4?"#16a34a":v>=3?"#d97706":"#dc2626";
+  const bgVal    = v => v>=4?"#f0fdf4":v>=3?"#fffbeb":"#fef2f2";
+
+  const imprimir = () => {
+    const dimBarras = dims.map(d=>`
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">
+          <span style="color:#374151;font-weight:600;">${d.label}</span>
+          <span style="font-weight:800;color:${colorVal(d.val)};">${d.val}/5</span>
+        </div>
+        <div style="background:#f3f4f6;border-radius:99px;height:12px;overflow:hidden;">
+          <div style="width:${Math.round(d.val/5*100)}%;height:100%;background:${colorVal(d.val)};border-radius:99px;"></div>
+        </div>
+      </div>`).join("");
+    const comsHtml = comentarios?.length ? `
+      <div style="margin-top:32px;">
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">Comentarios de participantes</div>
+        ${comentarios.map(c=>`<div style="background:#f9fafb;border-left:3px solid #C8102E;padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:8px;font-size:13px;color:#374151;font-style:italic;">"${c}"</div>`).join("")}
+      </div>` : "";
+    const notaHtml = notaCoord ? `
+      <div style="margin-top:28px;background:#eff6ff;border-radius:8px;padding:16px 20px;">
+        <div style="font-size:11px;font-weight:700;color:#2563eb;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Nota de la coordinación</div>
+        <div style="font-size:13px;color:#1e40af;line-height:1.6;">${notaCoord.replace(/\n/g,"<br/>")}</div>
+      </div>` : "";
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Evaluación — ${docente}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+    <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style>
+    </head><body>
+    <div style="background:#C8102E;padding:28px 40px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-family:'Montserrat',sans-serif;font-weight:800;font-size:22px;color:#fff;letter-spacing:1px;">IBERO TIJUANA</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.8);letter-spacing:1px;margin-top:2px;font-family:'Montserrat',sans-serif;">COORDINACIÓN DE EDUCACIÓN CONTINUA</div>
+      </div>
+      <div style="text-align:right;color:rgba(255,255,255,0.75);font-size:12px;">${fecha||""}</div>
+    </div>
+    <div style="padding:36px 40px;">
+      <div style="font-size:12px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Resultados de evaluación docente</div>
+      <div style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;color:#1a1a1a;margin-bottom:4px;">${docente}</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:32px;">${totalResp} respuesta${totalResp!==1?"s":""}</div>
+      <div style="display:flex;gap:32px;align-items:flex-start;">
+        <div style="flex:1;min-width:260px;">${dimBarras}</div>
+        <div style="text-align:center;background:#f9fafb;border-radius:12px;padding:24px 32px;flex-shrink:0;">
+          <div style="font-size:10px;color:#9ca3af;font-weight:700;letter-spacing:1px;font-family:'Montserrat',sans-serif;margin-bottom:8px;">PROMEDIO GENERAL</div>
+          <div style="font-size:64px;font-weight:800;color:${colorVal(prom)};font-family:'Montserrat',sans-serif;line-height:1;">${prom}</div>
+          <div style="font-size:16px;color:#9ca3af;margin-top:4px;">/5</div>
+        </div>
+      </div>
+      ${comsHtml}${notaHtml}
+      <div style="margin-top:40px;padding-top:24px;border-top:1px solid #e5e7eb;text-align:center;">
+        <div style="font-size:15px;color:#374151;font-weight:600;margin-bottom:6px;">Gracias por su valiosa contribución y dedicación.</div>
+        <div style="font-size:13px;color:#6b7280;">Su trabajo es fundamental para la formación continua de nuestros participantes.</div>
+        <div style="margin-top:20px;font-size:11px;color:#9ca3af;">Coordinación de Educación Continua · IBERO Tijuana</div>
+      </div>
+    </div></body></html>`;
+    const w = window.open("","_blank");
+    w.document.write(html);
+    w.document.close();
+    setTimeout(()=>w.print(),600);
+  };
+
+  return(
+    <div style={{minHeight:"100vh",background:"#f5f5f7",fontFamily:"system-ui"}}>
+      {/* Header */}
+      <div style={{background:"#C8102E",padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontFamily:"Georgia,serif",fontWeight:900,fontSize:22,color:"#fff",letterSpacing:1}}>IBERO TIJUANA</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.8)",letterSpacing:1,marginTop:1}}>COORDINACIÓN DE EDUCACIÓN CONTINUA</div>
+        </div>
+        <button onClick={imprimir} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,color:"#fff",padding:"8px 18px",cursor:"pointer",fontSize:13,fontWeight:700}}>
+          Descargar PDF
+        </button>
+      </div>
+
+      {/* Cuerpo */}
+      <div style={{maxWidth:680,margin:"32px auto",padding:"0 16px"}}>
+        {/* Encabezado docente */}
+        <div style={{background:"#fff",borderRadius:14,padding:"28px 32px",marginBottom:16,boxShadow:"0 2px 16px rgba(0,0,0,0.07)"}}>
+          <div style={{fontSize:11,color:"#9ca3af",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>Resultados de evaluación docente</div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:700,color:"#1a1a1a",marginBottom:4}}>{docente}</div>
+          <div style={{fontSize:13,color:"#6b7280"}}>{totalResp} respuesta{totalResp!==1?"s":""} · {fecha}</div>
+        </div>
+
+        {/* Calificaciones */}
+        <div style={{background:"#fff",borderRadius:14,padding:"24px 32px",marginBottom:16,boxShadow:"0 2px 16px rgba(0,0,0,0.07)"}}>
+          <div style={{display:"flex",gap:24,alignItems:"flex-start",flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:240}}>
+              {dims.map((d,i)=>(
+                <div key={i} style={{marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                    <span style={{color:"#374151",fontWeight:600}}>{d.label}</span>
+                    <span style={{fontWeight:800,color:colorVal(d.val)}}>{d.val}/5</span>
+                  </div>
+                  <div style={{background:"#f3f4f6",borderRadius:99,height:10,overflow:"hidden"}}>
+                    <div style={{width:(d.val/5*100)+"%",height:"100%",background:colorVal(d.val),borderRadius:99,transition:"width .5s"}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{textAlign:"center",background:"#f9fafb",borderRadius:12,padding:"20px 28px",flexShrink:0}}>
+              <div style={{fontSize:10,color:"#9ca3af",fontWeight:700,letterSpacing:"0.5px",marginBottom:8,fontFamily:"system-ui"}}>PROMEDIO GENERAL</div>
+              <div style={{fontSize:56,fontWeight:800,color:colorVal(prom),fontFamily:"Georgia,serif",lineHeight:1}}>{prom}</div>
+              <div style={{fontSize:14,color:"#9ca3af",marginTop:4}}>/5</div>
+              <div style={{marginTop:10,background:bgVal(prom),borderRadius:8,padding:"4px 14px",display:"inline-block",fontSize:12,fontWeight:700,color:colorVal(prom)}}>
+                {prom>=4.5?"Excelente":prom>=4?"Muy bueno":prom>=3?"Bueno":"Por mejorar"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Comentarios */}
+        {comentarios?.length>0&&(
+          <div style={{background:"#fff",borderRadius:14,padding:"24px 32px",marginBottom:16,boxShadow:"0 2px 16px rgba(0,0,0,0.07)"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:14}}>Comentarios de participantes</div>
+            <div style={{display:"grid",gap:8}}>
+              {comentarios.map((c,i)=>(
+                <div key={i} style={{background:"#f9fafb",borderLeft:"3px solid #C8102E",padding:"10px 16px",borderRadius:"0 8px 8px 0",fontSize:13,color:"#374151",fontStyle:"italic",lineHeight:1.6}}>
+                  "{c}"
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Nota coordinación */}
+        {notaCoord&&(
+          <div style={{background:"#eff6ff",borderRadius:14,padding:"20px 28px",marginBottom:16,border:"1px solid #bfdbfe"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#2563eb",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>Nota de la coordinación</div>
+            <div style={{fontSize:13,color:"#1e40af",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{notaCoord}</div>
+          </div>
+        )}
+
+        {/* Agradecimiento */}
+        <div style={{background:"#fff",borderRadius:14,padding:"28px 32px",boxShadow:"0 2px 16px rgba(0,0,0,0.07)",textAlign:"center"}}>
+          <div style={{fontSize:16,fontWeight:700,color:"#1a1a1a",marginBottom:8}}>Gracias por su valiosa contribución y dedicación.</div>
+          <div style={{fontSize:13,color:"#6b7280",lineHeight:1.6,marginBottom:16}}>Su trabajo es fundamental para la formación continua de nuestros participantes.</div>
+          <div style={{fontSize:11,color:"#9ca3af"}}>Coordinación de Educación Continua · IBERO Tijuana</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────
 export default function App() {
   const [session,setSession]     = useState(null);
@@ -3750,15 +3899,17 @@ export default function App() {
     ausentes.forEach(id => supa.del("asistencia", id).catch(e=>console.error("Del asist:",e)));
   };
 
-  const isPublic = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
-  const isEval   = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("eval");
-  const isOrden  = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("orden");
-  const isFiscal = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("fiscal");
+  const isPublic   = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("lista");
+  const isEval     = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("eval");
+  const isOrden    = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("orden");
+  const isFiscal   = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("fiscal");
+  const isReporte  = typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("reporte");
   if (!ready) return null;
-  if (isOrden)  return <OrdenPago/>;
-  if (isFiscal) return <FiscalFormPage/>;
-  if (isEval)   return <EvaluacionDocente programas={programas}/>;
-  if (isPublic) return <ListaDocente programas={programas} onSave={saveAsistDocente}/>;
+  if (isOrden)   return <OrdenPago/>;
+  if (isFiscal)  return <FiscalFormPage/>;
+  if (isEval)    return <EvaluacionDocente programas={programas}/>;
+  if (isPublic)  return <ListaDocente programas={programas} onSave={saveAsistDocente}/>;
+  if (isReporte) return <ReporteDocentePublico/>;
   if (!session) return <LoginScreen onLogin={u=>setSession(u)}/>;
 
   const prog    = getProg();
@@ -7246,6 +7397,141 @@ export default function App() {
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
       {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
+      {/* ── MODAL REPORTE PDF EVALUACIÓN DOCENTE ── */}
+      {evalReporteModal&&(()=>{
+        const {docente:d} = evalReporteModal;
+        const DIM_LABELS_R = ["Expectativas","Relevancia","Aplicación","Didáctica","Dominio"];
+        const DIM_KEYS_R   = ["q1","q2","q3","q4","q5"];
+        const colorValR = v => v>=4?"#16a34a":v>=3?"#d97706":"#dc2626";
+        const evalsConComentario = d.evals.filter(e=>e.comentarios&&e.comentarios.trim());
+        const dimPromR = (key) => d.evals.length ? Math.round(d.evals.reduce((a,e)=>a+(e[key]||0),0)/d.evals.length*10)/10 : 0;
+
+        const generarLink = () => {
+          const comentariosVisibles = evalsConComentario.filter(e=>!evalReporteModal.ocultos?.includes(e.id||e.fecha+e.comentarios)).map(e=>e.comentarios);
+          const payload = {
+            docente: d.nombre,
+            prom: d.prom,
+            dims: DIM_KEYS_R.map((k,i)=>({label:DIM_LABELS_R[i],val:dimPromR(k)})),
+            comentarios: comentariosVisibles,
+            notaCoord: evalReporteModal.notaCoord||"",
+            totalResp: d.evals.length,
+            fecha: new Date().toLocaleDateString("es-MX",{day:"numeric",month:"long",year:"numeric"}),
+          };
+          const token = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+          const url = window.location.href.split("?")[0]+"?reporte="+token;
+          setEvalReporteModal(prev=>({...prev,linkGenerado:url}));
+        };
+
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setEvalReporteModal(null)}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:14,width:"100%",maxWidth:640,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.25)",fontFamily:"system-ui"}}>
+              {/* Header */}
+              <div style={{background:"#C8102E",padding:"18px 24px",borderRadius:"14px 14px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontFamily:"Georgia,serif",fontWeight:700,fontSize:16,color:"#fff"}}>Reporte PDF</div>
+                  <div style={{fontSize:12,color:"rgba(255,255,255,0.8)",marginTop:2}}>{d.nombre}</div>
+                </div>
+                <button onClick={()=>setEvalReporteModal(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>
+              <div style={{padding:"20px 24px"}}>
+                {/* Resumen calificaciones */}
+                <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:20,background:"#f9fafb",borderRadius:10,padding:"14px 18px"}}>
+                  <div style={{flex:1}}>
+                    {DIM_KEYS_R.map((k,i)=>{
+                      const val=dimPromR(k);
+                      return(
+                        <div key={k} style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                          <span style={{fontSize:11,color:"#6b7280",minWidth:90}}>{DIM_LABELS_R[i]}</span>
+                          <div style={{flex:1,height:6,background:"#e5e7eb",borderRadius:4,overflow:"hidden"}}>
+                            <div style={{width:(val/5*100)+"%",height:"100%",background:colorValR(val),borderRadius:4}}/>
+                          </div>
+                          <span style={{fontSize:12,fontWeight:700,color:colorValR(val),minWidth:24}}>{val}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{textAlign:"center",flexShrink:0}}>
+                    <div style={{fontSize:9,color:"#9ca3af",fontWeight:700,letterSpacing:"0.5px",marginBottom:4}}>PROMEDIO</div>
+                    <div style={{fontSize:40,fontWeight:800,color:colorValR(d.prom),fontFamily:"Georgia,serif",lineHeight:1}}>{d.prom}</div>
+                    <div style={{fontSize:11,color:"#9ca3af"}}>/5</div>
+                  </div>
+                </div>
+
+                {/* Comentarios estudiantes */}
+                {evalsConComentario.length>0&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:10}}>Comentarios de estudiantes</div>
+                    <div style={{fontSize:11,color:"#6b7280",marginBottom:10}}>Desactiva los que no quieras incluir en el PDF:</div>
+                    <div style={{display:"grid",gap:6}}>
+                      {evalsConComentario.map((e,i)=>{
+                        const uid=e.id||e.fecha+e.comentarios;
+                        const oculto=(evalReporteModal.ocultos||[]).includes(uid);
+                        return(
+                          <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 12px",borderRadius:8,background:oculto?"#f3f4f6":"#f0f9ff",border:"1px solid "+(oculto?"#e5e7eb":"#bae6fd"),opacity:oculto?0.5:1,transition:"all .15s"}}>
+                            <div style={{flex:1,fontSize:12,color:"#374151",fontStyle:oculto?"normal":"italic"}}>
+                              {oculto?<span style={{color:"#9ca3af"}}>Comentario oculto</span>:`"${e.comentarios}"`}
+                            </div>
+                            <button onClick={()=>setEvalReporteModal(prev=>({...prev,ocultos:oculto?(prev.ocultos||[]).filter(x=>x!==uid):[...(prev.ocultos||[]),uid]}))}
+                              title={oculto?"Incluir en PDF":"Ocultar del PDF"}
+                              style={{background:oculto?"#f0fdf4":"#fef2f2",border:"none",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,color:oculto?"#16a34a":"#dc2626",fontWeight:700,flexShrink:0}}>
+                              {oculto?"+ Incluir":"🚫 Ocultar"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Nota del coordinador */}
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>Nota de la coordinación (opcional)</div>
+                  <textarea
+                    placeholder="Ej: Agradecemos su excelente desempeño durante el módulo. Los resultados reflejan el impacto positivo en los participantes..."
+                    value={evalReporteModal.notaCoord||""}
+                    onChange={e=>setEvalReporteModal(prev=>({...prev,notaCoord:e.target.value}))}
+                    style={{width:"100%",minHeight:90,border:"1px solid #e5e7eb",borderRadius:8,padding:"10px 12px",fontSize:12,fontFamily:"system-ui",resize:"vertical",outline:"none",lineHeight:1.6}}
+                  />
+                </div>
+
+                {/* Link generado */}
+                {evalReporteModal.linkGenerado&&(
+                  <div style={{marginBottom:16,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"14px 16px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#16a34a",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>Enlace generado</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      <input readOnly value={evalReporteModal.linkGenerado} style={{flex:1,border:"1px solid #e5e7eb",borderRadius:6,padding:"7px 10px",fontSize:11,fontFamily:"monospace",background:"#fff",minWidth:0}}/>
+                      <button onClick={()=>{navigator.clipboard.writeText(evalReporteModal.linkGenerado);setEvalReporteModal(prev=>({...prev,copiado:true}));setTimeout(()=>setEvalReporteModal(prev=>({...prev,copiado:false})),2000);}}
+                        style={S.btn(evalReporteModal.copiado?"#f0fdf4":"#f3f4f6",evalReporteModal.copiado?"#16a34a":"#374151",{padding:"7px 14px",fontSize:12,border:"1px solid "+(evalReporteModal.copiado?"#bbf7d0":"#e5e7eb")})}>
+                        {evalReporteModal.copiado?"Copiado ✓":"Copiar"}
+                      </button>
+                      <button onClick={()=>window.open(evalReporteModal.linkGenerado,"_blank")} style={S.btn("#eff6ff","#2563eb",{padding:"7px 14px",fontSize:12,border:"1px solid #bfdbfe"})}>Ver</button>
+                    </div>
+                    {/* WhatsApp */}
+                    {(()=>{
+                      const doc=(docentes||[]).find(dc=>dc.id===d.id||dc.nombre===d.nombre);
+                      const tel=(doc?.telefono||"").replace(/\D/g,"");
+                      const msg=`Hola ${d.nombre}, le compartimos los resultados de su evaluación docente en IBERO Tijuana Educación Continua.\n\nPuede consultar su reporte completo aquí:\n${evalReporteModal.linkGenerado}\n\nGracias por su valiosa contribución.\n\nCoordinación de Educación Continua · IBERO Tijuana`;
+                      const waUrl=tel?"https://wa.me/52"+tel+"?text="+encodeURIComponent(msg):"https://wa.me/?text="+encodeURIComponent(msg);
+                      return(
+                        <button onClick={()=>window.open(waUrl,"_blank")} style={{...S.btn("#25D366","#fff",{padding:"9px 18px",fontWeight:700,fontSize:13}),marginTop:10,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                          Enviar por WhatsApp a {d.nombre}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Botones */}
+                <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                  <button onClick={()=>setEvalReporteModal(null)} style={S.btn("#f3f4f6","#6b7280",{padding:"9px 18px"})}>Cancelar</button>
+                  <button onClick={generarLink} style={S.btn("#C8102E","#fff",{padding:"9px 22px",fontWeight:700})}>🔗 Generar enlace</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {folioModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{folioModal.onSkip();setFolioModal(null);}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,padding:28,width:360,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:"system-ui"}}>
