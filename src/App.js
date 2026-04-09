@@ -3268,7 +3268,6 @@ function ReporteDocentePublico() {
   const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText+"\n\n"+pageUrl)}`,"_blank");
 
   const imprimir = () => {
-    const IBERO_LOGO = window.location.origin+"/ibero_logo.png";
     const promColor = "#C8102E";
     const dimBarras = dims.map(d=>{
       const pct = Math.round(d.val/5*100);
@@ -3301,7 +3300,7 @@ function ReporteDocentePublico() {
     </head><body>
     <!-- ENCABEZADO ROJO -->
     <div style="background:#C8102E;padding:28px 40px;display:flex;align-items:center;justify-content:space-between;">
-      <img src="${IBERO_LOGO}" alt="IBERO Tijuana" style="height:52px;filter:brightness(0) invert(1);"/>
+      <div style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:900;color:#fff;letter-spacing:1px;">IBERO Tijuana</div>
       <div style="text-align:right;">
         <div style="font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:2px;text-transform:uppercase;">Evaluación Docente</div>
         <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:3px;">${fecha}</div>
@@ -3350,7 +3349,7 @@ function ReporteDocentePublico() {
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"system-ui",color:"#fff"}}>
       {/* Barra superior */}
       <div style={{background:"#C8102E",padding:"14px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <img src="/ibero_logo.png" alt="IBERO Tijuana" style={{height:40,filter:"brightness(0) invert(1)"}}/>
+        <span style={{fontFamily:"Montserrat,Georgia,serif",fontSize:24,fontWeight:900,color:"#fff",letterSpacing:1}}>IBERO Tijuana</span>
         <button onClick={imprimir} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,color:"#fff",padding:"7px 18px",cursor:"pointer",fontSize:12,fontWeight:700}}>
           Descargar PDF
         </button>
