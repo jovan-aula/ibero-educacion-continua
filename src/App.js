@@ -1635,7 +1635,7 @@ function CalendarioView({programas}) {
       <div>
         <div style={{fontWeight:700,fontSize:14}}>{e.mod.nombre}</div>
         <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginTop:2,display:"flex",gap:10,flexWrap:"wrap"}}>
-          <span>{e.prog.nombre}</span>{e.mod.horario&&<span>{e.mod.horario}</span>}{e.mod.docente&&<span>{e.mod.docente}</span>}
+          <span>{e.prog.nombre}</span>{e.prog.generacion&&<span style={{background:"#f3f4f6",borderRadius:4,padding:"1px 6px",fontSize:11,fontWeight:600,color:"#374151"}}>{e.prog.generacion}</span>}{e.mod.horario&&<span>{e.mod.horario}</span>}{e.mod.docente&&<span>{e.mod.docente}</span>}
           <span style={{background:e.mod.estatus==="confirmado"?"#f0fdf4":"#fffbeb",color:e.mod.estatus==="confirmado"?"#16a34a":"#d97706",border:"1px solid "+(e.mod.estatus==="confirmado"?"#bbf7d0":"#fde68a"),borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>{e.mod.estatus==="confirmado"?"Confirmado":"Propuesta"}</span>
         </div>
       </div>
@@ -3310,6 +3310,7 @@ export default function App() {
   const [filtroDocEval,setFiltroDocEval]   = useState("");
   const [filtroProgEval,setFiltroProgEval] = useState("");
   const [filtroModEval,setFiltroModEval]   = useState("");
+  const [evalReporteModal,setEvalReporteModal] = useState(null); // {docente, evals}
   const [editEstModal,setEditEstModal] = useState(null);
   const [inactivoModal,setInactivoModal] = useState(null); // {est, prog}
   const [inactivoRazon,setInactivoRazon] = useState("");
@@ -4379,6 +4380,7 @@ export default function App() {
           // ── Datos globales ──
           const todosEsts=(programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo").map(e=>({e,prog:p})));
           const activos=todosEsts.filter(({prog})=>progStatus(prog)==="activo");
+          const porIniciar=todosEsts.filter(({prog})=>progStatus(prog)==="proximo");
 
           // KPIs de pagos
           let cobradoMes=0,esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
@@ -4456,6 +4458,7 @@ export default function App() {
                 <KPICard label="Pendiente total" value={fmtMXN(pendienteTotal)} color="#d97706" onClick={()=>setView("pagos_global")}/>
                 <KPICard label="Vencidos" value={cntVencidos+cntCriticos} sub={cntCriticos>0?cntCriticos+" críticos":""} color="#dc2626" onClick={()=>{setView("pagos_global");setFiltroPagos("vencido");}}/>
                 <KPICard label="Estudiantes activos" value={activos.length} color={RED}/>
+                <KPICard label="Por iniciar" value={porIniciar.length} sub={progsProximos.length+" programa"+(progsProximos.length!==1?"s":"")} color="#0891b2" onClick={()=>setView("lista")}/>
                 <KPICard label="Programas activos" value={progsActivos.length} sub={progsProximos.length>0?progsProximos.length+" próximos":""} color="#2563eb" onClick={()=>setView("lista")}/>
                 <KPICard label="Facturas pendientes" value={factPendientes} color="#7c3aed" onClick={()=>{setView("facturacion");setFiltroFactTipo("pendiente");}}/>
               </div>
@@ -4531,6 +4534,42 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Programas por iniciar */}
+              {progsProximos.length>0&&(
+                <div style={{...S.card,padding:"20px 22px",marginBottom:12,borderLeft:"4px solid #0891b2"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                    <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE}}>Próximos a iniciar</div>
+                    <span style={{background:"#e0f2fe",color:"#0369a1",borderRadius:99,padding:"2px 10px",fontSize:11,fontWeight:700,fontFamily:"system-ui"}}>{porIniciar.length} estudiante{porIniciar.length!==1?"s":""} inscritos</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
+                    {progsProximos.map(prog=>{
+                      const estsP=ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo");
+                      const primerMod=mods(prog).filter(m=>m.fechaInicio).sort((a,b)=>a.fechaInicio.localeCompare(b.fechaInicio))[0];
+                      const diasParaInicio=primerMod?.fechaInicio?Math.ceil((new Date(primerMod.fechaInicio)-new Date(hoy))/(1000*60*60*24)):null;
+                      return(
+                        <div key={prog.id} onClick={()=>{setSelProg(prog.id);setView("programa");}} style={{padding:"14px 16px",borderRadius:10,border:"1px solid #bae6fd",cursor:"pointer",background:"#f0f9ff",transition:"box-shadow .15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 12px rgba(0,0,0,0.08)"}
+                          onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                            <div style={{width:10,height:10,borderRadius:"50%",background:prog.color||"#0891b2",flexShrink:0}}/>
+                            <div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",flex:1,lineHeight:1.3}}>{prog.nombre}</div>
+                          </div>
+                          <div style={{fontSize:11,color:"#0369a1",fontFamily:"system-ui",marginBottom:6,fontWeight:600}}>
+                            {estsP.length} estudiante{estsP.length!==1?"s":""} inscritos{prog.generacion?" · "+prog.generacion:""}
+                          </div>
+                          {primerMod?.fechaInicio&&(
+                            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,fontFamily:"system-ui",color:"#6b7280"}}>
+                              <span>Inicia: {primerMod.fechaInicio}</span>
+                              {diasParaInicio!==null&&<span style={{background:diasParaInicio<=7?"#fef2f2":diasParaInicio<=30?"#fffbeb":"#f0fdf4",color:diasParaInicio<=7?"#dc2626":diasParaInicio<=30?"#d97706":"#16a34a",borderRadius:99,padding:"1px 7px",fontWeight:700}}>en {diasParaInicio}d</span>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Programas activos */}
               {progsActivos.length>0&&(
@@ -5623,7 +5662,7 @@ export default function App() {
                                                     <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
                                                   </div>
                                                   {/* Folio inline */}
-                                                  {est.requiere_factura==="Sí"&&(
+                                                  {(
                                                     <input
                                                       defaultValue={parc.folio||""}
                                                       placeholder="Folio"
@@ -6517,6 +6556,7 @@ export default function App() {
                                 <div style={{display:"flex",gap:6}}>
                                   <button onClick={enviarResumenWA} style={S.btn("#f0fdf4","#16a34a",{padding:"3px 10px",fontSize:11,border:"1px solid #bbf7d0"})}>WA</button>
                                   <button onClick={enviarResumenEmail} style={S.btn("#f5f3ff","#7c3aed",{padding:"3px 10px",fontSize:11,border:"1px solid #ddd6fe"})}>✉ Email</button>
+                                  <button onClick={()=>setEvalReporteModal({docente:d,evals:d.evals})} style={S.btn("#C8102E","#fff",{padding:"3px 10px",fontSize:11})}>📄 Reporte PDF</button>
                                 </div>
                               </div>
                               <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginBottom:12}}>{d.evals.length} evaluación{d.evals.length!==1?"es":""} · {[...new Set(d.evals.map(e=>e.modId))].length} módulo{[...new Set(d.evals.map(e=>e.modId))].length!==1?"s":""}</div>
@@ -7466,8 +7506,21 @@ export default function App() {
               </div>
               <div style={{marginBottom:22}}>
                 <label style={S.lbl}>Color identificador</label>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                   {COLORES.map(c=><button key={c} onClick={()=>setProgForm({...progForm,color:c})} style={{width:30,height:30,borderRadius:"50%",background:c,border:progForm.color===c?"3px solid #1a1a1a":"3px solid transparent",cursor:"pointer"}}/>)}
+                  {/* Color personalizado */}
+                  <label title="Elegir color personalizado" style={{width:30,height:30,borderRadius:"50%",background:progForm.color||"#e5e7eb",border:!COLORES.includes(progForm.color)&&progForm.color?"3px solid #1a1a1a":"3px solid #e5e7eb",cursor:"pointer",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <input type="color" value={progForm.color||"#e5e7eb"} onChange={e=>setProgForm({...progForm,color:e.target.value})} style={{opacity:0,position:"absolute",width:0,height:0}}/>
+                    <span style={{fontSize:14,pointerEvents:"none"}}>+</span>
+                  </label>
+                  {/* Input hex manual */}
+                  <input
+                    value={progForm.color||""}
+                    onChange={e=>{const v=e.target.value;if(/^#[0-9a-fA-F]{0,6}$/.test(v))setProgForm({...progForm,color:v});}}
+                    placeholder="#000000"
+                    maxLength={7}
+                    style={{width:80,border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"monospace",outline:"none"}}
+                  />
                 </div>
               </div>
 
