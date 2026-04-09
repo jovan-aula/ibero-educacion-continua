@@ -95,6 +95,7 @@ const syncToSupabase = async (programas) => {
     cobranza_ultimo_contacto: e.cobranza_ultimo_contacto||null,
     cobranza_comprometio: e.cobranza_comprometio||null,
     cobranza_nota: e.cobranza_nota||"",
+    factura_enviada: e.factura_enviada||false,
   })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
@@ -147,6 +148,7 @@ const MODALIDADES = [
   {valor:"Presencial Campus Río",},
   {valor:"Online",               },
   {valor:"Híbrido",              },
+  {valor:"Otro",                 },
 ];
 
 const GENERACIONES = ["Primera","Segunda","Tercera","Cuarta","Quinta","Sexta","Séptima","Octava","Novena","Décima"];
@@ -4385,15 +4387,20 @@ export default function App() {
     notify("Módulo eliminado","warning");
   };
   const openNewProg=()=>{setProgForm({...eProg,id:newId()});setEditProgId(null);setShowProgM(true);};
-  const openEditProg=p=>{setProgForm({...p});setEditProgId(p.id);setShowProgM(true);};
+  const openEditProg=p=>{
+    const modalFija=MODALIDADES.map(m=>m.valor).includes(p.modalidad);
+    setProgForm({...p,modalidad:modalFija?p.modalidad:"Otro",modalidadCustom:modalFija?"":p.modalidad});
+    setEditProgId(p.id);setShowProgM(true);
+  };
   const saveProg=()=>{
     if(!progForm.nombre){notify("Ingresa el nombre","error");return;}
     const tipo=progForm.tipo==="Otro"?(progForm.tipoCustom||"Otro"):progForm.tipo;
+    const modalidad=progForm.modalidad==="Otro"?(progForm.modalidadCustom||"Otro"):progForm.modalidad;
     if(editProgId){
-      save((programas||[]).map(p=>p.id===editProgId?{...progForm,tipo}:p));
+      save((programas||[]).map(p=>p.id===editProgId?{...progForm,tipo,modalidad}:p));
       setShowProgM(false);notify("Programa actualizado");
     } else {
-      save([...(programas||[]),{...progForm,tipo}]);setShowProgM(false);notify("Programa agregado");
+      save([...(programas||[]),{...progForm,tipo,modalidad}]);setShowProgM(false);notify("Programa agregado");
     }
   };
   const delProg = id=>{
@@ -7879,11 +7886,19 @@ export default function App() {
                 <label style={S.lbl}>Modalidad</label>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                   {MODALIDADES.map(m=>(
-                    <button key={m.valor} onClick={()=>setProgForm({...progForm,modalidad:m.valor})} style={{border:"2px solid "+(progForm.modalidad===m.valor?RED:"#e5e7eb"),borderRadius:8,padding:"10px 12px",cursor:"pointer",fontFamily:"system-ui",background:progForm.modalidad===m.valor?"#fef2f2":"#fff",textAlign:"left"}}>
+                    <button key={m.valor} onClick={()=>setProgForm({...progForm,modalidad:m.valor,modalidadCustom:m.valor!=="Otro"?"":progForm.modalidadCustom||""})} style={{border:"2px solid "+(progForm.modalidad===m.valor?RED:"#e5e7eb"),borderRadius:8,padding:"10px 12px",cursor:"pointer",fontFamily:"system-ui",background:progForm.modalidad===m.valor?"#fef2f2":"#fff",textAlign:"left"}}>
                       <span style={{fontWeight:700,fontSize:13,color:progForm.modalidad===m.valor?RED:"#1a1a1a"}}>{m.valor}</span>
                     </button>
                   ))}
                 </div>
+                {progForm.modalidad==="Otro"&&(
+                  <input
+                    placeholder="Ej. Hotel Lucerna, Campus Ensenada..."
+                    value={progForm.modalidadCustom||""}
+                    onChange={e=>setProgForm({...progForm,modalidadCustom:e.target.value})}
+                    style={{...S.inp,marginTop:8}}
+                  />
+                )}
               </div>
               <div style={{marginBottom:14}}>
                 <label style={S.lbl}>Generación</label>
