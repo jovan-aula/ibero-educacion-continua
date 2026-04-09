@@ -76,9 +76,8 @@ const syncToSupabase = async (programas) => {
   })));
   if(modulos.length){ const ok = await supa.upsert("modulos", modulos); if(!ok) throw new Error("Error al guardar módulos"); }
 
-  // Estudiantes — deduplicar por id para evitar error de upsert duplicado
-  const estudiantesMap = new Map();
-  programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
+  // Estudiantes — un registro por (id, programa_id) para soportar estudiantes en múltiples programas
+  const estudiantes = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
     id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
     telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
     carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
@@ -97,13 +96,12 @@ const syncToSupabase = async (programas) => {
     cobranza_comprometio: e.cobranza_comprometio||null,
     cobranza_nota: e.cobranza_nota||"",
     factura_enviada: e.factura_enviada||false,
-  }))).forEach(e=>estudiantesMap.set(e.id, e));
-  const estudiantes = Array.from(estudiantesMap.values());
+  })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
-  // Pagos — todos los estudiantes con pago definido (aunque monto sea 0)
+  // Pagos — id incluye programa_id para soportar el mismo estudiante en múltiples programas
   const pagos = programas.flatMap(p=>(p.estudiantes||[]).filter(e=>e.pago).map(e=>({
-    id: e.id+"_pago", estudiante_id: e.id, programa_id: p.id,
+    id: e.id+"_"+p.id+"_pago", estudiante_id: e.id, programa_id: p.id,
     tipo: e.pago.tipo||"parcialidades", monto_acordado: e.pago.monto_acordado||0,
     descuento_pct: e.pago.descuento_pct||0, promocion_id: e.pago.promocion_id||"",
     parcialidades: e.pago.parcialidades||[], notas: e.pago.notas||"",
@@ -3661,7 +3659,8 @@ export default function App() {
               factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false,
             })),
             estudiantes: (supaEsts||[]).filter(e=>e.programa_id===p.id).map(e=>{
-              const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
+              const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id&&pg.programa_id===p.id)
+                        || (supaPagos||[]).find(pg=>pg.estudiante_id===e.id);
               // Reconstruir asistencia desde tabla asistencia
               const asistRows = (supaAsist||[]).filter(a=>a.estudiante_id===e.id);
               const asistencia = {};
