@@ -3268,51 +3268,82 @@ function ReporteDocentePublico() {
   const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText+"\n\n"+pageUrl)}`,"_blank");
 
   const imprimir = () => {
-    const dimBarras = dims.map(d=>`
-      <div style="margin-bottom:14px;">
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
-          <span style="color:#e2e8f0;font-weight:600;">${d.label}</span>
-          <span style="font-weight:800;color:#fff;">${d.val}/5</span>
+    const IBERO_LOGO = "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png";
+    const promColor = prom>=4.5?"#16a34a":prom>=3.5?"#d97706":"#C8102E";
+    const dimBarras = dims.map(d=>{
+      const pct = Math.round(d.val/5*100);
+      const dc = d.val>=4.5?"#16a34a":d.val>=3.5?"#d97706":"#C8102E";
+      return `<div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="color:#374151;font-size:13px;font-weight:600;">${d.label}</span>
+          <span style="font-weight:800;color:${dc};font-size:14px;">${d.val}<span style="color:#9ca3af;font-weight:400;font-size:11px;">/5</span></span>
         </div>
-        <div style="background:rgba(255,255,255,0.1);border-radius:99px;height:8px;overflow:hidden;">
-          <div style="width:${Math.round(d.val/5*100)}%;height:100%;background:linear-gradient(90deg,#f59e0b,#C8102E);border-radius:99px;"></div>
+        <div style="background:#f3f4f6;border-radius:99px;height:9px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:${dc};border-radius:99px;"></div>
         </div>
-      </div>`).join("");
-    const comsHtml = comentarios?.length ? comentarios.map(c=>`
-      <div style="background:rgba(255,255,255,0.07);border-left:3px solid rgba(255,255,255,0.3);padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:10px;font-size:13px;color:#e2e8f0;font-style:italic;line-height:1.6;">"${c}"</div>`).join("") : "";
+      </div>`;}).join("");
+    const comsHtml = comentarios?.length ? comentarios.map(c=>
+      `<div style="border-left:3px solid #C8102E;padding:10px 16px;margin-bottom:10px;font-size:12px;color:#374151;font-style:italic;line-height:1.7;background:#fafafa;border-radius:0 6px 6px 0;">"${c}"</div>`).join("") : "";
     const notaHtml = notaCoord ? `
-      <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:16px 20px;margin-top:24px;">
-        <div style="font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Nota de la coordinación</div>
-        <div style="font-size:13px;color:#e2e8f0;line-height:1.6;">${notaCoord.replace(/\n/g,"<br/>")}</div>
+      <div style="background:#eff6ff;border-radius:8px;padding:16px 20px;margin-top:24px;border:1px solid #bfdbfe;">
+        <div style="font-size:10px;font-weight:700;color:#2563eb;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Nota de la coordinación</div>
+        <div style="font-size:13px;color:#1e40af;line-height:1.6;">${notaCoord.replace(/\n/g,"<br/>")}</div>
       </div>` : "";
-    const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Evaluación — ${docente}</title>
+    const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+    <title>Evaluación Docente — ${docente}</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
-    <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Inter',sans-serif;background:#0f172a;color:#fff;min-height:100vh;}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;}
+      @page{margin:0;}
+      @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}}
+    </style>
     </head><body>
-    <div style="max-width:700px;margin:0 auto;padding:48px 32px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:48px;">
+    <!-- ENCABEZADO ROJO -->
+    <div style="background:#C8102E;padding:28px 40px;display:flex;align-items:center;justify-content:space-between;">
+      <img src="${IBERO_LOGO}" alt="IBERO Tijuana" style="height:52px;filter:brightness(0) invert(1);"/>
+      <div style="text-align:right;">
+        <div style="font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:2px;text-transform:uppercase;">Evaluación Docente</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:3px;">${fecha}</div>
+      </div>
+    </div>
+    <!-- CUERPO -->
+    <div style="padding:40px 48px;">
+      <!-- Nombre y score -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:32px;margin-bottom:36px;padding-bottom:28px;border-bottom:2px solid #f3f4f6;">
         <div>
-          <div style="font-family:'Montserrat',sans-serif;font-weight:900;font-size:18px;color:#fff;letter-spacing:2px;">IBERO TIJUANA</div>
-          <div style="font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:2px;margin-top:3px;">EDUCACIÓN CONTINUA</div>
+          <div style="font-size:11px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Resultados de evaluación</div>
+          <div style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:800;color:#1a1a1a;line-height:1.2;margin-bottom:8px;">${docente}</div>
+          <div style="font-size:13px;color:#6b7280;">${totalResp} evaluación${totalResp!==1?"es":""} registrada${totalResp!==1?"s":""}</div>
         </div>
-        <div style="background:#C8102E;border-radius:6px;padding:4px 14px;font-size:11px;color:#fff;font-weight:700;letter-spacing:1px;">EVALUACIÓN DOCENTE</div>
+        <div style="text-align:center;flex-shrink:0;background:#f9fafb;border-radius:16px;padding:20px 28px;border:2px solid #f3f4f6;">
+          <div style="font-size:10px;color:#9ca3af;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Promedio</div>
+          <div style="font-family:'Montserrat',sans-serif;font-size:60px;font-weight:900;color:${promColor};line-height:1;">${prom}</div>
+          <div style="font-size:13px;color:#9ca3af;margin-top:2px;">/5</div>
+          <div style="margin-top:8px;background:${promColor}22;border-radius:99px;padding:3px 14px;font-size:12px;font-weight:700;color:${promColor};display:inline-block;">${label(prom)}</div>
+        </div>
       </div>
-      <div style="text-align:center;margin-bottom:48px;">
-        <div style="font-size:11px;color:rgba(255,255,255,0.4);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Promedio general</div>
-        <div style="font-family:'Montserrat',sans-serif;font-size:96px;font-weight:900;line-height:1;background:linear-gradient(135deg,#f59e0b,#C8102E);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">${prom}</div>
-        <div style="font-size:20px;color:rgba(255,255,255,0.3);margin-top:4px;">/5 — ${label(prom)}</div>
-        <div style="font-family:'Montserrat',sans-serif;font-size:28px;font-weight:700;color:#fff;margin-top:20px;">${docente}</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:6px;">${totalResp} evaluación${totalResp!==1?"es":""} · ${fecha}</div>
+      <!-- Dimensiones -->
+      <div style="margin-bottom:28px;">
+        <div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;">Resultados por dimensión</div>
+        ${dimBarras}
       </div>
-      <div style="background:rgba(255,255,255,0.05);border-radius:14px;padding:28px;margin-bottom:28px;">${dimBarras}</div>
-      ${comentarios?.length?`<div style="margin-bottom:28px;"><div style="font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:1px;text-transform:uppercase;margin-bottom:14px;">Comentarios de participantes</div>${comsHtml}</div>`:""}
+      <!-- Comentarios -->
+      ${comentarios?.length?`<div style="margin-bottom:24px;"><div style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">Comentarios de participantes</div>${comsHtml}</div>`:""}
       ${notaHtml}
-      <div style="margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,0.1);text-align:center;">
-        <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:4px;">Gracias por su valiosa contribución y dedicación.</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:12px;">Coordinación de Educación Continua · IBERO Tijuana</div>
+      <!-- Cierre -->
+      <div style="margin-top:40px;padding-top:24px;border-top:2px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:#374151;">Gracias por su valiosa contribución y dedicación.</div>
+          <div style="font-size:12px;color:#9ca3af;margin-top:4px;">Su trabajo es fundamental para la formación continua de nuestros participantes.</div>
+        </div>
+        <div style="text-align:right;font-size:11px;color:#9ca3af;">
+          Coordinación de Educación Continua<br/>IBERO Tijuana
+        </div>
       </div>
-    </div></body></html>`;
-    const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),600);
+    </div>
+    </body></html>`;
+    const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),800);
   };
 
   return(
