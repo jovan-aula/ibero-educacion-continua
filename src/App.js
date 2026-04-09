@@ -3256,7 +3256,7 @@ function ReporteDocentePublico() {
   const { docente, prom, dims, comentarios, notaCoord, totalResp, fecha } = data;
   const pageUrl = window.location.href;
 
-  const colorVal = v => v>=4.5?"#16a34a":v>=3.5?"#d97706":"#dc2626";
+  const colorVal = _v => "#C8102E";
   const label    = v => v>=4.5?"Excelente":v>=4?"Muy bueno":v>=3?"Bueno":"Por mejorar";
   const starPct  = Math.round((prom/5)*100);
 
@@ -3268,11 +3268,11 @@ function ReporteDocentePublico() {
   const shareWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(shareText+"\n\n"+pageUrl)}`,"_blank");
 
   const imprimir = () => {
-    const IBERO_LOGO = "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/698a46bb863b271f12cbe5cf.png";
-    const promColor = prom>=4.5?"#16a34a":prom>=3.5?"#d97706":"#C8102E";
+    const IBERO_LOGO = window.location.origin+"/ibero_logo.png";
+    const promColor = "#C8102E";
     const dimBarras = dims.map(d=>{
       const pct = Math.round(d.val/5*100);
-      const dc = d.val>=4.5?"#16a34a":d.val>=3.5?"#d97706":"#C8102E";
+      const dc = "#C8102E";
       return `<div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="color:#374151;font-size:13px;font-weight:600;">${d.label}</span>
@@ -3349,12 +3349,9 @@ function ReporteDocentePublico() {
   return(
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"system-ui",color:"#fff"}}>
       {/* Barra superior */}
-      <div style={{background:"rgba(255,255,255,0.04)",borderBottom:"1px solid rgba(255,255,255,0.08)",padding:"14px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <div style={{fontFamily:"Georgia,serif",fontWeight:900,fontSize:16,color:"#fff",letterSpacing:2}}>IBERO TIJUANA</div>
-          <div style={{fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:2,marginTop:1}}>EDUCACIÓN CONTINUA</div>
-        </div>
-        <button onClick={imprimir} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,color:"#fff",padding:"7px 16px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+      <div style={{background:"#C8102E",padding:"14px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <img src="/ibero_logo.png" alt="IBERO Tijuana" style={{height:40,filter:"brightness(0) invert(1)"}}/>
+        <button onClick={imprimir} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",borderRadius:8,color:"#fff",padding:"7px 18px",cursor:"pointer",fontSize:12,fontWeight:700}}>
           Descargar PDF
         </button>
       </div>
@@ -5951,7 +5948,7 @@ export default function App() {
         {/* FACTURACIÓN */}
         {view==="facturacion"&&(()=>{
           const todos = (programas||[]).flatMap(prog=>
-            ests(prog).filter(e=>e.estatus!=="baja").map(e=>({e,prog}))
+            ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo").map(e=>({e,prog}))
           );
           // Helper: pagó algo en el mes seleccionado
           const pagoEnMes=(e,mes)=>{
