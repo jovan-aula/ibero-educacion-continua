@@ -6900,13 +6900,28 @@ export default function App() {
                   <div style={{borderTop:"1px solid #fde68a",padding:"0 20px 16px"}}>
                     <div style={{fontSize:12,color:"#92400e",fontFamily:"system-ui",padding:"10px 0 8px",fontStyle:"italic"}}>Estudiantes marcados como inactivos por falta de pago. Se recomienda seguimiento antes de dar de baja definitiva.</div>
                     {inactivos.map((e,i)=>(
-                      <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #fef3c7",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center"}}>
-                        <div style={{flex:1}}>
+                      <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #fef3c7",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center",flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:140}}>
                           <span style={{fontWeight:600}}>{e.nombre}</span>
                           {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
                         </div>
                         <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
                         <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Inactivo</span>
+                        {/* Acciones */}
+                        <div style={{display:"flex",gap:6}}>
+                          {(()=>{
+                            const progObj=(programas||[]).find(p=>p.nombre===e.programa||(p.estudiantes||[]).some(x=>x.id===e.id));
+                            const estObj=progObj&&ests(progObj).find(x=>x.id===e.id);
+                            const tel=(estObj?.telefono||"").replace(/\D/g,"");
+                            const msg=`Hola ${e.nombre}, te contactamos de IBERO Tijuana Educación Continua para hacerte saber que tienes un adeudo pendiente. Por favor comunícate con nosotros para regularizar tu situación.`;
+                            const waUrl=tel?"https://wa.me/52"+tel+"?text="+encodeURIComponent(msg):"https://wa.me/?text="+encodeURIComponent(msg);
+                            return(<>
+                              <button onClick={()=>window.open(waUrl,"_blank")} style={{fontSize:11,background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>WA</button>
+                              {progObj&&estObj&&<button onClick={()=>setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${e.nombre}"? Volverá a aparecer en asistencia y reportes.`,onConfirm:()=>save((programas||[]).map(p=>p.id!==progObj.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estObj.id?es:{...es,estatus:"activo"})}))})} style={{fontSize:11,background:"#eff6ff",color:"#2563eb",border:"1px solid #bfdbfe",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>Reactivar</button>}
+                              {progObj&&estObj&&<button onClick={()=>setCS({titulo:"Baja definitiva",mensaje:`¿Dar de baja definitiva a "${e.nombre}"? Se excluirá de todos los reportes. Se puede revertir desde su ficha.`,onConfirm:()=>save((programas||[]).map(p=>p.id!==progObj.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estObj.id?es:{...es,estatus:"baja"})}))})} style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>Dar de baja</button>}
+                            </>);
+                          })()}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -7229,7 +7244,30 @@ export default function App() {
                                   <td style={{padding:"10px 12px",fontWeight:600}}>{fmtMXN(montoParcialidad)}</td>
                                   <td style={{padding:"10px 12px",color:"#dc2626",fontWeight:700}}>{fmtMXN(recargo)}</td>
                                   <td style={{padding:"10px 12px",fontWeight:700}}>{fmtMXN(montoParcialidad*ep.conRecargo.length+recargo)}</td>
-                                  <td style={{padding:"10px 12px"}}>{critico?<span style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Dar de baja</span>:<span style={{fontSize:11,background:"#fffbeb",color:"#d97706",border:"1px solid #fde68a",borderRadius:4,padding:"2px 8px",fontWeight:700}}>Contactar</span>}</td>
+                                  <td style={{padding:"10px 12px"}}>
+                                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                      {/* Contactar WA */}
+                                      {(()=>{
+                                        const tel=(est.telefono||"").replace(/\D/g,"");
+                                        const monto=fmtMXN(montoParcialidad*ep.conRecargo.length+recargo);
+                                        const msg=`Hola ${est.nombre}, te contactamos de IBERO Tijuana Educación Continua.\n\nTenemos registrado un adeudo pendiente de *${monto}* correspondiente a ${ep.conRecargo.length} pago${ep.conRecargo.length!==1?"s":""} vencido${ep.conRecargo.length!==1?"s":""}.\n\nPor favor comunícate con nosotros para regularizar tu situación.\n\nQuedamos a tus órdenes.`;
+                                        const waUrl=tel?"https://wa.me/52"+tel+"?text="+encodeURIComponent(msg):"https://wa.me/?text="+encodeURIComponent(msg);
+                                        return<button onClick={()=>window.open(waUrl,"_blank")} style={{fontSize:11,background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",borderRadius:4,padding:"4px 10px",fontWeight:700,cursor:"pointer"}}>WA</button>;
+                                      })()}
+                                      {/* Marcar inactivo */}
+                                      {est.estatus!=="inactivo"&&est.estatus!=="baja"&&(
+                                        <button onClick={()=>setCS({titulo:"Marcar como inactivo",mensaje:`¿Marcar a "${est.nombre}" como inactivo? Se excluirá de asistencia y quedará pendiente de seguimiento.`,onConfirm:()=>save((programas||[]).map(p=>p.id!==prog.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==est.id?es:{...es,estatus:"inactivo"})}))})}
+                                          style={{fontSize:11,background:"#fffbeb",color:"#d97706",border:"1px solid #fde68a",borderRadius:4,padding:"4px 10px",fontWeight:700,cursor:"pointer"}}>
+                                          Inactivar
+                                        </button>
+                                      )}
+                                      {/* Dar de baja definitiva */}
+                                      <button onClick={()=>setCS({titulo:"Dar de baja definitiva",mensaje:`¿Dar de baja definitiva a "${est.nombre}"? Se excluirá de todos los reportes y pagos. Se puede revertir manualmente desde su ficha.`,onConfirm:()=>save((programas||[]).map(p=>p.id!==prog.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==est.id?es:{...es,estatus:"baja"})}))})}
+                                        style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"4px 10px",fontWeight:700,cursor:"pointer"}}>
+                                        Dar de baja
+                                      </button>
+                                    </div>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
