@@ -76,8 +76,9 @@ const syncToSupabase = async (programas) => {
   })));
   if(modulos.length){ const ok = await supa.upsert("modulos", modulos); if(!ok) throw new Error("Error al guardar módulos"); }
 
-  // Estudiantes
-  const estudiantes = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
+  // Estudiantes — deduplicar por id para evitar error de upsert duplicado
+  const estudiantesMap = new Map();
+  programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
     id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
     telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
     carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
@@ -96,7 +97,8 @@ const syncToSupabase = async (programas) => {
     cobranza_comprometio: e.cobranza_comprometio||null,
     cobranza_nota: e.cobranza_nota||"",
     factura_enviada: e.factura_enviada||false,
-  })));
+  }))).forEach(e=>estudiantesMap.set(e.id, e));
+  const estudiantes = Array.from(estudiantesMap.values());
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
   // Pagos — todos los estudiantes con pago definido (aunque monto sea 0)
