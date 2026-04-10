@@ -4945,6 +4945,8 @@ export default function App() {
                       const estsP=ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo");
                       const primerMod=mods(prog).filter(m=>m.fechaInicio).sort((a,b)=>a.fechaInicio.localeCompare(b.fechaInicio))[0];
                       const diasParaInicio=primerMod?.fechaInicio?Math.ceil((new Date(primerMod.fechaInicio)-new Date(hoy))/(1000*60*60*24)):null;
+                      const edadesP=estsP.map(e=>calcEdad(e.fecha_nacimiento)).filter(x=>x!==null);
+                      const edadPromP=edadesP.length?Math.round(edadesP.reduce((a,b)=>a+b,0)/edadesP.length):null;
                       return(
                         <div key={prog.id} onClick={()=>{setSelProg(prog.id);setView("programa");}} style={{padding:"14px 16px",borderRadius:10,border:"1px solid #bae6fd",cursor:"pointer",background:"#f0f9ff",transition:"box-shadow .15s"}}
                           onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 12px rgba(0,0,0,0.08)"}
@@ -4953,8 +4955,9 @@ export default function App() {
                             <div style={{width:10,height:10,borderRadius:"50%",background:prog.color||"#0891b2",flexShrink:0}}/>
                             <div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",flex:1,lineHeight:1.3}}>{prog.nombre}</div>
                           </div>
-                          <div style={{fontSize:11,color:"#0369a1",fontFamily:"system-ui",marginBottom:6,fontWeight:600}}>
-                            {estsP.length} estudiante{estsP.length!==1?"s":""} inscritos{prog.generacion?" · "+prog.generacion:""}
+                          <div style={{fontSize:11,color:"#0369a1",fontFamily:"system-ui",marginBottom:6,fontWeight:600,display:"flex",gap:8,alignItems:"center"}}>
+                            <span>{estsP.length} estudiante{estsP.length!==1?"s":""} inscritos{prog.generacion?" · "+prog.generacion:""}</span>
+                            {edadPromP&&<span style={{background:"#e0f2fe",color:"#0369a1",borderRadius:99,padding:"1px 7px",fontWeight:700,fontSize:10}}>x̄ {edadPromP} años</span>}
                           </div>
                           {primerMod?.fechaInicio&&(
                             <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,fontFamily:"system-ui",color:"#6b7280"}}>
