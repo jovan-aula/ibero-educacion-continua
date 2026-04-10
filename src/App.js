@@ -3661,7 +3661,10 @@ export default function App() {
   const [filtroEst,setFiltroEst] = useState("");
   const alertRef = useRef(null);
   const programasRef = useRef(programas);
+  const notifCfgRef = useRef(null);
+  const syncFnRef = useRef(null);
   useEffect(()=>{ programasRef.current = programas; }, [programas]);
+  useEffect(()=>{ notifCfgRef.current = notifCfg; }, [notifCfg]);
 
   const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:4,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
   const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,colaboracion:false,socio:"",pct_socio:0,notas_internas:"",ghl_pipeline_id:"",ghl_stage_id:""};
@@ -3939,14 +3942,20 @@ export default function App() {
   // Background sync CRM — importa estudiantes nuevos cada 5 min
   useEffect(()=>{
     if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
-    const syncGHL = async () => {
+    const syncGHL = async (manual=false) => {
+      const cfg = notifCfgRef.current;
+      if(!cfg?.apiKey||!cfg?.locationId) { if(manual) notify("Configura la API Key primero","error"); return; }
       const programasActual = programasRef.current || [];
       const progsConSync=programasActual.filter(p=>p.ghl_pipeline_id&&p.ghl_stage_id);
-      if(!progsConSync.length) return;
+      if(!progsConSync.length){
+        if(manual) notify("Ningún programa tiene embudo y etapa configurados","warning");
+        return;
+      }
+      if(manual) notify("Sincronizando con CRM...","warning");
       let totalNuevos=0;
       let programasActualizados=[...programasActual];
       for(const prog of progsConSync){
-        const contacts = await ghlFetchContacts(notifCfg.apiKey, notifCfg.locationId, prog.ghl_pipeline_id, prog.ghl_stage_id);
+        const contacts = await ghlFetchContacts(cfg.apiKey, cfg.locationId, prog.ghl_pipeline_id, prog.ghl_stage_id);
         if(!contacts.length) continue;
         const existIds=new Set((prog.estudiantes||[]).map(e=>e.id));
         const nuevos=contacts.filter(c=>!existIds.has(c.id));
@@ -3954,7 +3963,6 @@ export default function App() {
         // Actualizar perfil de existentes
         const existingAct=(prog.estudiantes||[]).map(e=>{
           const c=contacts.find(x=>x.id===e.id); if(!c) return e;
-          const cf=c.customFields||[];
           return {...e, nombre:capNombre(c.name||"")||e.nombre, email:c.email||e.email, telefono:c.phone||e.telefono, fecha_nacimiento:ghlParseFechaNac(c.dateOfBirth)||e.fecha_nacimiento||""};
         });
         const fechaInicioPrograma=(prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"";
@@ -3985,8 +3993,11 @@ export default function App() {
         setProgramas(programasActualizados);
         syncToSupabase(programasActualizados).catch(()=>{});
         notify(`${totalNuevos} estudiante${totalNuevos!==1?"s":""} importado${totalNuevos!==1?"s":""} automáticamente`,"success");
+      } else if(manual){
+        notify("Sin estudiantes nuevos en este momento","success");
       }
     };
+    syncFnRef.current = syncGHL;
     syncGHL();
     const intervaloSync=setInterval(syncGHL, 5*60*1000);
     return ()=>clearInterval(intervaloSync);
@@ -5305,7 +5316,10 @@ export default function App() {
             })()}
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
               <div><h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Programas</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Gestión de diplomados y cursos de educación continua</p></div>
-              {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
+              <div style={{display:"flex",gap:8}}>
+                {notifCfg?.apiKey&&<button onClick={()=>syncFnRef.current&&syncFnRef.current(true)} style={{...S.btn("#eff6ff","#2563eb"),border:"1px solid #bfdbfe",fontSize:12}}>↻ Sincronizar ahora</button>}
+                {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
+              </div>
             </div>
             <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
               <input placeholder="Buscar programa..." value={busqProg} onChange={e=>setBusqProg(e.target.value)} style={{...S.inp,flex:1,minWidth:200}}/>
