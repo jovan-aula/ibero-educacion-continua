@@ -1388,7 +1388,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
   const [stages,setStages]       = useState([]);
   const [contacts,setContacts]   = useState([]);
   const [selected,setSelected]   = useState([]);
-  const [filters,setFilters]     = useState({pipelineId:"",stageId:"",status:"open"});
+  const [filters,setFilters]     = useState({pipelineId:prog.ghl_pipeline_id||"",stageId:prog.ghl_stage_id||"",status:"open"});
   const [step,setStep]           = useState("filter");
   const [busy,setBusy]           = useState(false);
   const [err,setErr]             = useState("");
@@ -1404,14 +1404,22 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
 
   useEffect(()=>{
     hasApi
-      ? fetch("https://services.leadconnectorhq.com/opportunities/pipelines?locationId="+notifConfig.locationId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}}).then(r=>r.json()).then(d=>setPipelines(d.pipelines||[])).catch(()=>setPipelines(MOCK_PL))
+      ? fetch("https://services.leadconnectorhq.com/opportunities/pipelines?locationId="+notifConfig.locationId,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}}).then(r=>r.json()).then(d=>{
+          setPipelines(d.pipelines||[]);
+          // Si ya hay pipeline seleccionado, cargar sus stages
+          if(prog.ghl_pipeline_id){
+            const pl=(d.pipelines||[]).find(p=>p.id===prog.ghl_pipeline_id);
+            if(pl) setStages(pl.stages||[]);
+          }
+        }).catch(()=>setPipelines(MOCK_PL))
       : setPipelines(MOCK_PL);
   },[]);
 
   useEffect(()=>{
     if (!filters.pipelineId) return;
     hasApi ? setStages((pipelines.find(p=>p.id===filters.pipelineId)||{}).stages||[]) : setStages(MOCK_ST[filters.pipelineId]||[]);
-    setFilters(f=>({...f,stageId:""}));
+    // Solo limpiar stage si el usuario cambió el pipeline (no en el init)
+    if(filters.pipelineId!==prog.ghl_pipeline_id) setFilters(f=>({...f,stageId:""}));
   },[filters.pipelineId]);
 
   const search = async () => {
