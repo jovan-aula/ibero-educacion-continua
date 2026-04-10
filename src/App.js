@@ -71,6 +71,61 @@ const supa = {
   },
 };
 
+// ─── HELPERS GHL SYNC ────────────────────────────────
+const ghlGetCF = (customFields, id, fieldKey) => {
+  const cf = (customFields||[]).find(f=>f.id===id||f.fieldKey===fieldKey||f.fieldKey==="contact."+fieldKey);
+  const val = cf ? cf.value||cf.fieldValue||cf.fieldValueString||"" : "";
+  if(!val) return "";
+  return String(val).trim();
+};
+const ghlParseFechaNac = dob => {
+  if(!dob) return "";
+  if(dob._seconds){ const d=new Date(dob._seconds*1000); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  if(typeof dob==="string") return dob.slice(0,10);
+  return "";
+};
+const ghlBuildPago = (monto, parcDefault, formaPago, precioLista=0, fechaBase="") => {
+  const n = parcDefault||5;
+  const base = fechaBase ? new Date(fechaBase+"T12:00:00") : new Date();
+  const fechas = Array.from({length:n},(_,i)=>{ const d=new Date(base.getFullYear(),base.getMonth()+i,1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-15"; });
+  const esUnico = formaPago&&(formaPago.toLowerCase().includes("único")||formaPago.toLowerCase().includes("unico")||formaPago.toLowerCase().includes("contado"));
+  const totalAcordado = (!esUnico&&monto>0) ? monto*n : monto;
+  let montoBase = precioLista>0 ? precioLista : totalAcordado;
+  let descAuto = 0;
+  if(precioLista>0&&totalAcordado>0&&totalAcordado<=precioLista) descAuto=Math.round((1-totalAcordado/precioLista)*100);
+  else if(precioLista>0&&totalAcordado>precioLista) montoBase=totalAcordado;
+  const uid = ()=>Math.random().toString(36).slice(2,10);
+  const todayStr = ()=>{ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  if(esUnico) return { tipo:"unico", monto_acordado:montoBase, descuento_pct:descAuto, promocion_id:"", parcialidades:[{id:uid(),numero:1,pagado:true,fecha_pago:todayStr(),fecha_vencimiento:""}], notas:formaPago||"" };
+  return { tipo:"parcialidades", monto_acordado:montoBase, descuento_pct:descAuto, promocion_id:"", parcialidades:Array.from({length:n},(_,i)=>({id:uid(),numero:i+1,pagado:i===0,fecha_pago:i===0?todayStr():"",fecha_vencimiento:fechas[i]})), notas:formaPago||"" };
+};
+const ghlFetchContacts = async (apiKey, locationId, pipelineId, stageId) => {
+  try {
+    let allOpps=[]; let startAfter=""; let startAfterId=""; let page=0;
+    while(page<10){
+      let url=`https://services.leadconnectorhq.com/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&status=open&limit=100`;
+      if(stageId) url+=`&pipeline_stage_id=${stageId}`;
+      if(startAfter) url+=`&startAfter=${startAfter}&startAfterId=${startAfterId}`;
+      const r=await fetch(url,{headers:{"Authorization":"Bearer "+apiKey,"Version":"2021-04-15"}});
+      if(!r.ok) break;
+      const d=await r.json();
+      const opps=d.opportunities||[];
+      allOpps=[...allOpps,...opps];
+      if(!d.meta?.nextPageUrl||opps.length<100) break;
+      startAfter=d.meta.startAfter||""; startAfterId=d.meta.startAfterId||""; page++;
+    }
+    const enriched = await Promise.all(allOpps.map(async op=>{
+      try {
+        const cr=await fetch(`https://services.leadconnectorhq.com/contacts/${op.contactId}`,{headers:{"Authorization":"Bearer "+apiKey,"Version":"2021-04-15"}});
+        const cd=await cr.json();
+        const mergedCF=[...(cd.contact?.customFields||[]),...(op.customFields||[])].filter((f,i,arr)=>arr.findIndex(x=>x.id===f.id)===i);
+        return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF};
+      } catch(e){ return null; }
+    }));
+    return enriched.filter(Boolean);
+  } catch(e){ return []; }
+};
+
 // Sincronizar programas completos a Supabase
 const syncToSupabase = async (programas) => {
   // Programas
@@ -81,6 +136,8 @@ const syncToSupabase = async (programas) => {
     colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
     precio_lista: p.precioLista||0, tipo_custom: p.tipoCustom||"",
     notas_internas: p.notas_internas||"",
+    ghl_pipeline_id: p.ghl_pipeline_id||"",
+    ghl_stage_id: p.ghl_stage_id||"",
   }));
   const okProgs = await supa.upsert("programas", progs);
   if(!okProgs) throw new Error("Error al guardar programas");
@@ -3537,6 +3594,7 @@ export default function App() {
   const [showProgM,setShowProgM] = useState(false);
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
+  const [ghlPipelines,setGhlPipelines] = useState([]);
   const [showAlertas,setShowAl]  = useState(false);
   const [presencia,setPresencia] = useState([]);
   const [alertasDesc,setAlertasDesc] = useState([]);
@@ -3594,9 +3652,11 @@ export default function App() {
   const [busqEst,setBusqEst]     = useState("");
   const [filtroEst,setFiltroEst] = useState("");
   const alertRef = useRef(null);
+  const programasRef = useRef(programas);
+  useEffect(()=>{ programasRef.current = programas; }, [programas]);
 
   const eMod  = {id:"",numero:"I",nombre:"",docenteId:"",docente:"",emailDocente:"",clases:4,horasPorClase:4,horario:"",fechaInicio:"",fechaFin:"",dias:["Lun"],estatus:"propuesta",fechasClase:[]};
-  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,colaboracion:false,socio:"",pct_socio:0,notas_internas:""};
+  const eProg = {id:"",nombre:"",tipo:"Diplomado",tipoCustom:"",color:RED,modulos:[],estudiantes:[],modalidad:"Presencial Playas",generacion:"Primera",precioLista:0,parcialidadesDefault:5,colaboracion:false,socio:"",pct_socio:0,notas_internas:"",ghl_pipeline_id:"",ghl_stage_id:""};
   const [modForm,setModForm]   = useState(eMod);
   const [progForm,setProgForm] = useState(eProg);
 
@@ -3722,6 +3782,8 @@ export default function App() {
             colaboracion: p.colaboracion||false, socio: p.socio||"", pct_socio: p.pct_socio||0,
             precioLista: p.precio_lista||0, tipoCustom: p.tipo_custom||"",
             notas_internas: p.notas_internas||"",
+            ghl_pipeline_id: p.ghl_pipeline_id||"",
+            ghl_stage_id: p.ghl_stage_id||"",
             promociones: p.promociones||[],
             modulos: (supaModulos||[]).filter(m=>m.programa_id===p.id).map(m=>({
               id: m.id, numero: m.numero||"", nombre: m.nombre||"",
@@ -3857,6 +3919,69 @@ export default function App() {
 
     return ()=>{ clearInterval(intervalo); clearInterval(tokenRefresh); };
   },[session?.email, session?.token]);
+
+  // Cargar pipelines de GHL cuando hay API key
+  useEffect(()=>{
+    if(!notifConfig?.apiKey||!notifConfig?.locationId) return;
+    fetch(`https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${notifConfig.locationId}`,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}})
+      .then(r=>r.json()).then(d=>setGhlPipelines(d.pipelines||[])).catch(()=>{});
+  },[notifConfig?.apiKey]);
+
+  // Background sync GHL — importa estudiantes nuevos cada 5 min
+  useEffect(()=>{
+    if(!notifConfig?.apiKey||!notifConfig?.locationId) return;
+    const syncGHL = async () => {
+      const programasActual = programasRef.current || [];
+      const progsConSync=programasActual.filter(p=>p.ghl_pipeline_id&&p.ghl_stage_id);
+      if(!progsConSync.length) return;
+      let totalNuevos=0;
+      let programasActualizados=[...programasActual];
+      for(const prog of progsConSync){
+        const contacts = await ghlFetchContacts(notifConfig.apiKey, notifConfig.locationId, prog.ghl_pipeline_id, prog.ghl_stage_id);
+        if(!contacts.length) continue;
+        const existIds=new Set((prog.estudiantes||[]).map(e=>e.id));
+        const nuevos=contacts.filter(c=>!existIds.has(c.id));
+        if(!nuevos.length) continue;
+        // Actualizar perfil de existentes
+        const existingAct=(prog.estudiantes||[]).map(e=>{
+          const c=contacts.find(x=>x.id===e.id); if(!c) return e;
+          const cf=c.customFields||[];
+          return {...e, nombre:capNombre(c.name||"")||e.nombre, email:c.email||e.email, telefono:c.phone||e.telefono, fecha_nacimiento:ghlParseFechaNac(c.dateOfBirth)||e.fecha_nacimiento||""};
+        });
+        const fechaInicioPrograma=(prog.modulos||[]).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"";
+        const toAdd=nuevos.map(c=>{
+          const cf=c.customFields||[];
+          const monto=c.monetaryValue||0;
+          const formaPago=ghlGetCF(cf,"XXeCwvn51VnMm3KvsAhP","contact.forma_de_pago");
+          return {
+            id:c.id, nombre:capNombre(c.name||""), email:c.email||"", telefono:c.phone||"",
+            empresa:c.company||"", puesto:ghlGetCF(cf,"Bh2QzKI7oWxAlK61XJLA","contact.puesto_que_desempeas"),
+            carrera:ghlGetCF(cf,"jvN3GJ9rxhrXdfcpI1zS","contact.cul_es_tu_carrera_profesional"),
+            grado:ghlGetCF(cf,"e7xQs2aAb5UpEwemgShB","contact.ltimo_grado_de_estudios"),
+            egresado_ibero:ghlGetCF(cf,"6yYRPsode1sse8Vir7tK","contact.eres_egresada_o_egresado_ibero"),
+            programa_interes:ghlGetCF(cf,"rWoFzI5aT07JEzAuUhTe","contact.programa_de_intersz"),
+            fuente:c.source||"", requiere_factura:ghlGetCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura"),
+            forma_pago_crm:formaPago, monto_ghl:monto, forma_cobro:"",
+            razon_social:"", rfc:"", regimen_fiscal:"", codigo_postal:"", calle:"", num_exterior:"",
+            num_interior:"", colonia:"", ciudad:"", estado:"", uso_cfdi:"",
+            fecha_nacimiento:ghlParseFechaNac(c.dateOfBirth),
+            estatus:"activo", asistencia:{}, campos_extra:{},
+            pago:ghlBuildPago(monto, prog.parcialidadesDefault, formaPago, prog.precioLista||0, fechaInicioPrograma),
+          };
+        });
+        programasActualizados=programasActualizados.map(p=>p.id!==prog.id?p:{...p,estudiantes:[...existingAct,...toAdd]});
+        totalNuevos+=toAdd.length;
+      }
+      if(totalNuevos>0){
+        setProgramas(programasActualizados);
+        syncToSupabase(programasActualizados).catch(()=>{});
+        notify(`${totalNuevos} estudiante${totalNuevos!==1?"s":""} importado${totalNuevos!==1?"s":""} automáticamente desde GHL`,"success");
+      }
+    };
+    syncGHL();
+    const intervaloSync=setInterval(syncGHL, 5*60*1000);
+    return ()=>clearInterval(intervaloSync);
+  },[notifConfig?.apiKey]);
 
   const save = async d => {
     setProgramas(d); // actualizar UI inmediatamente
@@ -8206,6 +8331,38 @@ export default function App() {
                         IBERO: {100-progForm.pct_socio}% de las utilidades · {progForm.socio||"Socio"}: {progForm.pct_socio}%
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              {/* SINCRONIZACIÓN GHL */}
+              <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:18}}>
+                <div style={{fontWeight:700,fontSize:11,color:"#0369a1",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:4}}>SINCRONIZACIÓN GHL</div>
+                <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>Configura el embudo y etapa para importar estudiantes automáticamente mientras la app esté abierta.</div>
+                {!notifConfig?.apiKey?(
+                  <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",background:"#f9fafb",borderRadius:8,padding:"10px 14px"}}>Configura la API Key de GHL en Configuración primero.</div>
+                ):(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <div>
+                      <label style={S.lbl}>Embudo (Pipeline)</label>
+                      <select value={progForm.ghl_pipeline_id||""} onChange={e=>setProgForm({...progForm,ghl_pipeline_id:e.target.value,ghl_stage_id:""})} style={{...S.inp,cursor:"pointer"}}>
+                        <option value="">Sin sincronización</option>
+                        {ghlPipelines.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.lbl}>Etapa</label>
+                      <select value={progForm.ghl_stage_id||""} onChange={e=>setProgForm({...progForm,ghl_stage_id:e.target.value})} style={{...S.inp,cursor:"pointer"}} disabled={!progForm.ghl_pipeline_id}>
+                        <option value="">Todas las etapas</option>
+                        {(ghlPipelines.find(p=>p.id===progForm.ghl_pipeline_id)?.stages||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {progForm.ghl_pipeline_id&&(
+                  <div style={{marginTop:10,background:"#eff6ff",borderRadius:8,padding:"10px 14px",fontSize:12,fontFamily:"system-ui",color:"#2563eb",display:"flex",gap:8,alignItems:"center"}}>
+                    <span>⚡</span>
+                    <span>Cada 5 minutos se importarán automáticamente estudiantes nuevos de esta etapa.</span>
                   </div>
                 )}
               </div>
