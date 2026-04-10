@@ -52,8 +52,22 @@ const supa = {
       const d = await r.json();
       if (!r.ok) return { error: d.error_description || d.msg || "Credenciales incorrectas" };
       if (d.access_token) this.setToken(d.access_token);
-      return { user: d.user, token: d.access_token };
+      return { user: d.user, token: d.access_token, refresh_token: d.refresh_token };
     } catch(e) { return { error: "Error de conexión. Verifica tu internet." }; }
+  },
+
+  async refreshToken(refresh_token) {
+    try {
+      const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token }),
+      });
+      const d = await r.json();
+      if (!r.ok) return null;
+      if (d.access_token) this.setToken(d.access_token);
+      return { token: d.access_token, refresh_token: d.refresh_token };
+    } catch(e) { return null; }
   },
 };
 
@@ -555,6 +569,7 @@ function LoginScreen({onLogin}) {
       rol: u?.rol || "auxiliar",
       permisos,
       token: auth.token,
+      refresh_token: auth.refresh_token,
     };
     localStorage.setItem(SK2, JSON.stringify(sesion));
     if(auth.token) supa.setToken(auth.token);
@@ -3561,7 +3576,26 @@ export default function App() {
 
   useEffect(()=>{
     const init = async () => {
-    const s=localStorage.getItem(SK2); if(s){const ses=JSON.parse(s);setSession(ses);if(ses.token)supa.setToken(ses.token);}
+    const s=localStorage.getItem(SK2);
+    if(s){
+      const ses=JSON.parse(s);
+      // Intentar refrescar el token (expira en ~1 hora)
+      if(ses.refresh_token){
+        const renovado = await supa.refreshToken(ses.refresh_token);
+        if(renovado){
+          const sesActualizada = {...ses, token: renovado.token, refresh_token: renovado.refresh_token};
+          localStorage.setItem(SK2, JSON.stringify(sesActualizada));
+          setSession(sesActualizada);
+        } else {
+          // Refresh token inválido → forzar re-login
+          localStorage.removeItem(SK2);
+          return;
+        }
+      } else {
+        setSession(ses);
+        if(ses.token) supa.setToken(ses.token);
+      }
+    }
     // Cargar responsables desde Supabase
     try {
       const respSupa = await supa.get("responsables","?order=nombre");
@@ -3771,7 +3805,22 @@ export default function App() {
     registrar();
     cargarPresencia();
     const intervalo = setInterval(()=>{ registrar(); cargarPresencia(); }, 30000);
-    return ()=>clearInterval(intervalo);
+
+    // Auto-refresh del JWT cada 50 minutos para que nunca expire mientras la app está abierta
+    const tokenRefresh = setInterval(async ()=>{
+      const s = localStorage.getItem(SK2);
+      if(!s) return;
+      const ses = JSON.parse(s);
+      if(!ses.refresh_token) return;
+      const renovado = await supa.refreshToken(ses.refresh_token);
+      if(renovado){
+        const sesActualizada = {...ses, token: renovado.token, refresh_token: renovado.refresh_token};
+        localStorage.setItem(SK2, JSON.stringify(sesActualizada));
+        setSession(sesActualizada);
+      }
+    }, 50*60*1000);
+
+    return ()=>{ clearInterval(intervalo); clearInterval(tokenRefresh); };
   },[session?.email, session?.token]);
 
   const save = async d => {
