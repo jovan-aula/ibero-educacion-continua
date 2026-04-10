@@ -6197,7 +6197,13 @@ export default function App() {
                           </div>
                           {/* Factura enviada */}
                           <div
-                            onClick={()=>toggleEnviada(prog.id,e.id)}
+                            onClick={()=>setCS({
+                              titulo: e.factura_enviada?"Desmarcar factura enviada":"Marcar factura como enviada",
+                              mensaje: e.factura_enviada
+                                ?`¿Quieres desmarcar la factura de ${e.nombre}?`
+                                :`¿Confirmas que ya se envió la factura a ${e.nombre}?`,
+                              onConfirm:()=>toggleEnviada(prog.id,e.id),
+                            })}
                             style={{cursor:"pointer",borderRadius:8,padding:"7px 10px",background:e.factura_enviada?"#f0fdf4":"#fafafa",border:"1px solid "+(e.factura_enviada?"#86efac":"#e5e7eb"),display:"flex",flexDirection:"column",alignItems:"center",gap:2,userSelect:"none"}}>
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
                               <div style={{width:16,height:16,borderRadius:4,border:"2px solid "+(e.factura_enviada?"#16a34a":"#d1d5db"),background:e.factura_enviada?"#16a34a":"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
