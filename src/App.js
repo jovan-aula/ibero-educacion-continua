@@ -84,7 +84,7 @@ const syncToSupabase = async (programas) => {
 
   // Estudiantes — un registro por (id, programa_id) para soportar estudiantes en múltiples programas
   const estudiantes = programas.flatMap(p=>(p.estudiantes||[]).map(e=>({
-    id: e.id, programa_id: p.id, nombre: e.nombre||"", email: e.email||"",
+    id: e.id, programa_id: p.id, nombre: capNombre(e.nombre||""), email: e.email||"",
     telefono: e.telefono||"", empresa: e.empresa||"", puesto: e.puesto||"",
     carrera: e.carrera||"", grado: e.grado||"", egresado_ibero: e.egresado_ibero||"",
     requiere_factura: e.requiere_factura||"", csf_url: e.csf_url||"",
@@ -270,6 +270,7 @@ const fmtMXN = n => n!=null ? "$"+Number(n).toLocaleString("es-MX",{minimumFract
 const newId  = () => Math.random().toString(36).slice(2,9);
 const can    = (s,p) => !!(s && (s.rol==="admin" || (s.permisos && s.permisos[p])));
 const today  = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+const capNombre = n => (n||"").toLowerCase().replace(/(^|\s|-)(\S)/g,(_,sep,c)=>sep+c.toUpperCase());
 const mods   = p => (p && p.modulos) || [];
 const ests   = p => (p && p.estudiantes) || [];
 
@@ -1480,7 +1481,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       const formaPago = getCF(cf,"XXeCwvn51VnMm3KvsAhP","contact.forma_de_pago");
       return {
         id:               c.id,
-        nombre:           c.name||((c.firstName||"")+" "+(c.lastName||"")).trim(),
+        nombre:           capNombre(c.name||((c.firstName||"")+" "+(c.lastName||"")).trim()),
         email:            c.email||"",
         telefono:         c.phone||"",
         empresa:          c._empresaNombre||c.company||c.company_name||"",
