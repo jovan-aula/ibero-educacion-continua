@@ -3922,14 +3922,14 @@ export default function App() {
 
   // Cargar pipelines de GHL cuando hay API key
   useEffect(()=>{
-    if(!notifConfig?.apiKey||!notifConfig?.locationId) return;
-    fetch(`https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${notifConfig.locationId}`,{headers:{"Authorization":"Bearer "+notifConfig.apiKey,"Version":"2021-04-15"}})
+    if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
+    fetch(`https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${notifCfg.locationId}`,{headers:{"Authorization":"Bearer "+notifCfg.apiKey,"Version":"2021-04-15"}})
       .then(r=>r.json()).then(d=>setGhlPipelines(d.pipelines||[])).catch(()=>{});
-  },[notifConfig?.apiKey]);
+  },[notifCfg?.apiKey]);
 
   // Background sync GHL — importa estudiantes nuevos cada 5 min
   useEffect(()=>{
-    if(!notifConfig?.apiKey||!notifConfig?.locationId) return;
+    if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
     const syncGHL = async () => {
       const programasActual = programasRef.current || [];
       const progsConSync=programasActual.filter(p=>p.ghl_pipeline_id&&p.ghl_stage_id);
@@ -3937,7 +3937,7 @@ export default function App() {
       let totalNuevos=0;
       let programasActualizados=[...programasActual];
       for(const prog of progsConSync){
-        const contacts = await ghlFetchContacts(notifConfig.apiKey, notifConfig.locationId, prog.ghl_pipeline_id, prog.ghl_stage_id);
+        const contacts = await ghlFetchContacts(notifCfg.apiKey, notifCfg.locationId, prog.ghl_pipeline_id, prog.ghl_stage_id);
         if(!contacts.length) continue;
         const existIds=new Set((prog.estudiantes||[]).map(e=>e.id));
         const nuevos=contacts.filter(c=>!existIds.has(c.id));
@@ -3981,7 +3981,7 @@ export default function App() {
     syncGHL();
     const intervaloSync=setInterval(syncGHL, 5*60*1000);
     return ()=>clearInterval(intervaloSync);
-  },[notifConfig?.apiKey]);
+  },[notifCfg?.apiKey]);
 
   const save = async d => {
     setProgramas(d); // actualizar UI inmediatamente
@@ -8339,7 +8339,7 @@ export default function App() {
               <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:18}}>
                 <div style={{fontWeight:700,fontSize:11,color:"#0369a1",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:4}}>SINCRONIZACIÓN GHL</div>
                 <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>Configura el embudo y etapa para importar estudiantes automáticamente mientras la app esté abierta.</div>
-                {!notifConfig?.apiKey?(
+                {!notifCfg?.apiKey?(
                   <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",background:"#f9fafb",borderRadius:8,padding:"10px 14px"}}>Configura la API Key de GHL en Configuración primero.</div>
                 ):(
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
