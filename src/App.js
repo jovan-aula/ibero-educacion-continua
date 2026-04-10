@@ -107,7 +107,7 @@ const ghlFetchContacts = async (apiKey, locationId, pipelineId, stageId) => {
       if(stageId) url+=`&pipeline_stage_id=${stageId}`;
       if(startAfter) url+=`&startAfter=${startAfter}&startAfterId=${startAfterId}`;
       const r=await fetch(url,{headers:{"Authorization":"Bearer "+apiKey,"Version":"2021-04-15"}});
-      if(!r.ok) break;
+      if(!r.ok){ console.error("[Sync] API error:",r.status, await r.text().catch(()=>"")); break; }
       const d=await r.json();
       const opps=d.opportunities||[];
       allOpps=[...allOpps,...opps];
@@ -3602,7 +3602,6 @@ export default function App() {
   const [showProgM,setShowProgM] = useState(false);
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
-  const [ghlPipelines,setGhlPipelines] = useState([]);
   const [showAlertas,setShowAl]  = useState(false);
   const [presencia,setPresencia] = useState([]);
   const [alertasDesc,setAlertasDesc] = useState([]);
@@ -3932,12 +3931,6 @@ export default function App() {
   },[session?.email, session?.token]);
 
   // Cargar pipelines del CRM cuando hay API key o cuando se abre el form de programa
-  useEffect(()=>{
-    if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
-    if(showProgM === false && ghlPipelines.length > 0) return; // ya cargados, no refetch al cerrar
-    fetch(`https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${notifCfg.locationId}`,{headers:{"Authorization":"Bearer "+notifCfg.apiKey,"Version":"2021-04-15"}})
-      .then(r=>r.json()).then(d=>setGhlPipelines(d.pipelines||[])).catch(()=>{});
-  },[notifCfg?.apiKey, showProgM]);
 
   // Background sync CRM — importa estudiantes nuevos cada 5 min
   useEffect(()=>{
@@ -5319,10 +5312,7 @@ export default function App() {
             })()}
             <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
               <div><h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Programas</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Gestión de diplomados y cursos de educación continua</p></div>
-              <div style={{display:"flex",gap:8}}>
-                {notifCfg?.apiKey&&<button onClick={()=>syncFnRef.current&&syncFnRef.current(true)} style={{...S.btn("#eff6ff","#2563eb"),border:"1px solid #bfdbfe",fontSize:12}}>↻ Sincronizar ahora</button>}
-                {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
-              </div>
+              {can(session,"editarProgramas")&&<button onClick={openNewProg} style={S.btn(RED,"#fff")}>Nuevo programa</button>}
             </div>
             <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
               <input placeholder="Buscar programa..." value={busqProg} onChange={e=>setBusqProg(e.target.value)} style={{...S.inp,flex:1,minWidth:200}}/>
@@ -5367,6 +5357,7 @@ export default function App() {
                     </div>
                     <div style={{display:"flex",gap:8,flexShrink:0}}>
                       <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff")}>Ver</button>
+                      {can(session,"importarEstudiantes")&&p.ghl_pipeline_id&&p.ghl_stage_id&&<button onClick={()=>{setSelProg(p.id);setShowImp(true);}} style={S.btn("#eff6ff","#2563eb",{padding:"8px 12px",border:"1px solid #bfdbfe"})}>Importar</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>Editar</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
                     </div>
@@ -8361,37 +8352,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* SINCRONIZACIÓN CRM */}
-              <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:18}}>
-                <div style={{fontWeight:700,fontSize:11,color:"#0369a1",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:4}}>SINCRONIZACIÓN AUTOMÁTICA</div>
-                <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>Configura el embudo y etapa para importar estudiantes automáticamente mientras la app esté abierta.</div>
-                {!notifCfg?.apiKey?(
-                  <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",background:"#f9fafb",borderRadius:8,padding:"10px 14px"}}>Configura la API Key en Configuración primero.</div>
-                ):(
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                    <div>
-                      <label style={S.lbl}>Embudo (Pipeline)</label>
-                      <select value={progForm.ghl_pipeline_id||""} onChange={e=>setProgForm({...progForm,ghl_pipeline_id:e.target.value,ghl_stage_id:""})} style={{...S.inp,cursor:"pointer"}}>
-                        <option value="">{ghlPipelines.length===0?"Cargando embudos...":"Sin sincronización"}</option>
-                        {ghlPipelines.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={S.lbl}>Etapa</label>
-                      <select value={progForm.ghl_stage_id||""} onChange={e=>setProgForm({...progForm,ghl_stage_id:e.target.value})} style={{...S.inp,cursor:"pointer"}} disabled={!progForm.ghl_pipeline_id}>
-                        <option value="">Todas las etapas</option>
-                        {(ghlPipelines.find(p=>p.id===progForm.ghl_pipeline_id)?.stages||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-                {progForm.ghl_pipeline_id&&(
-                  <div style={{marginTop:10,background:"#eff6ff",borderRadius:8,padding:"10px 14px",fontSize:12,fontFamily:"system-ui",color:"#2563eb",display:"flex",gap:8,alignItems:"center"}}>
-                    <span>⚡</span>
-                    <span>Cada 5 minutos se importarán automáticamente estudiantes nuevos de esta etapa.</span>
-                  </div>
-                )}
-              </div>
 
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
                 <button onClick={()=>setShowProgM(false)} style={S.btn("#f3f4f6","#374151")}>Cancelar</button>
