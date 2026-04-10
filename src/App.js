@@ -3498,9 +3498,7 @@ export default function App() {
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
   const [presencia,setPresencia] = useState([]);
-  const [alertasDesc,setAlertasDesc] = useState(()=>{
-    try{return JSON.parse(localStorage.getItem("ibero_alertas_desc")||"[]");}catch(e){return[];}
-  });
+  const [alertasDesc,setAlertasDesc] = useState([]);
   const [pagoModal,setPagoModal] = useState(null); // {est, prog}
   const [folioModal,setFolioModal] = useState(null); // {onConfirm, onSkip}
   const [notif,setNotif]         = useState(null);
@@ -3588,8 +3586,10 @@ export default function App() {
       if(cfgs&&cfgs.length>0){
         const fm = cfgs.find(c=>c.clave==="fieldmap");
         const nf = cfgs.find(c=>c.clave==="notif");
+        const ad = cfgs.find(c=>c.clave==="alertas_desc");
         if(fm?.valor) setFieldMap(fm.valor);
         if(nf?.valor) setNotifCfg(nf.valor);
+        if(ad?.alertas_descartadas) setAlertasDesc(ad.alertas_descartadas);
       }
     } catch(e){}
     // Cargar evaluaciones NPS desde Supabase
@@ -3747,7 +3747,8 @@ export default function App() {
   };
 
   useEffect(()=>{
-    if(!session?.email) return;
+    if(!session?.email||!session?.token) return;
+    if(!supa._token) supa.setToken(session.token);
     const registrar = async () => {
       await supa.upsert("presencia",[{
         email: session.email,
@@ -3764,7 +3765,7 @@ export default function App() {
     cargarPresencia();
     const intervalo = setInterval(()=>{ registrar(); cargarPresencia(); }, 30000);
     return ()=>clearInterval(intervalo);
-  },[session?.email]);
+  },[session?.email, session?.token]);
 
   const save = async d => {
     setProgramas(d); // actualizar UI inmediatamente
@@ -4092,16 +4093,14 @@ export default function App() {
     const {subject,body} = _buildCalMsg(mod,prog,"email");
     window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,"_blank");
   };
-  const descartarAlerta = key => {
-    const nuevas = [...alertasDesc, key];
+  const guardarAlertasDesc = async (nuevas) => {
     setAlertasDesc(nuevas);
-    localStorage.setItem("ibero_alertas_desc", JSON.stringify(nuevas));
+    await supa.upsert("configuracion",[{id:"alertas_desc",clave:"alertas_desc",alertas_descartadas:nuevas}]);
   };
+  const descartarAlerta = key => guardarAlertasDesc([...alertasDesc, key]);
   const descartarTodas = () => {
     const keys = alertasVisible.map(alertaKey);
-    const nuevas = [...new Set([...alertasDesc, ...keys])];
-    setAlertasDesc(nuevas);
-    localStorage.setItem("ibero_alertas_desc", JSON.stringify(nuevas));
+    guardarAlertasDesc([...new Set([...alertasDesc, ...keys])]);
     setShowAl(false);
   };
   const alertasTodas  = [
