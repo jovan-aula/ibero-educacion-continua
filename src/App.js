@@ -5,7 +5,12 @@ const SUPA_URL = process.env.REACT_APP_SUPA_URL;
 const SUPA_KEY = process.env.REACT_APP_SUPA_KEY;
 
 const supa = {
-  headers: { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+  _token: null,
+  get headers() {
+    const auth = this._token ? `Bearer ${this._token}` : `Bearer ${SUPA_KEY}`;
+    return { "apikey": SUPA_KEY, "Authorization": auth, "Content-Type": "application/json", "Prefer": "return=minimal" };
+  },
+  setToken(token) { this._token = token; },
 
   async get(table, params="") {
     try {
@@ -46,6 +51,7 @@ const supa = {
       });
       const d = await r.json();
       if (!r.ok) return { error: d.error_description || d.msg || "Credenciales incorrectas" };
+      if (d.access_token) this.setToken(d.access_token);
       return { user: d.user, token: d.access_token };
     } catch(e) { return { error: "Error de conexión. Verifica tu internet." }; }
   },
@@ -547,8 +553,10 @@ function LoginScreen({onLogin}) {
       email: auth.user.email,
       rol: u?.rol || "auxiliar",
       permisos,
+      token: auth.token,
     };
     localStorage.setItem(SK2, JSON.stringify(sesion));
+    if(auth.token) supa.setToken(auth.token);
     onLogin(sesion);
     setBusy(false);
   };
@@ -3488,6 +3496,7 @@ export default function App() {
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
+  const [presencia,setPresencia] = useState([]);
   const [alertasDesc,setAlertasDesc] = useState(()=>{
     try{return JSON.parse(localStorage.getItem("ibero_alertas_desc")||"[]");}catch(e){return[];}
   });
@@ -3551,7 +3560,7 @@ export default function App() {
 
   useEffect(()=>{
     const init = async () => {
-    const s=localStorage.getItem(SK2); if(s) setSession(JSON.parse(s));
+    const s=localStorage.getItem(SK2); if(s){const ses=JSON.parse(s);setSession(ses);if(ses.token)supa.setToken(ses.token);}
     // Cargar responsables desde Supabase
     try {
       const respSupa = await supa.get("responsables","?order=nombre");
@@ -3726,6 +3735,35 @@ export default function App() {
     document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[]);
+
+  // Presencia — stickers por usuario
+  const STICKERS = {
+    "roberto.martinez@tijuana.ibero.mx":  "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07a4e6aa34cb69ccc0.png",
+    "nohelya.martinez@tijuana.ibero.mx":  "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07a4e6aa34cb69ccc6.png",
+    "jovan.naranjo@tijuana.ibero.mx":     "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07a4e6aa34cb69ccd0.png",
+    "wendy.sanchez@tijuana.ibero.mx":     "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07d7871cddf7ef91e8.png",
+    "andrea.betancourt@tijuana.ibero.mx": "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07019dc508d3e38494.png",
+  };
+
+  useEffect(()=>{
+    if(!session?.email) return;
+    const registrar = async () => {
+      await supa.upsert("presencia",[{
+        email: session.email,
+        nombre: session.nombre||session.email,
+        last_seen: new Date().toISOString(),
+      }]);
+    };
+    const cargarPresencia = async () => {
+      const hace2min = new Date(Date.now()-2*60*1000).toISOString();
+      const data = await supa.get("presencia",`?last_seen=gte.${hace2min}&order=nombre`);
+      if(data) setPresencia(data.filter(u=>u.email!==session.email));
+    };
+    registrar();
+    cargarPresencia();
+    const intervalo = setInterval(()=>{ registrar(); cargarPresencia(); }, 30000);
+    return ()=>clearInterval(intervalo);
+  },[session?.email]);
 
   const save = async d => {
     setProgramas(d); // actualizar UI inmediatamente
@@ -4504,6 +4542,19 @@ export default function App() {
           <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
             {view==="dashboard"?"Dashboard":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="cobranza"?"Cobranza":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
           </div>
+          {/* Presencia — quién está conectado */}
+          {presencia.length>0&&(
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              {presencia.map(u=>(
+                <div key={u.email} title={u.nombre} style={{width:32,height:32,borderRadius:"50%",overflow:"hidden",border:"2px solid #fff",boxShadow:"0 1px 4px rgba(0,0,0,0.15)",flexShrink:0}}>
+                  {STICKERS[u.email]
+                    ? <img src={STICKERS[u.email]} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    : <div style={{width:"100%",height:"100%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",fontFamily:FONT_BODY}}>{(u.nombre||u.email).slice(0,2).toUpperCase()}</div>
+                  }
+                </div>
+              ))}
+            </div>
+          )}
           {/* Alertas */}
           <div ref={alertRef} style={{position:"relative"}}>
             <button onClick={()=>setShowAl(!showAlertas)} style={{background:alertas.length>0?"#FFF1F2":"#F7F7F8",border:"1px solid "+(alertas.length>0?"#FCA5A5":"#E5E7EB"),borderRadius:8,padding:"6px 14px",cursor:"pointer",color:alertas.length>0?RED:"#6B7280",fontFamily:FONT_BODY,fontSize:12,fontWeight:alertas.length>0?700:500,display:"flex",alignItems:"center",gap:7}}>
