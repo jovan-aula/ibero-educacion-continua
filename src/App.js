@@ -4544,15 +4544,21 @@ export default function App() {
           </div>
           {/* Presencia — quién está conectado */}
           {presencia.length>0&&(
-            <div style={{display:"flex",alignItems:"center",gap:4}}>
-              {presencia.map(u=>(
-                <div key={u.email} title={u.nombre} style={{width:32,height:32,borderRadius:"50%",overflow:"hidden",border:"2px solid #fff",boxShadow:"0 1px 4px rgba(0,0,0,0.15)",flexShrink:0}}>
-                  {STICKERS[u.email]
-                    ? <img src={STICKERS[u.email]} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                    : <div style={{width:"100%",height:"100%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",fontFamily:FONT_BODY}}>{(u.nombre||u.email).slice(0,2).toUpperCase()}</div>
-                  }
-                </div>
-              ))}
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              {presencia.map(u=>{
+                const iniciales=(u.nombre||u.email).split(" ").filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join("");
+                return(
+                  <div key={u.email} title={u.nombre} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                    <div style={{width:32,height:32,borderRadius:"50%",overflow:"hidden",border:"2px solid #fff",boxShadow:"0 1px 4px rgba(0,0,0,0.15)",flexShrink:0}}>
+                      {STICKERS[u.email]
+                        ? <img src={STICKERS[u.email]} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                        : <div style={{width:"100%",height:"100%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",fontFamily:FONT_BODY}}>{iniciales}</div>
+                      }
+                    </div>
+                    <span style={{fontSize:9,fontWeight:700,color:"#6b7280",fontFamily:FONT_BODY,letterSpacing:"0.3px"}}>{iniciales}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
           {/* Alertas */}
