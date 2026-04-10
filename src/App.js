@@ -269,7 +269,7 @@ const fmtFecha = d => {
 const fmtMXN = n => n!=null ? "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
 const newId  = () => Math.random().toString(36).slice(2,9);
 const can    = (s,p) => !!(s && (s.rol==="admin" || (s.permisos && s.permisos[p])));
-const today  = () => new Date().toISOString().split("T")[0];
+const today  = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 const mods   = p => (p && p.modulos) || [];
 const ests   = p => (p && p.estudiantes) || [];
 
@@ -473,7 +473,7 @@ const StatusBadge = ({p}) => {
 };
 
 // ─── CONFIRMACIÓN SIMPLE ──────────────────────────────
-function ConfirmSimple({titulo,mensaje,onConfirm,onClose}) {
+function ConfirmSimple({titulo,mensaje,onConfirm,onClose,btnLabel,btnColor}) {
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
       <div style={{background:"#fff",borderRadius:10,width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.2)",overflow:"hidden"}}>
@@ -483,7 +483,7 @@ function ConfirmSimple({titulo,mensaje,onConfirm,onClose}) {
         </div>
         <div style={{padding:"16px 24px",background:"#fafafa",display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={onClose} style={{background:"#f3f4f6",color:"#374151",border:"none",borderRadius:6,padding:"9px 20px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Cancelar</button>
-          <button onClick={()=>{onConfirm();onClose();}} style={{background:"#dc2626",color:"#fff",border:"none",borderRadius:6,padding:"9px 20px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>Sí, eliminar</button>
+          <button onClick={()=>{onConfirm();onClose();}} style={{background:btnColor||"#dc2626",color:"#fff",border:"none",borderRadius:6,padding:"9px 20px",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>{btnLabel||"Sí, eliminar"}</button>
         </div>
       </div>
     </div>
@@ -6203,6 +6203,8 @@ export default function App() {
                                 ?`¿Quieres desmarcar la factura de ${e.nombre}?`
                                 :`¿Confirmas que ya se envió la factura a ${e.nombre}?`,
                               onConfirm:()=>toggleEnviada(prog.id,e.id),
+                              btnLabel:"Sí, confirmar",
+                              btnColor:"#16a34a",
                             })}
                             style={{cursor:"pointer",borderRadius:8,padding:"7px 10px",background:e.factura_enviada?"#f0fdf4":"#fafafa",border:"1px solid "+(e.factura_enviada?"#86efac":"#e5e7eb"),display:"flex",flexDirection:"column",alignItems:"center",gap:2,userSelect:"none"}}>
                             <div style={{display:"flex",alignItems:"center",gap:5}}>
@@ -7566,7 +7568,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)}/>}
+      {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)} btnLabel={confirmSimple.btnLabel} btnColor={confirmSimple.btnColor}/>}
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
       {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
