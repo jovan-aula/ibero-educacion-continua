@@ -3951,14 +3951,16 @@ export default function App() {
         if(manual) notify("Ningún programa tiene embudo y etapa configurados","warning");
         return;
       }
-      if(manual) notify("Sincronizando con CRM...","warning");
+      if(manual) notify(`Sincronizando ${progsConSync.length} programa${progsConSync.length!==1?"s":""}...`,"warning");
       let totalNuevos=0;
       let programasActualizados=[...programasActual];
       for(const prog of progsConSync){
         const contacts = await ghlFetchContacts(cfg.apiKey, cfg.locationId, prog.ghl_pipeline_id, prog.ghl_stage_id);
+        if(manual) console.log(`[Sync] ${prog.nombre}: ${contacts.length} contactos en CRM`);
         if(!contacts.length) continue;
         const existIds=new Set((prog.estudiantes||[]).map(e=>e.id));
         const nuevos=contacts.filter(c=>!existIds.has(c.id));
+        if(manual) console.log(`[Sync] ${prog.nombre}: ${nuevos.length} nuevos (${contacts.length - nuevos.length} ya existentes)`);
         if(!nuevos.length) continue;
         // Actualizar perfil de existentes
         const existingAct=(prog.estudiantes||[]).map(e=>{
