@@ -71,7 +71,7 @@ const supa = {
   },
 };
 
-// ─── HELPERS GHL SYNC ────────────────────────────────
+// ─── HELPERS CRM SYNC ────────────────────────────────
 const ghlGetCF = (customFields, id, fieldKey) => {
   const cf = (customFields||[]).find(f=>f.id===id||f.fieldKey===fieldKey||f.fieldKey==="contact."+fieldKey);
   const val = cf ? cf.value||cf.fieldValue||cf.fieldValueString||"" : "";
@@ -3928,14 +3928,14 @@ export default function App() {
     return ()=>{ clearInterval(intervalo); clearInterval(tokenRefresh); };
   },[session?.email, session?.token]);
 
-  // Cargar pipelines de GHL cuando hay API key
+  // Cargar pipelines del CRM cuando hay API key
   useEffect(()=>{
     if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
     fetch(`https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${notifCfg.locationId}`,{headers:{"Authorization":"Bearer "+notifCfg.apiKey,"Version":"2021-04-15"}})
       .then(r=>r.json()).then(d=>setGhlPipelines(d.pipelines||[])).catch(()=>{});
   },[notifCfg?.apiKey]);
 
-  // Background sync GHL — importa estudiantes nuevos cada 5 min
+  // Background sync CRM — importa estudiantes nuevos cada 5 min
   useEffect(()=>{
     if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
     const syncGHL = async () => {
@@ -3983,7 +3983,7 @@ export default function App() {
       if(totalNuevos>0){
         setProgramas(programasActualizados);
         syncToSupabase(programasActualizados).catch(()=>{});
-        notify(`${totalNuevos} estudiante${totalNuevos!==1?"s":""} importado${totalNuevos!==1?"s":""} automáticamente desde GHL`,"success");
+        notify(`${totalNuevos} estudiante${totalNuevos!==1?"s":""} importado${totalNuevos!==1?"s":""} automáticamente`,"success");
       }
     };
     syncGHL();
@@ -8343,12 +8343,12 @@ export default function App() {
                 )}
               </div>
 
-              {/* SINCRONIZACIÓN GHL */}
+              {/* SINCRONIZACIÓN CRM */}
               <div style={{borderTop:"1px solid #e5e7eb",paddingTop:18,marginBottom:18}}>
-                <div style={{fontWeight:700,fontSize:11,color:"#0369a1",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:4}}>SINCRONIZACIÓN GHL</div>
+                <div style={{fontWeight:700,fontSize:11,color:"#0369a1",letterSpacing:"1px",fontFamily:"system-ui",marginBottom:4}}>SINCRONIZACIÓN AUTOMÁTICA</div>
                 <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>Configura el embudo y etapa para importar estudiantes automáticamente mientras la app esté abierta.</div>
                 {!notifCfg?.apiKey?(
-                  <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",background:"#f9fafb",borderRadius:8,padding:"10px 14px"}}>Configura la API Key de GHL en Configuración primero.</div>
+                  <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",background:"#f9fafb",borderRadius:8,padding:"10px 14px"}}>Configura la API Key en Configuración primero.</div>
                 ):(
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                     <div>
