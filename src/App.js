@@ -3543,6 +3543,8 @@ export default function App() {
   const [editEstModal,setEditEstModal] = useState(null);
   const [inactivoModal,setInactivoModal] = useState(null); // {est, prog}
   const [inactivoRazon,setInactivoRazon] = useState("");
+  const [bajaModal,setBajaModal]         = useState(null); // {est, prog}
+  const [bajaRazon,setBajaRazon]         = useState("");
   const [npsModal,setNpsModal]         = useState(null);
   const [npsData,setNpsData] = useState([]);
   const [busqProg,setBusqProg]   = useState("");
@@ -5828,11 +5830,14 @@ export default function App() {
                                       {est.email&&(
                                         <button onClick={e=>{e.stopPropagation();abrirEvaluacion("diplomado",est,prog,null);}} style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 12px",fontSize:12,border:"1px solid #ddd6fe"})}>✉ Eval. diplomado</button>
                                       )}
-                                      {/* Botón Activo / Inactivo */}
+                                      {/* Botón Activo / Inactivo / Baja */}
+                                      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                                       {esInactivo
-                                        ?<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${est.nombre}"? Volverá a aparecer en reportes y control de pagos.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"activo")});}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
-                                        :<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Marcar como inactivo",mensaje:`¿Marcar a "${est.nombre}" como inactivo? Saldrá de los reportes activos y contará en la tasa de deserción.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"inactivo")});}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
+                                        ?<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${est.nombre}"? Volverá a aparecer en reportes y control de pagos.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"activo"),btnLabel:"Sí, reactivar",btnColor:"#16a34a"});}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
+                                        :<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Marcar como inactivo",mensaje:`¿Marcar a "${est.nombre}" como inactivo? Saldrá de los reportes activos y contará en la tasa de deserción.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"inactivo"),btnLabel:"Sí, confirmar",btnColor:"#d97706"});}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
                                       }
+                                      <button onClick={ev=>{ev.stopPropagation();setBajaRazon("");setBajaModal({est,prog});}} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>Dar de baja</button>
+                                      </div>
                                       {esInactivo&&<span style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",fontStyle:"italic"}}>Cuenta en tasa de deserción en Reportes</span>}
                                       {estado==="critico"&&!esInactivo&&<span style={{fontSize:11,color:"#dc2626",fontFamily:"system-ui",fontStyle:"italic"}}>2+ pagos vencidos — considera marcar inactivo</span>}
                                     </div>
@@ -7570,6 +7575,33 @@ export default function App() {
                 setInactivoModal(null);
                 setInactivoRazon("");
               }} style={S.btn(RED,"#fff",{fontWeight:700})}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {bajaModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setBajaModal(null)}>
+          <div onClick={ev=>ev.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:"28px 28px 24px",width:"100%",maxWidth:400,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:FONT_BODY}}>
+            <div style={{fontWeight:700,fontSize:17,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",marginBottom:4,color:"#dc2626"}}>Dar de baja</div>
+            <div style={{fontSize:13,color:"#6B7280",marginBottom:20}}>{bajaModal.est.nombre} · {bajaModal.prog.nombre}</div>
+            <label style={S.lbl}>Motivo de baja</label>
+            <textarea
+              autoFocus
+              value={bajaRazon}
+              onChange={ev=>setBajaRazon(ev.target.value)}
+              placeholder="Ej. Solicitud del estudiante, incumplimiento de pagos, cambio de situación..."
+              rows={3}
+              style={{...S.inp,resize:"vertical",lineHeight:1.6,marginBottom:8}}
+            />
+            <div style={{fontSize:11,color:"#9ca3af",marginBottom:20}}>Esta acción excluye al estudiante de reportes y pagos. Se puede revertir manualmente desde su ficha.</div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setBajaModal(null)} style={S.btn("#F3F4F6","#374151")}>Cancelar</button>
+              <button onClick={()=>{
+                const {est:estB,prog:progB}=bajaModal;
+                save((programas||[]).map(p=>p.id!==progB.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estB.id?es:{...es,estatus:"baja",campos_extra:{...(es.campos_extra||{}),motivo_baja:bajaRazon||"Sin especificar",fecha_baja:today()}})}));
+                notify("Estudiante dado de baja.","warning");
+                setBajaModal(null);setBajaRazon("");
+              }} style={S.btn("#dc2626","#fff",{fontWeight:700})}>Confirmar baja</button>
             </div>
           </div>
         </div>
