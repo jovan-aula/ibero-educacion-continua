@@ -3576,6 +3576,7 @@ export default function App() {
           id:u.id, nombre:u.nombre, email:u.email,
           password:u.password_hash||"", rol:u.rol||"auxiliar",
           permisos:u.permisos||{}, activo:u.activo!==false,
+          avatar_url:u.avatar_url||"",
         })));
       } else {
         setUsers(DEFAULT_USERS);
@@ -3739,13 +3740,17 @@ export default function App() {
     return()=>document.removeEventListener("mousedown",h);
   },[]);
 
-  // Presencia — stickers por usuario
-  const STICKERS = {
+  // Presencia — stickers por usuario (Supabase primero, fallback hardcodeado)
+  const STICKERS_DEFAULT = {
     "roberto.martinez@tijuana.ibero.mx":  "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07a4e6aa34cb69ccc0.png",
     "nohelya.martinez@tijuana.ibero.mx":  "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07a4e6aa34cb69ccc6.png",
     "jovan.naranjo@tijuana.ibero.mx":     "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07a4e6aa34cb69ccd0.png",
     "wendy.sanchez@tijuana.ibero.mx":     "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07d7871cddf7ef91e8.png",
     "andrea.betancourt@tijuana.ibero.mx": "https://assets.cdn.filesafe.space/musPifv2JmLrY1uT63Kw/media/69d86e07019dc508d3e38494.png",
+  };
+  const getAvatar = email => {
+    const u = (users||[]).find(u=>u.email===email);
+    return u?.avatar_url || STICKERS_DEFAULT[email] || "";
   };
 
   useEffect(()=>{
@@ -4552,8 +4557,8 @@ export default function App() {
                 return(
                   <div key={u.email} title={u.nombre} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                     <div style={{width:32,height:32,borderRadius:"50%",overflow:"hidden",border:"2px solid #fff",boxShadow:"0 1px 4px rgba(0,0,0,0.15)",flexShrink:0}}>
-                      {STICKERS[u.email]
-                        ? <img src={STICKERS[u.email]} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      {getAvatar(u.email)
+                        ? <img src={getAvatar(u.email)} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                         : <div style={{width:"100%",height:"100%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",fontFamily:FONT_BODY}}>{iniciales}</div>
                       }
                     </div>
@@ -7441,12 +7446,23 @@ export default function App() {
                           <div><label style={S.lbl}>Correo</label><input value={editUserForm.email||""} onChange={e=>setEditUserForm({...editUserForm,email:e.target.value})} style={S.inp}/></div>
                         </div>
                         <div style={{marginBottom:10}}><label style={S.lbl}>Nueva contraseña <span style={{color:"#9ca3af",fontWeight:400}}>(dejar vacío para no cambiar)</span></label><input type="password" value={editUserForm.newPassword||""} onChange={e=>setEditUserForm({...editUserForm,newPassword:e.target.value})} placeholder="••••••" style={S.inp}/></div>
+                        <div style={{marginBottom:10,display:"flex",gap:10,alignItems:"flex-end"}}>
+                          <div style={{flex:1}}>
+                            <label style={S.lbl}>Avatar / Sticker <span style={{color:"#9ca3af",fontWeight:400}}>(URL de imagen)</span></label>
+                            <input value={editUserForm.avatar_url||""} onChange={e=>setEditUserForm({...editUserForm,avatar_url:e.target.value})} placeholder="https://..." style={S.inp}/>
+                          </div>
+                          {editUserForm.avatar_url&&(
+                            <div style={{width:40,height:40,borderRadius:"50%",overflow:"hidden",border:"2px solid #e5e7eb",flexShrink:0}}>
+                              <img src={editUserForm.avatar_url} alt="preview" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                            </div>
+                          )}
+                        </div>
                         <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
                           <button onClick={()=>{setEditUserIdx(null);setEditUserForm({});}} style={S.btn("#f3f4f6","#374151",{padding:"6px 14px",fontSize:12})}>Cancelar</button>
                           <button onClick={async()=>{
                             if(!editUserForm.nombre||!editUserForm.email){notify("Nombre y correo son obligatorios","error");return;}
                             if(editUserForm.newPassword&&editUserForm.newPassword.length<6){notify("La contraseña debe tener mínimo 6 caracteres","error");return;}
-                            const updated={...u,nombre:editUserForm.nombre,email:editUserForm.email.toLowerCase()};
+                            const updated={...u,nombre:editUserForm.nombre,email:editUserForm.email.toLowerCase(),avatar_url:editUserForm.avatar_url||""};
                             await saveUsers((users||[]).map((uu,j)=>j===i?updated:uu));
                             setEditUserIdx(null);setEditUserForm({});
                             notify("Usuario actualizado.");
