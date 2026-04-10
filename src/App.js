@@ -3928,12 +3928,13 @@ export default function App() {
     return ()=>{ clearInterval(intervalo); clearInterval(tokenRefresh); };
   },[session?.email, session?.token]);
 
-  // Cargar pipelines del CRM cuando hay API key
+  // Cargar pipelines del CRM cuando hay API key o cuando se abre el form de programa
   useEffect(()=>{
     if(!notifCfg?.apiKey||!notifCfg?.locationId) return;
+    if(showProgM === false && ghlPipelines.length > 0) return; // ya cargados, no refetch al cerrar
     fetch(`https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${notifCfg.locationId}`,{headers:{"Authorization":"Bearer "+notifCfg.apiKey,"Version":"2021-04-15"}})
       .then(r=>r.json()).then(d=>setGhlPipelines(d.pipelines||[])).catch(()=>{});
-  },[notifCfg?.apiKey]);
+  },[notifCfg?.apiKey, showProgM]);
 
   // Background sync CRM — importa estudiantes nuevos cada 5 min
   useEffect(()=>{
@@ -8354,7 +8355,7 @@ export default function App() {
                     <div>
                       <label style={S.lbl}>Embudo (Pipeline)</label>
                       <select value={progForm.ghl_pipeline_id||""} onChange={e=>setProgForm({...progForm,ghl_pipeline_id:e.target.value,ghl_stage_id:""})} style={{...S.inp,cursor:"pointer"}}>
-                        <option value="">Sin sincronización</option>
+                        <option value="">{ghlPipelines.length===0?"Cargando embudos...":"Sin sincronización"}</option>
                         {ghlPipelines.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
