@@ -116,6 +116,7 @@ const syncToSupabase = async (programas) => {
     cobranza_comprometio: e.cobranza_comprometio||null,
     cobranza_nota: e.cobranza_nota||"",
     factura_enviada: e.factura_enviada||false,
+    fecha_nacimiento: e.fecha_nacimiento||null,
   })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
@@ -1490,6 +1491,30 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
       return mkParcialidades(montoBase, descAuto, formaPago||"");
     };
 
+    // Actualizar campos de perfil en estudiantes ya existentes (sin tocar pagos ni asistencia)
+    const parseFechaNac = dob => {
+      if(!dob) return "";
+      if(dob._seconds){ const d=new Date(dob._seconds*1000); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+      if(typeof dob==="string") return dob.slice(0,10);
+      return "";
+    };
+    const existingActualizados = existing.map(e=>{
+      const c = contacts.find(c=>c.id===e.id);
+      if(!c) return e;
+      const cf = c.customFields||[];
+      return {
+        ...e,
+        nombre:           capNombre(c.name||((c.firstName||"")+" "+(c.lastName||"")).trim())||e.nombre,
+        email:            c.email||e.email,
+        telefono:         c.phone||e.telefono,
+        empresa:          c._empresaNombre||c.company||c.company_name||e.empresa,
+        puesto:           getCF(cf,"Bh2QzKI7oWxAlK61XJLA","contact.puesto_que_desempeas")||e.puesto,
+        fecha_nacimiento: parseFechaNac(c.dateOfBirth)||e.fecha_nacimiento||"",
+        csf_url:          getCSFUrl(cf)||e.csf_url,
+        requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura")||e.requiere_factura,
+      };
+    });
+
     const toAdd = contacts.filter(c=>selected.includes(c.id)&&!existIds.has(c.id)).map(c=>{
       const cf = c.customFields||[];
       const monto = c.monetaryValue||c.opportunityValue||0;
@@ -1521,6 +1546,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         ciudad:           getCF(cf,"LfGaSXNIdKDaUeOMQYeT",""),
         estado:           getCF(cf,"Pno7iCF7nVNCVnIxqO3z",""),
         uso_cfdi:         getCF(cf,"eocaFnqmQ4qHD60KYjry",""),
+        fecha_nacimiento: parseFechaNac(c.dateOfBirth),
         estatus:          "activo",
         asistencia:       {},
         campos_extra:     {},
@@ -1528,7 +1554,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         pago:             buildPago(monto, prog.parcialidadesDefault, formaPago, prog.precioLista||0),
       };
     });
-    onImport([...existing,...toAdd]);
+    onImport([...existingActualizados,...toAdd]);
     onClose();
   };
 
@@ -3592,8 +3618,9 @@ export default function App() {
           return;
         }
       } else {
-        setSession(ses);
-        if(ses.token) supa.setToken(ses.token);
+        // Sesión sin refresh_token (antigua) → forzar re-login una sola vez
+        localStorage.removeItem(SK2);
+        return;
       }
     }
     // Cargar responsables desde Supabase
@@ -3728,6 +3755,14 @@ export default function App() {
                 num_interior: e.num_interior||"", colonia: e.colonia||"", ciudad: e.ciudad||"",
                 estado: e.estado||"", uso_cfdi: e.uso_cfdi||"",
                 estatus: e.estatus||"activo",
+                fecha_nacimiento: e.fecha_nacimiento||"",
+                fiscal_token: e.fiscal_token||null,
+                fiscal_completado: e.fiscal_completado||false,
+                cobranza_estado: e.cobranza_estado||null,
+                cobranza_ultimo_contacto: e.cobranza_ultimo_contacto||null,
+                cobranza_comprometio: e.cobranza_comprometio||null,
+                cobranza_nota: e.cobranza_nota||"",
+                factura_enviada: e.factura_enviada||false,
                 asistencia: Object.keys(asistencia).length>0 ? asistencia : (e.asistencia||{}),
                 campos_extra: e.campos_extra||{},
                 pago: pago ? {
@@ -4598,25 +4633,33 @@ export default function App() {
           <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
             {view==="dashboard"?"Dashboard":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="cobranza"?"Cobranza":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
           </div>
-          {/* Presencia — quién está conectado */}
-          {presencia.length>0&&(
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              {presencia.map(u=>{
-                const iniciales=(u.nombre||u.email).split(" ").filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join("");
-                return(
-                  <div key={u.email} title={u.nombre} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                    <div style={{width:32,height:32,borderRadius:"50%",overflow:"hidden",border:"2px solid #fff",boxShadow:"0 1px 4px rgba(0,0,0,0.15)",flexShrink:0}}>
-                      {getAvatar(u.email)
-                        ? <img src={getAvatar(u.email)} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                        : <div style={{width:"100%",height:"100%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",fontFamily:FONT_BODY}}>{iniciales}</div>
-                      }
+          {/* Presencia — quién está conectado (incluye usuario actual) */}
+          {(()=>{
+            const yo = session ? { email: session.email, nombre: session.nombre||session.email, esYo: true } : null;
+            const todos = [...(yo?[yo]:[]), ...presencia];
+            if(!todos.length) return null;
+            return (
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                {todos.map(u=>{
+                  const iniciales=(u.nombre||u.email).split(" ").filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join("");
+                  return(
+                    <div key={u.email} title={u.esYo?"Tú":u.nombre} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{position:"relative",width:32,height:32,flexShrink:0}}>
+                        <div style={{width:32,height:32,borderRadius:"50%",overflow:"hidden",border:u.esYo?"2px solid #22c55e":"2px solid #fff",boxShadow:"0 1px 4px rgba(0,0,0,0.15)"}}>
+                          {getAvatar(u.email)
+                            ? <img src={getAvatar(u.email)} alt={u.nombre} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                            : <div style={{width:"100%",height:"100%",background:RED,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",fontFamily:FONT_BODY}}>{iniciales}</div>
+                          }
+                        </div>
+                        {u.esYo&&<div style={{position:"absolute",bottom:0,right:0,width:9,height:9,borderRadius:"50%",background:"#22c55e",border:"1.5px solid #fff"}}/>}
+                      </div>
+                      <span style={{fontSize:9,fontWeight:700,color:u.esYo?"#22c55e":"#6b7280",fontFamily:FONT_BODY,letterSpacing:"0.3px"}}>{u.esYo?"Tú":iniciales}</span>
                     </div>
-                    <span style={{fontSize:9,fontWeight:700,color:"#6b7280",fontFamily:FONT_BODY,letterSpacing:"0.3px"}}>{iniciales}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
           {/* Alertas */}
           <div ref={alertRef} style={{position:"relative"}}>
             <button onClick={()=>setShowAl(!showAlertas)} style={{background:alertas.length>0?"#FFF1F2":"#F7F7F8",border:"1px solid "+(alertas.length>0?"#FCA5A5":"#E5E7EB"),borderRadius:8,padding:"6px 14px",cursor:"pointer",color:alertas.length>0?RED:"#6B7280",fontFamily:FONT_BODY,fontSize:12,fontWeight:alertas.length>0?700:500,display:"flex",alignItems:"center",gap:7}}>
@@ -4750,6 +4793,18 @@ export default function App() {
           const progsActivos=(programas||[]).filter(p=>progStatus(p)==="activo");
           const progsProximos=(programas||[]).filter(p=>progStatus(p)==="proximo");
 
+          // Edad promedio
+          const calcEdad = fn => {
+            if(!fn) return null;
+            const hoyD=new Date(); const nac=new Date(fn+"T12:00:00");
+            if(isNaN(nac)) return null;
+            let age=hoyD.getFullYear()-nac.getFullYear();
+            if(hoyD.getMonth()<nac.getMonth()||(hoyD.getMonth()===nac.getMonth()&&hoyD.getDate()<nac.getDate())) age--;
+            return age>0&&age<120?age:null;
+          };
+          const edadesGeneral=todosEsts.map(({e})=>calcEdad(e.fecha_nacimiento)).filter(x=>x!==null);
+          const edadPromGeneral=edadesGeneral.length?Math.round(edadesGeneral.reduce((a,b)=>a+b,0)/edadesGeneral.length):null;
+
           // Módulos esta semana
           const enUnaSemana=new Date(hoy); enUnaSemana.setDate(enUnaSemana.getDate()+7);
           const semanaStr=enUnaSemana.toISOString().split("T")[0];
@@ -4803,6 +4858,7 @@ export default function App() {
                 <KPICard label="Por iniciar" value={porIniciar.length} sub={progsProximos.length+" programa"+(progsProximos.length!==1?"s":"")} color="#0891b2" onClick={()=>setView("lista")}/>
                 <KPICard label="Programas activos" value={progsActivos.length} sub={progsProximos.length>0?progsProximos.length+" próximos":""} color="#2563eb" onClick={()=>setView("lista")}/>
                 <KPICard label="Facturas pendientes" value={factPendientes} color="#7c3aed" onClick={()=>{setView("facturacion");setFiltroFactTipo("pendiente");}}/>
+                {edadPromGeneral&&<KPICard label="Edad promedio general" value={edadPromGeneral+" años"} sub={edadesGeneral.length+" estudiantes con datos"} color="#0d9488"/>}
               </div>
 
               {/* Gráfica + Pendientes */}
@@ -4924,6 +4980,8 @@ export default function App() {
                       const cobrado=estsP.reduce((a,e)=>{const p=e.pago||{};const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;const tot=(p.parcialidades||[]).length;return a+(p.tipo==="unico"?(pag>0?mf:0):(tot?mf/tot*pag:0));},0);
                       const pct=mf_total>0?Math.round(cobrado/mf_total*100):0;
                       const proxMod=mods(prog).filter(m=>m.fechaInicio&&m.fechaInicio>=hoy).sort((a,b)=>a.fechaInicio.localeCompare(b.fechaInicio))[0];
+                      const edadesP=estsP.map(e=>calcEdad(e.fecha_nacimiento)).filter(x=>x!==null);
+                      const edadPromP=edadesP.length?Math.round(edadesP.reduce((a,b)=>a+b,0)/edadesP.length):null;
                       return(
                         <div key={prog.id} onClick={()=>{setSelProg(prog.id);setView("programa");}} style={{padding:"14px 16px",borderRadius:10,border:"1px solid #e5e7eb",cursor:"pointer",background:"#fafafa",transition:"box-shadow .15s"}}
                           onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 12px rgba(0,0,0,0.08)"}
@@ -4932,7 +4990,10 @@ export default function App() {
                             <div style={{width:10,height:10,borderRadius:"50%",background:prog.color||RED,flexShrink:0}}/>
                             <div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",flex:1,lineHeight:1.3}}>{prog.nombre}</div>
                           </div>
-                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:8}}>{estsP.length} estudiantes · {prog.generacion||""}</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",marginBottom:8,display:"flex",gap:8,alignItems:"center"}}>
+                            <span>{estsP.length} estudiantes{prog.generacion?" · "+prog.generacion:""}</span>
+                            {edadPromP&&<span style={{background:"#f0fdfa",color:"#0d9488",borderRadius:99,padding:"1px 7px",fontWeight:700,fontSize:10}}>x̄ {edadPromP} años</span>}
+                          </div>
                           <div style={{background:"#f3f4f6",borderRadius:4,height:6,marginBottom:6}}>
                             <div style={{height:6,borderRadius:4,background:pct>=80?"#16a34a":pct>=50?"#d97706":RED,width:pct+"%",transition:"width .4s"}}/>
                           </div>
