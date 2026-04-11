@@ -5131,6 +5131,10 @@ export default function App() {
                       const mf_total=estsP.reduce((a,e)=>{const p=e.pago||{};return a+(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);},0);
                       const cobrado=estsP.reduce((a,e)=>{const p=e.pago||{};const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);const pag=(p.parcialidades||[]).filter(x=>x.pagado).length;const tot=(p.parcialidades||[]).length;return a+(p.tipo==="unico"?(pag>0?mf:0):(tot?mf/tot*pag:0));},0);
                       const pct=mf_total>0?Math.round(cobrado/mf_total*100):0;
+                      // % ideal a la fecha: parcialidades con fecha_vencimiento <= hoy
+                      const idealCobrado=estsP.reduce((a,e)=>{const p=e.pago||{};const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);const tot=(p.parcialidades||[]).length;if(p.tipo==="unico")return a+mf;const vencidas=(p.parcialidades||[]).filter(x=>x.fecha_vencimiento&&x.fecha_vencimiento<=hoy).length;return a+(tot?mf/tot*vencidas:0);},0);
+                      const pctIdeal=mf_total>0?Math.min(100,Math.round(idealCobrado/mf_total*100)):0;
+                      const adelante=pct>=pctIdeal;
                       const proxMod=mods(prog).filter(m=>m.fechaInicio&&m.fechaInicio>=hoy).sort((a,b)=>a.fechaInicio.localeCompare(b.fechaInicio))[0];
                       const edadesP=estsP.map(e=>calcEdad(e.fecha_nacimiento)).filter(x=>x!==null);
                       const edadPromP=edadesP.length?Math.round(edadesP.reduce((a,b)=>a+b,0)/edadesP.length):null;
@@ -5146,13 +5150,25 @@ export default function App() {
                             <span>{estsP.length} estudiantes{prog.generacion?" · "+prog.generacion:""}</span>
                             {edadPromP&&<span style={{background:"#f0fdfa",color:"#0d9488",borderRadius:99,padding:"1px 7px",fontWeight:700,fontSize:10}}>x̄ {edadPromP} años</span>}
                           </div>
-                          <div style={{background:"#f3f4f6",borderRadius:4,height:6,marginBottom:6}}>
+                          {/* Barra real */}
+                          <div style={{background:"#f3f4f6",borderRadius:4,height:6,marginBottom:4,position:"relative"}}>
                             <div style={{height:6,borderRadius:4,background:pct>=80?"#16a34a":pct>=50?"#d97706":RED,width:pct+"%",transition:"width .4s"}}/>
                           </div>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontFamily:"system-ui",color:"#9ca3af"}}>
-                            <span>{pct}% cobrado</span>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontFamily:"system-ui",color:"#9ca3af",marginBottom:6}}>
+                            <span style={{color:adelante?"#16a34a":"#dc2626",fontWeight:600}}>{pct}% cobrado</span>
                             {proxMod&&<span>Próx: {proxMod.docente||"Sin docente"}</span>}
                           </div>
+                          {/* Barra ideal */}
+                          {pctIdeal>0&&(
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{flex:1,background:"#f3f4f6",borderRadius:4,height:4,position:"relative"}}>
+                                <div style={{height:4,borderRadius:4,background:"#e2e8f0",width:pctIdeal+"%"}}/>
+                              </div>
+                              <span style={{fontSize:9,fontFamily:"system-ui",color:adelante?"#16a34a":"#dc2626",fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>
+                                {adelante?"↑":"↓"} ideal {pctIdeal}%
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
