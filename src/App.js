@@ -6184,15 +6184,36 @@ export default function App() {
                                               setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("",today())});
                                             } else { setCS({titulo:"¿Desmarcar pago?",mensaje:"Se eliminará el registro de pago de este estudiante. ¿Confirmas?",onConfirm:()=>aplicar("")}); }
                                           };
+                                          const parcUnico=(p.parcialidades||[])[0];
                                           return(
-                                            <div onClick={toggleUnico} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:pagadoUnico?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadoUnico?"#bbf7d0":"#fde68a"),transition:"all .15s"}}>
-                                              <div style={{width:22,height:22,borderRadius:"50%",background:pagadoUnico?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .15s"}}>
-                                                <span style={{color:"#fff",fontSize:11,fontWeight:700}}>{pagadoUnico?"✓":""}</span>
+                                            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                              <div onClick={toggleUnico} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:pagadoUnico?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadoUnico?"#bbf7d0":"#fde68a"),transition:"all .15s"}}>
+                                                <div style={{width:22,height:22,borderRadius:"50%",background:pagadoUnico?"#16a34a":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .15s"}}>
+                                                  <span style={{color:"#fff",fontSize:11,fontWeight:700}}>{pagadoUnico?"✓":""}</span>
+                                                </div>
+                                                <div style={{flex:1}}>
+                                                  <div style={{fontFamily:"system-ui",fontSize:13,fontWeight:700,color:pagadoUnico?"#16a34a":"#d97706"}}>{pagadoUnico?"Cubierto":"Pendiente"} — {fmtMXN(mf)}</div>
+                                                  {pagadoUnico&&parcUnico?.fecha_pago&&<div style={{fontSize:10,color:"#6b7280",fontFamily:"system-ui",marginTop:1}}>Pagado el {fmtFecha(parcUnico.fecha_pago)}</div>}
+                                                </div>
                                               </div>
-                                              <div style={{flex:1}}>
-                                                <div style={{fontFamily:"system-ui",fontSize:13,fontWeight:700,color:pagadoUnico?"#16a34a":"#d97706"}}>{pagadoUnico?"Cubierto":"Pendiente"} — {fmtMXN(mf)}</div>
-                                                {pagadoUnico&&(p.parcialidades||[]).find(x=>x.pagado)?.fecha_pago&&<div style={{fontSize:10,color:"#6b7280",fontFamily:"system-ui",marginTop:1}}>Pagado el {fmtFecha((p.parcialidades||[]).find(x=>x.pagado).fecha_pago)}</div>}
-                                              </div>
+                                              {pagadoUnico&&(
+                                                <div style={{display:"flex",gap:6}}>
+                                                  <input
+                                                    defaultValue={parcUnico?.folio||""}
+                                                    placeholder="Folio"
+                                                    onClick={ev=>ev.stopPropagation()}
+                                                    onBlur={ev=>{ev.stopPropagation();const val=ev.target.value.trim();if(val!==(parcUnico?.folio||"")){const newParcs=(p.parcialidades||[]).map((x,i)=>i===0?{...x,folio:val}:x);savePago(prog.id,est.id,{...p,parcialidades:newParcs});}}}
+                                                    style={{flex:1,border:"1px solid "+(parcUnico?.folio?"#bfdbfe":"#fde68a"),borderRadius:4,padding:"3px 6px",fontSize:10,fontFamily:"system-ui",color:parcUnico?.folio?"#2563eb":"#d97706",outline:"none",background:parcUnico?.folio?"#eff6ff":"#fffbeb"}}
+                                                  />
+                                                  <input
+                                                    type="date"
+                                                    defaultValue={parcUnico?.fecha_pago||""}
+                                                    onClick={ev=>ev.stopPropagation()}
+                                                    onBlur={ev=>{ev.stopPropagation();const val=ev.target.value;if(val!==(parcUnico?.fecha_pago||"")){const newParcs=(p.parcialidades||[]).map((x,i)=>i===0?{...x,fecha_pago:val}:x);savePago(prog.id,est.id,{...p,parcialidades:newParcs});}}}
+                                                    style={{border:"1px solid #bbf7d0",borderRadius:4,padding:"3px 6px",fontSize:10,fontFamily:"system-ui",color:"#16a34a",outline:"none",background:"#f0fdf4"}}
+                                                  />
+                                                </div>
+                                              )}
                                             </div>
                                           );
                                         })()}
