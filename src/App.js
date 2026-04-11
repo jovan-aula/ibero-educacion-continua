@@ -1279,6 +1279,19 @@ function PagoModal({est,prog,onSave,onClose}) {
             </div>
           </div>
 
+          {/* Pago único — fecha */}
+          {pago.tipo==="unico"&&(
+            <div style={{marginBottom:14}}>
+              <label style={S.lbl}>Fecha de pago</label>
+              <input type="date" value={(pago.parcialidades||[])[0]?.fecha_pago||""} onChange={e=>{
+                const parcs=[...(pago.parcialidades||[])];
+                if(parcs.length===0) parcs.push({id:Math.random().toString(36).slice(2),numero:1,pagado:true,fecha_vencimiento:""});
+                parcs[0]={...parcs[0],fecha_pago:e.target.value};
+                setPago({...pago,parcialidades:parcs});
+              }} style={{...S.inp,maxWidth:200}}/>
+            </div>
+          )}
+
           {/* Parcialidades */}
           {pago.tipo==="parcialidades"&&(
             <div style={{marginBottom:14}}>
