@@ -6182,7 +6182,7 @@ export default function App() {
                                             };
                                             if(marcando){
                                               setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("",today())});
-                                            } else { aplicar(""); }
+                                            } else { setCS({titulo:"¿Desmarcar pago?",mensaje:"Se eliminará el registro de pago de este estudiante. ¿Confirmas?",onConfirm:()=>aplicar("")}); }
                                           };
                                           return(
                                             <div onClick={toggleUnico} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:pagadoUnico?"#f0fdf4":"#fffbeb",border:"1px solid "+(pagadoUnico?"#bbf7d0":"#fde68a"),transition:"all .15s"}}>
@@ -6210,7 +6210,7 @@ export default function App() {
                                                 };
                                                 if(marcando){
                                                   setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("",today())});
-                                                } else { aplicar(""); }
+                                                } else { setCS({titulo:"¿Desmarcar parcialidad?",mensaje:`¿Confirmas que deseas desmarcar la parcialidad ${parc.numero} como no pagada?`,onConfirm:()=>aplicar("")}); }
                                               };
                                               return(
                                                 <div key={parc.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:64}}>
