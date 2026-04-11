@@ -6177,14 +6177,14 @@ export default function App() {
                                             e.stopPropagation();
                                             if(esInactivo)return;
                                             const marcando=!pagadoUnico;
-                                            const aplicar=(folio="")=>{
+                                            const aplicar=(folio="",fecha=today())=>{
                                               const newParcs=(p.parcialidades||[]).length>0
-                                                ?(p.parcialidades||[]).map(x=>({...x,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}))
-                                                :[{id:est.id+"_p1",numero:1,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}];
+                                                ?(p.parcialidades||[]).map(x=>({...x,pagado:marcando,fecha_pago:marcando?fecha:null,folio:marcando?folio:null}))
+                                                :[{id:est.id+"_p1",numero:1,pagado:marcando,fecha_pago:marcando?fecha:null,folio:marcando?folio:null}];
                                               savePago(prog.id,est.id,{...p,parcialidades:newParcs});
                                             };
                                             if(marcando){
-                                              setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("")});
+                                              setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("",today())});
                                             } else { aplicar(""); }
                                           };
                                           return(
@@ -6207,12 +6207,12 @@ export default function App() {
                                                 e.stopPropagation();
                                                 if(esInactivo)return;
                                                 const marcando=!parc.pagado;
-                                                const aplicar=(folio="")=>{
-                                                  const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,pagado:marcando,fecha_pago:marcando?today():null,folio:marcando?folio:null}:x);
+                                                const aplicar=(folio="",fecha=today())=>{
+                                                  const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,pagado:marcando,fecha_pago:marcando?fecha:null,folio:marcando?folio:null}:x);
                                                   savePago(prog.id,est.id,{...p,parcialidades:newParcs});
                                                 };
                                                 if(marcando){
-                                                  setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("")});
+                                                  setFolioModal({onConfirm:aplicar,onSkip:()=>aplicar("",today())});
                                                 } else { aplicar(""); }
                                               };
                                               return(
@@ -8031,13 +8031,16 @@ export default function App() {
 
       {folioModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{folioModal.onSkip();setFolioModal(null);}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,padding:28,width:360,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:"system-ui"}}>
-            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>Ingresar folio</div>
-            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 16px"}}>Ingresa el folio correspondiente a este pago, o omite si no aplica.</p>
-            <input id="folio-input" autoFocus placeholder="Ej. F-001, A-2024-15..." style={{...S.inp,marginBottom:16,fontSize:14}} defaultValue=""/>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,padding:28,width:380,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:"system-ui"}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>Confirmar pago</div>
+            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 16px"}}>Ingresa la fecha real del pago y el folio si aplica.</p>
+            <label style={{fontSize:11,fontWeight:700,color:"#374151",letterSpacing:"0.5px",display:"block",marginBottom:4}}>FECHA DE PAGO</label>
+            <input id="fecha-pago-input" type="date" defaultValue={today()} style={{...S.inp,marginBottom:14}}/>
+            <label style={{fontSize:11,fontWeight:700,color:"#374151",letterSpacing:"0.5px",display:"block",marginBottom:4}}>FOLIO <span style={{fontWeight:400,color:"#9ca3af"}}>(opcional)</span></label>
+            <input id="folio-input" autoFocus placeholder="Ej. F-001, A-2024-15..." style={{...S.inp,marginBottom:20,fontSize:14}} defaultValue=""/>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <button onClick={()=>{folioModal.onSkip();setFolioModal(null);}} style={S.btn("#f3f4f6","#6b7280",{padding:"8px 16px"})}>Omitir por ahora</button>
-              <button onClick={()=>{const v=document.getElementById("folio-input").value.trim();folioModal.onConfirm(v||"");setFolioModal(null);}} style={S.btn(RED,"#fff",{padding:"8px 20px",fontWeight:700})}>Guardar</button>
+              <button onClick={()=>{folioModal.onSkip();setFolioModal(null);}} style={S.btn("#f3f4f6","#6b7280",{padding:"8px 16px"})}>Cancelar</button>
+              <button onClick={()=>{const folio=document.getElementById("folio-input").value.trim();const fecha=document.getElementById("fecha-pago-input").value||today();folioModal.onConfirm(folio,fecha);setFolioModal(null);}} style={S.btn(RED,"#fff",{padding:"8px 20px",fontWeight:700})}>Confirmar pago</button>
             </div>
           </div>
         </div>
