@@ -6223,20 +6223,35 @@ export default function App() {
                                                     <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
                                                   </div>
                                                   {/* Folio inline */}
-                                                  {(
+                                                  <input
+                                                    defaultValue={parc.folio||""}
+                                                    placeholder="Folio"
+                                                    onClick={ev=>ev.stopPropagation()}
+                                                    onBlur={ev=>{
+                                                      ev.stopPropagation();
+                                                      const val=ev.target.value.trim();
+                                                      if(val!==(parc.folio||"")){
+                                                        const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,folio:val}:x);
+                                                        savePago(prog.id,est.id,{...p,parcialidades:newParcs});
+                                                      }
+                                                    }}
+                                                    style={{width:"100%",border:"1px solid "+(parc.folio?"#bfdbfe":"#fde68a"),borderRadius:4,padding:"2px 4px",fontSize:9,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706",outline:"none",background:parc.folio?"#eff6ff":"#fffbeb",textAlign:"center"}}
+                                                  />
+                                                  {/* Fecha inline — solo si está pagada */}
+                                                  {parc.pagado&&(
                                                     <input
-                                                      defaultValue={parc.folio||""}
-                                                      placeholder="Folio"
+                                                      type="date"
+                                                      defaultValue={parc.fecha_pago||""}
                                                       onClick={ev=>ev.stopPropagation()}
                                                       onBlur={ev=>{
                                                         ev.stopPropagation();
-                                                        const val=ev.target.value.trim();
-                                                        if(val!==(parc.folio||"")){
-                                                          const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,folio:val}:x);
+                                                        const val=ev.target.value;
+                                                        if(val!==(parc.fecha_pago||"")){
+                                                          const newParcs=(p.parcialidades||[]).map((x,idx)=>idx===j?{...x,fecha_pago:val}:x);
                                                           savePago(prog.id,est.id,{...p,parcialidades:newParcs});
                                                         }
                                                       }}
-                                                      style={{width:"100%",border:"1px solid "+(parc.folio?"#bfdbfe":"#fde68a"),borderRadius:4,padding:"2px 4px",fontSize:9,fontFamily:"system-ui",color:parc.folio?"#2563eb":"#d97706",outline:"none",background:parc.folio?"#eff6ff":"#fffbeb",textAlign:"center"}}
+                                                      style={{width:"100%",border:"1px solid #bbf7d0",borderRadius:4,padding:"2px 4px",fontSize:9,fontFamily:"system-ui",color:"#16a34a",outline:"none",background:"#f0fdf4",textAlign:"center"}}
                                                     />
                                                   )}
                                                 </div>
