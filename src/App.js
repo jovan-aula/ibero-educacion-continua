@@ -2540,13 +2540,11 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
                               return(
                                 <td key={f} style={{textAlign:"center",padding:"6px",background:fest?"#fffbeb":undefined}}>
                                   <button
-                                    onClick={()=>!fest&&onToggleAsist(prog.id,modActivo.id,e.id,f)}
-                                    disabled={!!fest}
-                                    style={{width:32,height:32,borderRadius:6,border:"none",cursor:fest?"default":"pointer",
-                                      background:pres?"#16a34a":esFutura?"#f9f9f9":"#fee2e2",
-                                      color:pres?"#fff":esFutura?"#d1d5db":"#fca5a5",
-                                      fontWeight:700,fontSize:14,display:"inline-flex",alignItems:"center",justifyContent:"center",
-                                      opacity:fest?0.4:1}}>
+                                    onClick={()=>onToggleAsist(prog.id,modActivo.id,e.id,f)}
+                                    style={{width:32,height:32,borderRadius:6,border:"none",cursor:"pointer",
+                                      background:pres?"#16a34a":esFutura?"#f9f9f9":fest?"#fef9c3":"#fee2e2",
+                                      color:pres?"#fff":esFutura?"#d1d5db":fest?"#92400e":"#fca5a5",
+                                      fontWeight:700,fontSize:14,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
                                     {pres?"✓":esFutura?"·":"✗"}
                                   </button>
                                 </td>
