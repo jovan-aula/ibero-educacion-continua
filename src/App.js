@@ -4955,7 +4955,7 @@ export default function App() {
           const edadPromGeneral=edadesGeneral.length?Math.round(edadesGeneral.reduce((a,b)=>a+b,0)/edadesGeneral.length):null;
 
           // Módulos esta semana
-          const enUnaSemana=new Date(hoy); enUnaSemana.setDate(enUnaSemana.getDate()+7);
+          const enUnaSemana=new Date(hoy+"T12:00:00"); enUnaSemana.setDate(enUnaSemana.getDate()+7);
           const semanaStr=enUnaSemana.toISOString().split("T")[0];
           const modsSemana=(programas||[]).flatMap(prog=>mods(prog).filter(m=>m.fechaInicio&&m.fechaInicio>=hoy&&m.fechaInicio<=semanaStr).map(m=>({m,prog})));
 
@@ -5900,13 +5900,51 @@ export default function App() {
             notify(nuevoEstatus==="inactivo"?"Estudiante marcado como inactivo.":"Estudiante reactivado.");
           };
 
+          const esHoy15 = new Date().getDate()===15;
+          const descargarRespaldo=()=>{
+            const hoy=today();
+            const esc=v=>{if(v===null||v===undefined)return "";const s=String(v);if(s.includes(",")||s.includes('"')||s.includes("\n"))return '"'+s.replace(/"/g,'""')+'"';return s;};
+            const rows=[["Programa","Generación","Estudiante","Email","Teléfono","Empresa","Estatus","Tipo de pago","Monto acordado","Descuento %","Monto final","Cobrado","Pendiente","Estado pago","Forma de cobro","Requiere factura","Parcialidad #","Monto parcialidad","Fecha vencimiento","Pagado","Fecha pago","Folio"].map(esc).join(",")];
+            (programas||[]).forEach(prog=>{
+              ests(prog).filter(e=>e.estatus!=="baja").forEach(est=>{
+                const p=est.pago||{};
+                const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+                const cobrado=getMontoCobrado(p);
+                const pendiente=getMontoPendiente(p);
+                const ep=calcEstadoPagos(est);
+                let estadoPago="Al corriente";
+                if(ep&&ep.conRecargo.length>=2)estadoPago="Crítico";
+                else if(ep&&ep.conRecargo.length>=1)estadoPago="Vencido";
+                else if(pendiente>0)estadoPago="Pendiente";
+                else if(mf===0)estadoPago="Sin configurar";
+                const base=[prog.nombre,prog.generacion||"",est.nombre||"",est.email||"",est.telefono||"",est.empresa||"",est.estatus||"activo",p.tipo==="unico"?"Pago único":"Parcialidades",p.monto_acordado||0,p.descuento_pct||0,mf.toFixed(2),cobrado.toFixed(2),pendiente.toFixed(2),estadoPago,est.forma_cobro||"",est.requiere_factura||"No"];
+                const parcs=p.parcialidades||[];
+                if(p.tipo==="unico"){const parc=parcs[0];rows.push([...base,1,mf.toFixed(2),"",parc?.pagado?"Sí":"No",parc?.fecha_pago||"",parc?.folio||""].map(esc).join(","));}
+                else if(parcs.length===0){rows.push([...base,"","","","","",""].map(esc).join(","));}
+                else{parcs.forEach(parc=>{const montoParc=getMontoParc(parc,mf,parcs.length);rows.push([...base,parc.numero||"",montoParc.toFixed(2),parc.fecha_vencimiento||"",parc.pagado?"Sí":"No",parc.fecha_pago||"",parc.folio||""].map(esc).join(","));});}
+              });
+            });
+            const csv="\uFEFF"+rows.join("\n");
+            const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement("a");a.href=url;a.download="respaldo_pagos_"+hoy+".csv";a.click();URL.revokeObjectURL(url);
+          };
+
           return(
             <div>
-              <div style={{marginBottom:20}}>
-                <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Control de Pagos</h1>
-                <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
-                  {busqP||progSelP||filtroEstado?"Resultados filtrados":"Todos los programas con estudiantes registrados"}
-                </p>
+              <div style={{marginBottom:20,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Control de Pagos</h1>
+                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>
+                    {busqP||progSelP||filtroEstado?"Resultados filtrados":"Todos los programas con estudiantes registrados"}
+                  </p>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                  {esHoy15&&<span style={{fontSize:11,fontWeight:700,color:"#7c3aed",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:99,padding:"3px 10px",fontFamily:"system-ui"}}>💾 Día de respaldo</span>}
+                  <button onClick={descargarRespaldo} style={{...S.btn("#fff","#374151",{padding:"8px 14px",border:"1px solid #e5e7eb",fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:6})}}>
+                    <span style={{fontSize:15}}>⬇</span> Descargar respaldo
+                  </button>
+                </div>
               </div>
 
               {/* Resumen — clickeable para filtrar */}
