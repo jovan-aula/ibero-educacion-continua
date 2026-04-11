@@ -4005,7 +4005,7 @@ export default function App() {
       await syncToSupabase(d);
     } catch(e) {
       console.error("Sync error:", e);
-      notify("Error al guardar: " + e.message + ". Verifica tu conexión.", "error");
+      notify("Error de conexión — los cambios no se guardaron. Vuelve a intentarlo.", "error");
     }
   };
   const saveResp = async d => {
@@ -4064,7 +4064,7 @@ export default function App() {
       .catch(e=>{ console.error("Sync notif:",e); return false; });
     if (ok === false) notify("Error al guardar notificaciones.", "error");
   };
-  const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),4500);};
+  const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),type==="error"?8000:4500);};
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
   const logout    = ()=>{localStorage.removeItem(SK2);setSession(null);setView("lista");};
 
