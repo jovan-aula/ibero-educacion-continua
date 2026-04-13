@@ -4935,8 +4935,11 @@ export default function App() {
             else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=getMontoParc(ep.conRecargo[0],mf,total);}
           });
 
-          // Facturas pendientes
-          const factPendientes=todosEsts.filter(({e})=>e.requiere_factura==="Sí"&&!e.factura_enviada).length;
+          // Facturas pendientes — requiere factura + ya pagó algo + no enviada aún
+          const factPendientes=todosEsts.filter(({e})=>{
+            if(e.requiere_factura!=="Sí"||e.factura_enviada)return false;
+            return (e.pago?.parcialidades||[]).some(x=>x.pagado);
+          }).length;
 
           // Programas activos
           const progsActivos=(programas||[]).filter(p=>progStatus(p)==="activo");
