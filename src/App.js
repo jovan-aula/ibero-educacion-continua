@@ -4095,7 +4095,8 @@ export default function App() {
       msg = [`Hola ${est.nombre},`,``,`Te recordamos que tienes una parcialidad próxima a vencer en *${prog.nombre}${gen}*:`,``,`• Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6.5%.`,``,`Si ya realizaste tu pago, puedes ignorar este mensaje o avisarnos para confirmarlo.`].join("\n");
     } else if(tipo==="mensualidad"){
       const totalPend = mp*vencidas.length;
-      msg = [`Hola ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en *${prog.nombre}${gen}*:`,``,`• Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad para evitar un recargo adicional.`,``,`Si ya lo realizaste, avísanos para registrarlo. Cualquier duda con gusto te atendemos.`].join("\n");
+      const recargo = totalPend*(RECARGO_PCT/100);
+      msg = [`Hola ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en *${prog.nombre}${gen}*:`,``,`• Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Recargo por mora (6.5%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`• Total a liquidar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad. Si ya lo realizaste, avísanos para registrarlo. Cualquier duda con gusto te atendemos.`].join("\n");
     } else if(tipo==="vencido"){
       const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
       const totalPend = mp*vencidas.length;
@@ -4133,8 +4134,9 @@ export default function App() {
       body = [`Estimado/a ${est.nombre},`,``,`Esperamos que estés aprovechando al máximo el ${prog.nombre}${gen}.`,``,`Te recordamos que tienes una parcialidad próxima a vencer:`,``,`  • Monto: $${mp.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Fecha límite: ${proxima?fmtFecha(proxima.fecha_vencimiento):"próximamente"}`,``,`Realiza tu pago antes de la fecha límite para evitar el recargo del 6.5%.`,``,`Si ya realizaste tu pago, ignora este mensaje o escríbenos para confirmarlo.`].join("\n");
     } else if(tipo==="mensualidad"){
       const totalPend = mp*vencidas.length;
+      const recargo = totalPend*(RECARGO_PCT/100);
       subject = `Aviso de mensualidad vencida — ${prog.nombre}`;
-      body = [`Estimado/a ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en el programa ${prog.nombre}${gen}.`,``,`  • Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad para evitar un recargo adicional.`,``,`Si ya lo realizaste, puedes ignorar este mensaje o escríbenos para confirmarlo. Cualquier duda, con gusto te atendemos.`].join("\n");
+      body = [`Estimado/a ${est.nombre},`,``,`Te informamos que tienes una mensualidad vencida en el programa ${prog.nombre}${gen}.`,``,`  • Monto pendiente: $${totalPend.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Recargo por mora (6.5%): $${recargo.toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,`  • Total a liquidar: $${(totalPend+recargo).toLocaleString("es-MX",{maximumFractionDigits:0})} MXN`,``,`Te pedimos realizar tu pago a la brevedad. Si ya lo realizaste, puedes ignorar este mensaje o escríbenos para confirmarlo. Cualquier duda, con gusto te atendemos.`].join("\n");
     } else if(tipo==="vencido"){
       const recargo = mp*(RECARGO_PCT/100)*vencidas.length;
       const totalPend = mp*vencidas.length;
