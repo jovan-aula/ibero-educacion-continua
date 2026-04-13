@@ -4916,29 +4916,35 @@ export default function App() {
           const activos=todosEsts.filter(({prog})=>progStatus(prog)==="activo");
           const porIniciar=todosEsts.filter(({prog})=>progStatus(prog)==="proximo");
 
-          // KPIs de pagos
+          // KPIs de pagos — cobradoMes por fecha_pago real (cuánto entró a caja este mes)
+          const proyMensDash=proyeccionMensual(programas,docentes);
           let cobradoMes=0,esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
           let cntVencidos=0,cntCriticos=0,montoVencido=0;
           todosEsts.forEach(({e,prog})=>{
             const p=e.pago||{};
             const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
-            const pagadas=(p.parcialidades||[]).filter(x=>x.pagado);
-            const total=(p.parcialidades||[]).length;
             const cobrado=getMontoCobrado(p);
             const pendiente=getMontoPendiente(p);
             esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=pendiente;
-            // Cobrado este mes
-            pagadas.forEach(parc=>{if(parc.fecha_pago&&parc.fecha_pago.startsWith(mesActual))cobradoMes+=getMontoParc(parc,mf,total);});
+            // Cobrado este mes — por fecha_pago real
+            const total=(p.parcialidades||[]).length;
+            (p.parcialidades||[]).filter(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mesActual))
+              .forEach(parc=>{ cobradoMes+=getMontoParc(parc,mf,total); });
             // Vencidos — monto real de parcialidades vencidas
             const ep=calcEstadoPagos(e);
-            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);}
-            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=getMontoParc(ep.conRecargo[0],mf,total);}
+            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,(p.parcialidades||[]).length),0);}
+            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=getMontoParc(ep.conRecargo[0],mf,(p.parcialidades||[]).length);}
           });
 
-          // Facturas pendientes — requiere factura + ya pagó algo + no enviada aún
+          // Facturas pendientes — misma lógica que facturación: pagaron en mesFactRef + no enviada
+          const diaHoyDash=new Date().getDate();
+          const mesFactRefDash=(()=>{
+            if(diaHoyDash<=5){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);return d.toISOString().substring(0,7);}
+            return mesActual;
+          })();
           const factPendientes=todosEsts.filter(({e})=>{
             if(e.requiere_factura!=="Sí"||e.factura_enviada)return false;
-            return (e.pago?.parcialidades||[]).some(x=>x.pagado);
+            return (e.pago?.parcialidades||[]).some(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mesFactRefDash));
           }).length;
 
           // Programas activos
@@ -4965,24 +4971,21 @@ export default function App() {
           // Sin docente confirmado
           const sinConfirmar=(programas||[]).flatMap(prog=>mods(prog).filter(m=>m.estatus!=="confirmado"&&m.docente&&progStatus(prog)!=="finalizado").map(m=>({m,prog})));
 
-          // Gráfica últimos 6 meses
+          // Gráfica últimos 6 meses — por fecha_pago real (cuánto entró a caja cada mes)
           const meses6=Array.from({length:6},(_,i)=>{
-            const d=new Date(); d.setMonth(d.getMonth()-5+i);
+            const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-5+i);
             return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
           });
           const datosMeses=meses6.map(mes=>{
-            let cobrado=0,esperado=0;
+            let cobrado=0;
             todosEsts.forEach(({e})=>{
               const p=e.pago||{};
               const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
               const total=(p.parcialidades||[]).length;
-              (p.parcialidades||[]).forEach(parc=>{
-                if(parc.pagado&&parc.fecha_pago&&parc.fecha_pago.startsWith(mes))cobrado+=total?mf/total:mf;
-              });
-              // Esperado: módulos que inician en ese mes
+              (p.parcialidades||[]).filter(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mes))
+                .forEach(parc=>{ cobrado+=getMontoParc(parc,mf,total); });
             });
-            esperado=cobrado*1.15; // estimado simple
-            return{mes,cobrado,esperado};
+            return{mes,cobrado,esperado:proyMensDash[mes]?.esperado||0};
           });
           const maxBar=Math.max(...datosMeses.map(d=>d.cobrado),1);
 
@@ -6380,16 +6383,24 @@ export default function App() {
           const todos = (programas||[]).flatMap(prog=>
             ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo").map(e=>({e,prog}))
           );
-          // Helper: pagó algo en el mes seleccionado
+          // Helper: pagó algo en el mes seleccionado (por fecha_pago)
           const pagoEnMes=(e,mes)=>{
             const p=e.pago||{};
-            if(p.tipo==="unico") return (p.parcialidades||[]).some(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mes));
             return (p.parcialidades||[]).some(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mes));
           };
+          // Mes de referencia para "Factura pendiente":
+          // días 1-5 del mes → mostramos facturas del mes anterior (gracia)
+          // resto del mes → mes actual
+          const diaHoy=new Date().getDate();
+          const mesFactRef=(()=>{
+            if(diaHoy<=5){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);return d.toISOString().substring(0,7);}
+            return today().substring(0,7);
+          })();
+          const esPendienteFact=(e)=>e.requiere_factura==="Sí"&&pagoEnMes(e,mesFactRef)&&!e.factura_enviada;
           const lista = todos.filter(({e,prog})=>{
             if(filtroFactProg&&prog.id!==filtroFactProg)return false;
             if(filtroFactTipo==="pagaron"&&!pagoEnMes(e,filtroFactMes))return false;
-            if(filtroFactTipo==="pendiente"&&!(e.requiere_factura==="Sí"&&pagoEnMes(e,filtroFactMes)&&!e.factura_enviada))return false;
+            if(filtroFactTipo==="pendiente"&&!esPendienteFact(e))return false;
             if(filtroFactTipo==="enviada"&&!e.factura_enviada)return false;
             if(busqFacturacion){
               const q=busqFacturacion.toLowerCase();
@@ -6400,7 +6411,7 @@ export default function App() {
           });
           // Contadores para badges
           const cPagaron=todos.filter(({e})=>pagoEnMes(e,filtroFactMes)).length;
-          const cPendiente=todos.filter(({e})=>e.requiere_factura==="Sí"&&pagoEnMes(e,filtroFactMes)&&!e.factura_enviada).length;
+          const cPendiente=todos.filter(({e})=>esPendienteFact(e)).length;
           const cEnviada=todos.filter(({e})=>e.factura_enviada).length;
 
           const toggleEnviada=(progId,estId)=>{
