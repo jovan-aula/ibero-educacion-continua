@@ -393,42 +393,48 @@ const calcHonorarios = (mod, docentes) => {
 
 // Proyección mensual: por cada parcialidad pendiente o pagada, asigna al mes de vencimiento
 const proyeccionMensual = (programas, docentes) => {
-  const byMes = {}; // "2025-04" -> {esperado, cobrado, honorarios}
+  // esperado → por fecha_vencimiento (cuándo vence cada pago)
+  // cobrado  → por fecha_pago       (cuándo se marcó como recibido)
+  const byMes = {};
+  const ini = key => { if(!byMes[key])byMes[key]={esperado:0,cobrado:0,honorarios:0}; };
 
   (programas||[]).forEach(prog=>{
-    // Ingresos por parcialidades
     ests(prog).forEach(est=>{
       const p=est.pago;
       if(!p||!p.monto_acordado) return;
       const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
+      const total=p.parcialidades?.length||1;
 
       if(p.tipo==="unico"){
-        // Pago único: asignar al mes de inicio del programa
-        const mesKey=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
-        if(!mesKey)return;
-        if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
-        byMes[mesKey].esperado+=mf;
-        const pagado=(p.parcialidades||[]).some(x=>x.pagado);
-        if(pagado)byMes[mesKey].cobrado+=mf;
+        // Esperado: mes de inicio del programa
+        const mesEsp=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
+        if(mesEsp){ ini(mesEsp); byMes[mesEsp].esperado+=mf; }
+        // Cobrado: mes en que se registró el pago
+        const parc=(p.parcialidades||[])[0];
+        if(parc?.pagado&&parc?.fecha_pago){
+          const mesCob=parc.fecha_pago.substring(0,7);
+          ini(mesCob); byMes[mesCob].cobrado+=mf;
+        }
       } else {
-        // Parcialidades: asignar cada una a su mes de vencimiento
         (p.parcialidades||[]).forEach(parc=>{
-          const mesKey=(parc.fecha_vencimiento||parc.fecha_pago||"").substring(0,7);
-          if(!mesKey)return;
-          if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
-          const montoParcialidad=getMontoParc(parc,mf,p.parcialidades.length||1);
-          byMes[mesKey].esperado+=montoParcialidad;
-          if(parc.pagado)byMes[mesKey].cobrado+=montoParcialidad;
+          const montoParc=getMontoParc(parc,mf,total);
+          // Esperado: por fecha_vencimiento
+          const mesEsp=(parc.fecha_vencimiento||"").substring(0,7);
+          if(mesEsp){ ini(mesEsp); byMes[mesEsp].esperado+=montoParc; }
+          // Cobrado: por fecha_pago real
+          if(parc.pagado&&parc.fecha_pago){
+            const mesCob=parc.fecha_pago.substring(0,7);
+            ini(mesCob); byMes[mesCob].cobrado+=montoParc;
+          }
         });
       }
     });
 
-    // Honorarios por módulo: asignar al mes de inicio del módulo
+    // Honorarios: por mes de inicio del módulo
     mods(prog).forEach(mod=>{
       if(!mod.fechaInicio)return;
       const mesKey=mod.fechaInicio.substring(0,7);
-      if(!byMes[mesKey])byMes[mesKey]={esperado:0,cobrado:0,honorarios:0};
-      byMes[mesKey].honorarios+=calcHonorarios(mod,docentes);
+      ini(mesKey); byMes[mesKey].honorarios+=calcHonorarios(mod,docentes);
     });
   });
 
@@ -4916,9 +4922,10 @@ export default function App() {
           const activos=todosEsts.filter(({prog})=>progStatus(prog)==="activo");
           const porIniciar=todosEsts.filter(({prog})=>progStatus(prog)==="proximo");
 
-          // KPIs de pagos — cobradoMes por fecha_pago real (cuánto entró a caja este mes)
+          // KPIs de pagos
           const proyMensDash=proyeccionMensual(programas,docentes);
-          let cobradoMes=0,esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
+          const cobradoMes=proyMensDash[mesActual]?.cobrado||0; // por fecha_pago
+          let esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
           let cntVencidos=0,cntCriticos=0,montoVencido=0;
           todosEsts.forEach(({e,prog})=>{
             const p=e.pago||{};
@@ -4926,11 +4933,7 @@ export default function App() {
             const cobrado=getMontoCobrado(p);
             const pendiente=getMontoPendiente(p);
             esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=pendiente;
-            // Cobrado este mes — por fecha_pago real
-            const total=(p.parcialidades||[]).length;
-            (p.parcialidades||[]).filter(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mesActual))
-              .forEach(parc=>{ cobradoMes+=getMontoParc(parc,mf,total); });
-            // Vencidos — monto real de parcialidades vencidas
+            // Vencidos
             const ep=calcEstadoPagos(e);
             if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,(p.parcialidades||[]).length),0);}
             else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=getMontoParc(ep.conRecargo[0],mf,(p.parcialidades||[]).length);}
@@ -4971,23 +4974,17 @@ export default function App() {
           // Sin docente confirmado
           const sinConfirmar=(programas||[]).flatMap(prog=>mods(prog).filter(m=>m.estatus!=="confirmado"&&m.docente&&progStatus(prog)!=="finalizado").map(m=>({m,prog})));
 
-          // Gráfica últimos 6 meses — por fecha_pago real (cuánto entró a caja cada mes)
+          // Gráfica últimos 6 meses — cobrado por fecha_pago, esperado por fecha_vencimiento
           const meses6=Array.from({length:6},(_,i)=>{
             const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-5+i);
             return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
           });
-          const datosMeses=meses6.map(mes=>{
-            let cobrado=0;
-            todosEsts.forEach(({e})=>{
-              const p=e.pago||{};
-              const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
-              const total=(p.parcialidades||[]).length;
-              (p.parcialidades||[]).filter(x=>x.pagado&&x.fecha_pago&&x.fecha_pago.startsWith(mes))
-                .forEach(parc=>{ cobrado+=getMontoParc(parc,mf,total); });
-            });
-            return{mes,cobrado,esperado:proyMensDash[mes]?.esperado||0};
-          });
-          const maxBar=Math.max(...datosMeses.map(d=>d.cobrado),1);
+          const datosMeses=meses6.map(mes=>({
+            mes,
+            cobrado:proyMensDash[mes]?.cobrado||0,
+            esperado:proyMensDash[mes]?.esperado||0,
+          }));
+          const maxBar=Math.max(...datosMeses.map(d=>d.mes===mesActual?Math.max(d.cobrado,d.esperado):d.cobrado),1);
 
           const KPICard=({label,value,sub,color,onClick,activo})=>(
             <div onClick={onClick} style={{...S.card,padding:"18px 20px",cursor:onClick?"pointer":"default",borderLeft:"4px solid "+(color||"#e5e7eb"),transition:"box-shadow .15s",boxShadow:activo?"0 0 0 3px "+(color||RED)+"33":"none"}}>
@@ -5022,23 +5019,53 @@ export default function App() {
                 {/* Gráfica cobros */}
                 <div style={{...S.card,padding:"20px 22px"}}>
                   <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,marginBottom:16}}>Cobros últimos 6 meses</div>
-                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:120}}>
-                    {datosMeses.map(({mes,cobrado})=>{
-                      const pct=Math.round((cobrado/maxBar)*100);
+                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
+                    {datosMeses.map(({mes,cobrado,esperado})=>{
                       const esMesAct=mes===mesActual;
+                      const pendienteMes=esMesAct?Math.max(0,esperado-cobrado):0;
+                      const totalBar=esMesAct?Math.max(cobrado+pendienteMes,cobrado,1):cobrado;
+                      const pctCob=Math.round((totalBar/maxBar)*100);
+                      const altoCob=Math.max(pctCob/100*110,cobrado>0?4:0);
+                      const altoPend=esMesAct&&pendienteMes>0?Math.round((pendienteMes/(cobrado+pendienteMes))*altoCob):0;
+                      const altoRojo=altoCob-altoPend;
                       return(
                         <div key={mes} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                          <div style={{fontSize:9,fontWeight:700,color:esMesAct?RED:"#9ca3af",fontFamily:"system-ui"}}>{cobrado>0?fmtMXN(cobrado).replace("$","$"):""}</div>
-                          <div style={{width:"100%",background:esMesAct?RED:"#e5e7eb",borderRadius:"4px 4px 0 0",height:Math.max(pct/100*90,4),transition:"height .3s"}}/>
-                          <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>{MESES[parseInt(mes.split("-")[1])-1]}</div>
+                          {esMesAct?(
+                            <div style={{fontSize:9,fontWeight:700,color:RED,fontFamily:"system-ui",textAlign:"center",lineHeight:1.4}}>
+                              <div>{fmtMXN(cobrado)}</div>
+                              {pendienteMes>0&&<div style={{color:"#9ca3af",fontWeight:400}}>−{fmtMXN(pendienteMes)}</div>}
+                            </div>
+                          ):(
+                            <div style={{fontSize:9,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>{cobrado>0?fmtMXN(cobrado):""}</div>
+                          )}
+                          <div style={{width:"100%",display:"flex",flexDirection:"column",borderRadius:"4px 4px 0 0",overflow:"hidden"}}>
+                            {esMesAct&&altoPend>0&&<div style={{width:"100%",background:"#fecaca",height:altoPend,transition:"height .3s"}}/>}
+                            <div style={{width:"100%",background:esMesAct?RED:"#e5e7eb",height:Math.max(altoRojo,cobrado>0?4:2),transition:"height .3s"}}/>
+                          </div>
+                          <div style={{fontSize:9,color:esMesAct?RED:"#9ca3af",fontWeight:esMesAct?700:400,fontFamily:"system-ui"}}>{MESES[parseInt(mes.split("-")[1])-1]}</div>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6",display:"flex",justifyContent:"space-between",fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
-                    <span>Total cobrado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
-                    <span>Esperado: <strong>{fmtMXN(esperadoTotal)}</strong></span>
-                  </div>
+                  {(()=>{
+                    const dMes=datosMeses.find(d=>d.mes===mesActual)||{cobrado:0,esperado:0};
+                    const pendMes=Math.max(0,dMes.esperado-dMes.cobrado);
+                    return(
+                      <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6",fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:pendMes>0?6:0}}>
+                          <span>Total cobrado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
+                          <span>Esperado total: <strong>{fmtMXN(esperadoTotal)}</strong></span>
+                        </div>
+                        {pendMes>0&&(
+                          <div style={{display:"flex",alignItems:"center",gap:6,background:"#fff5f5",borderRadius:6,padding:"6px 10px",border:"1px solid #fecaca"}}>
+                            <div style={{width:8,height:8,borderRadius:2,background:"#fecaca",flexShrink:0}}/>
+                            <span style={{color:"#dc2626",fontWeight:600}}>Falta cobrar este mes: {fmtMXN(pendMes)}</span>
+                            <span style={{color:"#9ca3af",marginLeft:"auto"}}>de {fmtMXN(dMes.esperado)} esperado</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Pendientes del día */}
@@ -7533,10 +7560,10 @@ export default function App() {
                   {repVista==="mes"&&(()=>{
                     const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
                     const margen=d.esperado-d.honorarios;
-                    // Programas activos ese mes
+                    // Programas activos ese mes — módulo ese mes O cobro registrado ese mes
                     const progsDelMes=(programas||[]).filter(p=>
                       mods(p).some(m=>m.fechaInicio&&m.fechaInicio.substring(0,7)===repMes)||
-                      ests(p).some(e=>(e.pago?.parcialidades||[]).some(pa=>pa.fecha_vencimiento?.substring(0,7)===repMes))
+                      ests(p).some(e=>(e.pago?.parcialidades||[]).some(pa=>pa.pagado&&pa.fecha_pago?.substring(0,7)===repMes))
                     );
                     return(
                       <div style={{...S.card}}>
@@ -7556,11 +7583,11 @@ export default function App() {
                               const modsDelMes=mods(p).filter(m=>m.fechaInicio?.substring(0,7)===repMes);
                               const honMes=modsDelMes.reduce((a,m)=>a+calcHonorarios(m,docentes),0);
                               const ingMes=ests(p).reduce((a,e)=>{
-                                const pg=e.pago;if(!pg)return a;
-                                if(pg.tipo==="parcialidades"){
-                                  return a+(pg.parcialidades||[]).filter(pa=>pa.fecha_vencimiento?.substring(0,7)===repMes).reduce((s,pa)=>s+(pg.monto_acordado*(1-(pg.descuento_pct||0)/100))/(pg.parcialidades.length||1),0);
-                                }
-                                return a;
+                                const pg=e.pago;if(!pg||!pg.monto_acordado)return a;
+                                const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
+                                const total=(pg.parcialidades||[]).length||1;
+                                return a+(pg.parcialidades||[]).filter(pa=>pa.pagado&&pa.fecha_pago?.substring(0,7)===repMes)
+                                  .reduce((s,pa)=>s+getMontoParc(pa,mf,total),0);
                               },0);
                               return(
                                 <div key={p.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap",alignItems:"center"}}>
