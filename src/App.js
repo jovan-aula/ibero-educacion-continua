@@ -4057,6 +4057,7 @@ export default function App() {
         rol: u.rol||"auxiliar",
         permisos: u.permisos||{},
         activo: u.activo!==false,
+        avatar_url: u.avatar_url||"",
       }))).catch(e=>{ console.error("Sync usuarios:",e); return false; });
       if (ok === false) notify("Error al guardar usuarios.", "error");
     }
@@ -7870,7 +7871,7 @@ export default function App() {
                       <>
                         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
                           <div style={{flex:1}}><div style={{fontWeight:600,fontSize:14,fontFamily:"system-ui"}}>{u.nombre}</div><div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{u.email}</div></div>
-                          <button onClick={()=>{setEditUserIdx(i);setEditUserForm({nombre:u.nombre,email:u.email,newPassword:""});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar</button>
+                          <button onClick={()=>{setEditUserIdx(i);setEditUserForm({nombre:u.nombre,email:u.email,avatar_url:u.avatar_url||"",newPassword:""});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar</button>
                           {u.email!==session.email&&<button onClick={()=>setCS({titulo:"Eliminar usuario",mensaje:`¿Estás seguro de que deseas eliminar al usuario "${u.nombre}"? Perderá acceso al sistema.`,onConfirm:()=>saveUsers((users||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
                         </div>
                         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
