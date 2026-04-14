@@ -4517,6 +4517,14 @@ export default function App() {
       .leyenda{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-family:Arial,sans-serif;font-size:12px;}
       .leyenda-item{display:flex;align-items:center;gap:6px;}
       .leyenda-dot{width:12px;height:12px;border-radius:3px;}
+      .cal-day.pago-limite{background:#eff6ff;border-color:#bfdbfe;}
+      .cal-num.pago{color:#1d4ed8;font-weight:800;}
+      .pago-badge{font-size:8px;color:#1d4ed8;font-weight:700;line-height:1.2;margin-top:1px;}
+      .pago-info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-top:16px;font-family:Arial,sans-serif;font-size:12px;color:#1e40af;}
+      .pago-info-box strong{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;color:#1d4ed8;}
+      .pago-info-row{display:flex;gap:24px;flex-wrap:wrap;}
+      .pago-info-item{display:flex;align-items:center;gap:6px;}
+      .pago-info-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
     </style></head><body><div class="page">
     <div class="header"><img src="${IBERO_LOGO}" alt="IBERO"/><div class="header-text"><h1>IBERO TIJUANA</h1><p>COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div></div>
@@ -4547,6 +4555,15 @@ export default function App() {
     <div class="leyenda">
       ${ms.map(m=>`<div class="leyenda-item"><div class="leyenda-dot" style="background:${modColor[m.id]}"></div><span>${m.numero} · ${m.nombre.split(" ").slice(0,4).join(" ")}</span></div>`).join("")}
       <div class="leyenda-item"><div class="leyenda-dot" style="background:#fde68a;border:1px solid #d97706"></div><span>Festivo</span></div>
+      <div class="leyenda-item"><div class="leyenda-dot" style="background:#eff6ff;border:1px solid #bfdbfe"></div><span>Límite pago mensualidad (día 15)</span></div>
+    </div>
+    <div class="pago-info-box">
+      <strong>Información de pago de mensualidad</strong>
+      <div class="pago-info-row">
+        <div class="pago-info-item"><div class="pago-info-dot" style="background:#22c55e"></div><span>Días <strong>1 al 15</strong> de cada mes — período de pago sin recargo</span></div>
+        <div class="pago-info-item"><div class="pago-info-dot" style="background:#1d4ed8"></div><span>Día <strong>15</strong> — último día para pago al corriente</span></div>
+        <div class="pago-info-item"><div class="pago-info-dot" style="background:#ef4444"></div><span>Después del día 15 — recargo del <strong>6.5%</strong> sobre el monto pendiente</span></div>
+      </div>
     </div>`;
 
     // Calendarios por mes
@@ -4563,9 +4580,10 @@ export default function App() {
         if(!valid){html+=`<div class="cal-day vacio"></div>`;continue;}
         const iso=anio+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
         const fest=isFestivo(iso);
+        const esPagoLimite=d===15;
         const clasesDelDia=byD[d]||[];
-        html+=`<div class="cal-day${fest?" festivo":""}">
-          <div class="cal-num${fest?" fest":""}">${d}${fest?`<div style="font-size:8px;color:#d97706">${fest}</div>`:""}</div>
+        html+=`<div class="cal-day${fest?" festivo":""}${esPagoLimite?" pago-limite":""}">
+          <div class="cal-num${fest?" fest":""}${esPagoLimite?" pago":""}">${d}${fest?`<div style="font-size:8px;color:#d97706">${fest}</div>`:""}${esPagoLimite?`<div class="pago-badge">límite pago</div>`:""}</div>
           ${clasesDelDia.map(m=>`<div class="clase-chip" style="background:${modColor[m.id]}">${m.numero}</div>`).join("")}
         </div>`;
       }
