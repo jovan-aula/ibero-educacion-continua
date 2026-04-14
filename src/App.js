@@ -4567,7 +4567,9 @@ export default function App() {
     </div>`;
 
     // Calendarios por mes
+    const mesKeys=Object.keys(byMes).sort();
     Object.values(byMes).forEach(({anio,mes,clases})=>{
+      const esPrimerMes=(anio+"-"+String(mes+1).padStart(2,"0"))===mesKeys[0];
       const pD=new Date(anio,mes,1),uD=new Date(anio,mes+1,0),off=(pD.getDay()+6)%7;
       const tot=Math.ceil((off+uD.getDate())/7)*7;
       const byD={};
@@ -4580,7 +4582,7 @@ export default function App() {
         if(!valid){html+=`<div class="cal-day vacio"></div>`;continue;}
         const iso=anio+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
         const fest=isFestivo(iso);
-        const esPagoLimite=d===15;
+        const esPagoLimite=d===15&&!esPrimerMes;
         const clasesDelDia=byD[d]||[];
         html+=`<div class="cal-day${fest?" festivo":""}${esPagoLimite?" pago-limite":""}">
           <div class="cal-num${fest?" fest":""}${esPagoLimite?" pago":""}">${d}${fest?`<div style="font-size:8px;color:#d97706">${fest}</div>`:""}${esPagoLimite?`<div class="pago-badge">límite pago</div>`:""}</div>
