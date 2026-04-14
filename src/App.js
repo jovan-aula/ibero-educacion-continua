@@ -2445,14 +2445,14 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
         const fechas = getFechas(modActivo);
         const activos = estudiantes.filter(e=>e.estatus!=="baja");
         const ql = busqAsist.toLowerCase().trim();
-        const activosFiltrados = ql
+        const activosFiltrados = (ql
           ? activos.filter(e=>
               e.nombre?.toLowerCase().includes(ql)||
               e.email?.toLowerCase().includes(ql)||
               e.telefono?.includes(ql)||
               e.empresa?.toLowerCase().includes(ql)
             )
-          : activos;
+          : activos).sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
         return(
           <div>
             <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
@@ -5529,7 +5529,7 @@ export default function App() {
                   </div>
                 )}
                 <div style={{display:"grid",gap:10}}>
-                  {ests(prog).filter(e=>{const q=busqEst.toLowerCase();return(!busqEst||(e.nombre&&e.nombre.toLowerCase().includes(q))||(e.empresa&&e.empresa.toLowerCase().includes(q))||(e.email&&e.email.toLowerCase().includes(q)))&&(!filtroEst||(e.estatus||"activo")===filtroEst);}).map(e=>{
+                  {ests(prog).filter(e=>{const q=busqEst.toLowerCase();return(!busqEst||(e.nombre&&e.nombre.toLowerCase().includes(q))||(e.empresa&&e.empresa.toLowerCase().includes(q))||(e.email&&e.email.toLowerCase().includes(q)))&&(!filtroEst||(e.estatus||"activo")===filtroEst);}).sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es")).map(e=>{
                     const pct=calcPct(e,mods(prog)), riesgo=pct!==null&&pct<80;
                     return(
                       <div key={e.id} style={{...S.card,border:"1px solid "+(riesgo?"#fca5a5":"#e5e7eb"),padding:"14px 18px"}}>
@@ -6438,7 +6438,7 @@ export default function App() {
               return e.nombre?.toLowerCase().includes(q)||e.email?.toLowerCase().includes(q)||e.telefono?.toLowerCase().includes(q)||tieneFolio;
             }
             return true;
-          });
+          }).sort((a,b)=>(a.e.nombre||"").localeCompare(b.e.nombre||"","es"));
           // Contadores para badges
           const cPagaron=todos.filter(({e})=>pagoEnMes(e,filtroFactMes)).length;
           const cPendiente=todos.filter(({e})=>esPendienteFact(e)).length;
