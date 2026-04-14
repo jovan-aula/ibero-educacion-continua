@@ -5268,9 +5268,9 @@ export default function App() {
                   const maxClases=fechas.length||mod.clases||0;
                   const todosEsts=ests(prog);
                   const presentes=todosEsts.filter(e=>presenteHoy(e,mod.id)).length;
-                  const estudiantesFiltrados=busqHoy
+                  const estudiantesFiltrados=(busqHoy
                     ? todosEsts.filter(e=>e.nombre.toLowerCase().includes(busqHoy.toLowerCase()))
-                    : todosEsts;
+                    : todosEsts).sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
                   return(
                     <div key={prog.id+"_"+mod.id} style={{...S.card,overflow:"hidden"}}>
                       {/* Header del módulo */}
