@@ -3723,6 +3723,7 @@ export default function App() {
   const programasRef = useRef(programas);
   const notifCfgRef = useRef(null);
   const syncFnRef = useRef(null);
+  const recargarRef = useRef(null);
   useEffect(()=>{ programasRef.current = programas; }, [programas]);
   useEffect(()=>{ notifCfgRef.current = notifCfg; }, [notifCfg]);
 
@@ -3932,8 +3933,16 @@ export default function App() {
     };
 
     cargarProgramas();
+    recargarRef.current = cargarProgramas;
     }; // fin init
     init();
+  },[]);
+
+  // Refresh automático al volver a la pestaña
+  useEffect(()=>{
+    const h=()=>{ if(document.visibilityState==="visible"&&recargarRef.current) recargarRef.current(); };
+    document.addEventListener("visibilitychange",h);
+    return()=>document.removeEventListener("visibilitychange",h);
   },[]);
 
   useEffect(()=>{
