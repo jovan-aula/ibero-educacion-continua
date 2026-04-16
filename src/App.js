@@ -501,18 +501,25 @@ const getAlertas = (programas, docentes=[]) => {
     ests(prog).forEach(est => {
       if (est.estatus==="baja"||est.estatus==="inactivo") return;
 
-      // Asistencia: >20% de faltas en cualquier módulo con sesiones transcurridas
-      let maxPct=0, maxFaltas=0, modFaltas=null;
+      // Asistencia: ≥3 faltas acumuladas O ≥2 consecutivas en cualquier módulo
       mods(prog).forEach(mod=>{
-        const pasadas=getFechasMod(mod).filter(f=>f<=hoy);
+        const pasadas=getFechasMod(mod).filter(f=>f<=hoy).sort();
         if(!pasadas.length)return;
         const v=est.asistencia&&est.asistencia["mod_"+mod.id];
-        const presentes=Array.isArray(v)?v.length:(v||0);
-        const faltas=pasadas.length-presentes;
-        const pct=faltas/pasadas.length;
-        if(pct>maxPct){maxPct=pct;maxFaltas=faltas;modFaltas=mod;}
+        const presentesArr=Array.isArray(v)?v:[];
+        const presentesNum=Array.isArray(v)?v.length:(v||0);
+        const faltas=pasadas.length-presentesNum;
+        // Consecutivas (solo si tenemos datos por fecha)
+        let maxConsec=0,consec=0;
+        if(Array.isArray(v)){
+          pasadas.forEach(f=>{
+            if(!presentesArr.includes(f)){consec++;maxConsec=Math.max(maxConsec,consec);}
+            else{consec=0;}
+          });
+        }
+        const pct=pasadas.length>0?Math.round(faltas/pasadas.length*100):0;
+        if(faltas>=3||maxConsec>=2) alerts.push({tipo:"asistencia",prog,est,faltas,pct,mod,consecutivas:maxConsec});
       });
-      if(maxPct>0.2&&modFaltas) alerts.push({tipo:"asistencia",prog,est,faltas:maxFaltas,pct:Math.round(maxPct*100),mod:modFaltas});
 
       // Pagos vencidos
       const ep = calcEstadoPagos(est);
@@ -4977,8 +4984,8 @@ export default function App() {
                         <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}</div>
                       </>}
                       {a.tipo==="asistencia"&&<>
-                        <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.pct}% de faltas</div>
-                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · {a.mod?.nombre||""}<br/>{a.faltas} sesión{a.faltas!==1?"es":""} sin asistir</div>
+                        <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.faltas} falta{a.faltas!==1?"s":""} {a.consecutivas>=2?`(${a.consecutivas} consecutivas)`:""}</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · {a.mod?.nombre||""}<br/>{a.pct}% de sesiones sin asistir</div>
                       </>}
                       {a.tipo==="pago_recargo"&&<>
                         <div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>{a.est.nombre} — 1 pago vencido</div>
