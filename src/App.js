@@ -830,6 +830,16 @@ function EvaluacionDocente({programas}) {
   const prog = (programas||[]).find(p=>p.id===progId);
   const mod  = prog && mods(prog).find(m=>m.id===modId);
   if (!prog||!mod) return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Módulo no encontrado.</div>;
+  if (mod.eval_cerrada) return (
+    <div style={{minHeight:"100vh",background:"#f2f2f2",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",padding:16}}>
+      <div style={{background:"#fff",borderRadius:12,maxWidth:480,width:"100%",padding:40,textAlign:"center",boxShadow:"0 4px 32px rgba(0,0,0,0.08)"}}>
+        <div style={{width:64,height:64,borderRadius:"50%",background:"#f3f4f6",border:"3px solid #9ca3af",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>🔒</div>
+        <div style={{fontWeight:700,fontSize:20,fontFamily:"Georgia,serif",marginBottom:8}}>Evaluación cerrada</div>
+        <div style={{fontSize:14,color:"#6b7280",marginBottom:20,lineHeight:1.6}}>El período de evaluación para este módulo ha concluido. Gracias por tu participación.</div>
+        <div style={{fontSize:13,color:"#9ca3af"}}>IBERO Tijuana · Coordinación de Educación Continua</div>
+      </div>
+    </div>
+  );
 
   const [resp,setResp]     = useState({q1:null,q2:null,q3:null,q4:null,q5:null,comentarios:""});
   const [enviado,setEnviado] = useState(false);
