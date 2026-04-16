@@ -3687,6 +3687,8 @@ export default function App() {
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
+  const [progListTab,setProgListTab] = useState("lista"); // "lista" | "proximos"
+  const [diasVentana,setDiasVentana] = useState(15);
   const [busqEst,setBusqEst]     = useState("");
   const [filtroEst,setFiltroEst] = useState("");
   const alertRef = useRef(null);
@@ -4373,10 +4375,11 @@ export default function App() {
   const alertasVisible = alertasTodas.filter(a=>!alertasDesc.includes(alertaKey(a)));
   const alertas = alertasVisible;
 
+  const PROG_ST_ORD = {activo:0,proximo:1,finalizado:2,sin_fechas:3};
   const progsF = (programas||[]).filter(p=>{
     const q=busqProg.toLowerCase();
     return (!busqProg||p.nombre.toLowerCase().includes(q))&&(!filtroProg||p.tipo===filtroProg)&&(!filtroSt||progStatus(p)===filtroSt);
-  });
+  }).sort((a,b)=>(PROG_ST_ORD[progStatus(a)]??9)-(PROG_ST_ORD[progStatus(b)]??9)||(a.nombre||"").localeCompare(b.nombre||"","es"));
 
   const egresados = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="egresado").map(e=>({...e,programa:p.nombre})));
   const activos   = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus!=="egresado"&&e.estatus!=="baja"&&e.estatus!=="inactivo"&&progStatus(p)==="activo"));
@@ -5393,6 +5396,166 @@ export default function App() {
         {/* LISTA DE PROGRAMAS */}
         {view==="lista"&&(
           <div>
+            {/* TABS: Lista / Próximos */}
+            {(()=>{
+              const sinConf=(programas||[]).flatMap(prog=>mods(prog).filter(m=>m.estatus!=="confirmado"&&m.docente&&progStatus(prog)!=="finalizado"&&m.fechaInicio&&m.fechaInicio>=today()&&Math.round((new Date(m.fechaInicio+"T12:00:00")-new Date(today()+"T12:00:00"))/(86400000))<=diasVentana)).length;
+              return(
+                <div style={{display:"flex",...S.card,overflow:"hidden",marginBottom:20}}>
+                  {[["lista","Lista de programas"],["proximos","Módulos próximos"+(sinConf>0?` · ${sinConf} sin confirmar`:"")]].map(([t,l])=>(
+                    <button key={t} onClick={()=>setProgListTab(t)}
+                      style={{flex:1,padding:"12px 16px",border:"none",borderBottom:progListTab===t?"3px solid "+RED:"3px solid transparent",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"system-ui",background:"#fff",color:progListTab===t?RED:(t==="proximos"&&sinConf>0?"#d97706":"#6b7280")}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* ── PESTAÑA PRÓXIMOS ── */}
+            {progListTab==="proximos"&&(()=>{
+              const hoy=today();
+              // Recolectar módulos dentro de la ventana (incluye sin fecha de inicio = los pasados sin confirmar)
+              const modulos=[];
+              (programas||[]).forEach(prog=>{
+                if(progStatus(prog)==="finalizado")return;
+                mods(prog).forEach(mod=>{
+                  if(!mod.docente)return; // sin docente asignado no aplica
+                  const inicio=mod.fechaInicio||"";
+                  if(!inicio)return;
+                  const diasHasta=Math.round((new Date(inicio+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));
+                  // Mostrar: inicia en los próximos N días O ya inició pero sigue sin confirmar
+                  const enVentana = diasHasta>=0&&diasHasta<=diasVentana;
+                  const sinConfYaInicio = mod.estatus!=="confirmado"&&diasHasta<0&&diasHasta>=-14;
+                  if(!enVentana&&!sinConfYaInicio)return;
+                  const fechas=getFechasMod(mod);
+                  const ultimaFecha=fechas.length?fechas[fechas.length-1]:mod.fechaFin||"";
+                  modulos.push({prog,mod,diasHasta,inicio,ultimaFecha,enVentana,sinConfYaInicio});
+                });
+              });
+              modulos.sort((a,b)=>{
+                // Sin confirmar primero, luego por fecha de inicio
+                if(a.mod.estatus!=="confirmado"&&b.mod.estatus==="confirmado")return -1;
+                if(a.mod.estatus==="confirmado"&&b.mod.estatus!=="confirmado")return 1;
+                return a.inicio.localeCompare(b.inicio);
+              });
+              const sinConf=modulos.filter(x=>x.mod.estatus!=="confirmado");
+              const conf=modulos.filter(x=>x.mod.estatus==="confirmado");
+
+              const docObj=mod=>(docentes||[]).find(d=>d.id===mod.docenteId)||null;
+
+              const tarjetaMod=({prog,mod,diasHasta,inicio,ultimaFecha,sinConfYaInicio})=>{
+                const doc=docObj(mod);
+                const confirmado=mod.estatus==="confirmado";
+                const diasLabel=sinConfYaInicio?`Inició hace ${Math.abs(diasHasta)} día${Math.abs(diasHasta)!==1?"s":""}`:diasHasta===0?"Inicia hoy":diasHasta===1?"Inicia mañana":`Inicia en ${diasHasta} días`;
+                const borderColor=confirmado?"#16a34a":sinConfYaInicio?"#dc2626":"#d97706";
+                // Mensaje WhatsApp pre-armado
+                const nombreDoc=doc?fmtDocente(doc):mod.docente||"";
+                const waMsg=`Hola ${nombreDoc}, le confirmamos que el módulo ${mod.numero} — *${mod.nombre}* del programa *${prog.nombre}* inicia el *${fmtFecha(inicio)}*. Le pedimos confirmar su participación. ¡Muchas gracias!`;
+                const waTel=doc?.telefono||"";
+                const waUrl=`https://wa.me/${waTel.replace(/\D/g,"")}?text=${encodeURIComponent(waMsg)}`;
+                const waUrlSinTel=`https://wa.me/?text=${encodeURIComponent(waMsg)}`;
+                return(
+                  <div key={mod.id} style={{...S.card,padding:"16px 20px",borderLeft:"4px solid "+borderColor}}>
+                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                          <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:800,fontFamily:"system-ui"}}>{mod.numero}</span>
+                          <span style={{fontWeight:700,fontSize:14}}>{mod.nombre}</span>
+                          {confirmado
+                            ?<span style={{fontSize:10,background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>✓ Confirmado</span>
+                            :<span style={{fontSize:10,background:sinConfYaInicio?"#fef2f2":"#fffbeb",color:sinConfYaInicio?"#dc2626":"#d97706",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>{sinConfYaInicio?"Sin confirmar — ya inició":"Propuesta"}</span>
+                          }
+                        </div>
+                        <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:600,color:prog.color}}>{prog.nombre}{prog.generacion?" · "+prog.generacion+" gen.":""}</span>
+                          <span>·</span>
+                          <span style={{color:confirmado?"#16a34a":sinConfYaInicio?"#dc2626":"#d97706",fontWeight:600}}>{diasLabel}</span>
+                          <span>· {fmtFecha(inicio)}{ultimaFecha&&ultimaFecha!==inicio?" → "+fmtFecha(ultimaFecha):""}</span>
+                        </div>
+                        <div style={{fontSize:12,color:"#374151",fontFamily:"system-ui",marginTop:4}}>
+                          <span style={{fontWeight:600}}>{doc?fmtDocente(doc):mod.docente}</span>
+                          {mod.horario&&<span style={{color:"#9ca3af"}}> · {mod.horario}</span>}
+                          {(doc?.telefono||mod.emailDocente)&&<span style={{color:"#9ca3af"}}> · {doc?.telefono||""}{doc?.telefono&&mod.emailDocente?" · ":""}{mod.emailDocente||""}</span>}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}}>
+                        {!confirmado&&(
+                          <button onClick={()=>confirmar(prog.id,mod.id)}
+                            style={S.btn("#f0fdf4","#16a34a",{padding:"6px 12px",fontSize:12,border:"1px solid #bbf7d0",fontWeight:700})}>
+                            ✓ Confirmar
+                          </button>
+                        )}
+                        <button onClick={()=>window.open(waTel?waUrl:waUrlSinTel,"_blank")}
+                          style={S.btn("#f0fdf4","#16a34a",{padding:"6px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>
+                          WhatsApp
+                        </button>
+                        <button onClick={()=>exportPDF(prog)}
+                          style={S.btn("#eff6ff","#2563eb",{padding:"6px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>
+                          Calendario
+                        </button>
+                        <button onClick={()=>{setSelProg(prog.id);setProgTab("modulos");setView("programa");}}
+                          style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>
+                          Ver programa
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              };
+
+              return(
+                <div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+                    <div>
+                      <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Módulos próximos</h1>
+                      <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>{modulos.length} módulo{modulos.length!==1?"s":""} · {sinConf.length} sin confirmar</p>
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>Ventana:</span>
+                      {[7,15,30].map(d=>(
+                        <button key={d} onClick={()=>setDiasVentana(d)}
+                          style={{border:"2px solid "+(diasVentana===d?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui",background:diasVentana===d?RED:"#fff",color:diasVentana===d?"#fff":"#9ca3af"}}>
+                          {d} días
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {sinConf.length>0&&(
+                    <div style={{marginBottom:24}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                        <div style={{width:10,height:10,borderRadius:"50%",background:"#d97706",flexShrink:0}}/>
+                        <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#d97706"}}>Sin confirmar ({sinConf.length})</span>
+                      </div>
+                      <div style={{display:"grid",gap:10}}>
+                        {sinConf.map(item=>tarjetaMod(item))}
+                      </div>
+                    </div>
+                  )}
+
+                  {conf.length>0&&(
+                    <div style={{marginBottom:24}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                        <div style={{width:10,height:10,borderRadius:"50%",background:"#16a34a",flexShrink:0}}/>
+                        <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#16a34a"}}>Confirmados ({conf.length})</span>
+                      </div>
+                      <div style={{display:"grid",gap:10}}>
+                        {conf.map(item=>tarjetaMod(item))}
+                      </div>
+                    </div>
+                  )}
+
+                  {modulos.length===0&&(
+                    <div style={{...S.card,padding:40,textAlign:"center",color:"#9ca3af",fontFamily:"system-ui"}}>
+                      No hay módulos con docente asignado en los próximos {diasVentana} días.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── PESTAÑA LISTA ── */}
+            {progListTab==="lista"&&<div>
             {/* RESUMEN URGENTES */}
             {(()=>{
               const hoy=today();
@@ -5489,6 +5652,7 @@ export default function App() {
               <div><div style={{fontWeight:700,fontSize:11,marginBottom:8,color:RED,letterSpacing:"1px",fontFamily:"system-ui"}}>DIRECCIÓN DE EDUCACIÓN CONTINUA</div><div style={{fontSize:12,color:"#6b7280",lineHeight:1.9,fontFamily:"system-ui"}}>Av. Centro Universitario #2501, Playas de Tijuana, C.P. 22500<br/>Tel: 664 630 1577 Ext. 2576 · WhatsApp: 664 764 1119<br/><a href="mailto:info@tijuana.ibero.mx" style={{color:RED,textDecoration:"none"}}>info@tijuana.ibero.mx</a></div></div>
               <div style={{maxWidth:260,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",lineHeight:1.7,alignSelf:"flex-end"}}>Pertenecemos a la red universitaria más grande del mundo, con más de 220 instituciones en los 5 continentes.<br/>© 2026 IBERO Tijuana.</div>
             </div>
+            </div>}
           </div>
         )}
 
