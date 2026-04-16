@@ -150,6 +150,7 @@ const syncToSupabase = async (programas) => {
     fecha_inicio: m.fechaInicio||"", fecha_fin: m.fechaFin||"",
     dias: m.dias||[], fechas_clase: m.fechasClase||[], estatus: m.estatus||"propuesta",
     factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false,
+    eval_cerrada: m.eval_cerrada||false,
   })));
   if(modulos.length){ const ok = await supa.upsert("modulos", modulos); if(!ok) throw new Error("Error al guardar módulos"); }
 
@@ -3832,7 +3833,7 @@ export default function App() {
               horasPorClase: m.horas_por_clase||4, horario: m.horario||"",
               fechaInicio: m.fecha_inicio||"", fechaFin: m.fecha_fin||"",
               dias: m.dias||[], fechasClase: m.fechas_clase||[], estatus: m.estatus||"propuesta",
-              factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false,
+              factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false, eval_cerrada: m.eval_cerrada||false,
             })),
             estudiantes: (supaEsts||[]).filter(e=>e.programa_id===p.id).map(e=>{
               const pago = (supaPagos||[]).find(pg=>pg.estudiante_id===e.id&&pg.programa_id===p.id)
@@ -4902,31 +4903,31 @@ export default function App() {
                         <div style={{flex:1,fontFamily:FONT_BODY,minWidth:0}}>
                           {a.tipo==="sin_docente"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#374151"}}>Sin docente asignado</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""}</div>
                           </>}
                           {a.tipo==="sin_confirmar"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#92400e"}}>Docente sin confirmar</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""} — estatus: propuesta</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""} — estatus: propuesta</div>
                           </>}
                           {a.tipo==="recordatorio_docente"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#2563eb"}}>Recordar calendario al docente</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre} — inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} — inicia en {a.dias} día{a.dias!==1?"s":""}</div>
                           </>}
                           {a.tipo==="factura_docente"&&<>
                             <div style={{fontWeight:700,fontSize:13,color:"#7c3aed"}}>Factura pendiente — vence día 20</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre} · Termina {fmtFecha(a.mod.fechaFin)}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · Termina {fmtFecha(a.mod.fechaFin)}</div>
                           </>}
                           {a.tipo==="asistencia"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.faltas} falta{a.faltas!==1?"s":""}</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre} · {a.mod?.nombre||""}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · {a.mod?.nombre||""}</div>
                           </>}
                           {a.tipo==="pago_recargo"&&<>
                             <div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>{a.est.nombre} — 1 pago vencido</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}<br/>Recargo: {fmtMXN(a.recargo)}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Recargo: {fmtMXN(a.recargo)}</div>
                           </>}
                           {a.tipo==="pago_critico"&&<>
                             <div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>{a.est.nombre} — {a.vencidas} pagos vencidos</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div>
+                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div>
                           </>}
                           {a.tipo==="orden_firmada"&&(()=>{
                             const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -5336,6 +5337,7 @@ export default function App() {
                           <div style={{fontWeight:700,fontSize:15}}>{mod.nombre}</div>
                           <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui",marginTop:2,display:"flex",gap:12,flexWrap:"wrap"}}>
                             <span>{prog.nombre}</span>
+                            {prog.generacion&&<span style={{background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>{prog.generacion} gen.</span>}
                             {mod.docente&&<span>{mod.docente}</span>}
                             {mod.horario&&<span>{mod.horario}</span>}
                           </div>
@@ -6539,7 +6541,7 @@ export default function App() {
                   <input value={busqFacturacion} onChange={e=>setBusqFacturacion(e.target.value)} placeholder="Buscar nombre, folio..." style={{...S.inp,minWidth:180,fontSize:13}}/>
                   <select value={filtroFactProg} onChange={e=>setFiltroFactProg(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                     <option value="">Todos los programas</option>
-                    {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}{p.generacion?` · ${p.generacion} gen.`:""}</option>)}
                   </select>
                   {(filtroFactProg||busqFacturacion||filtroFactTipo)&&<button onClick={()=>{setFiltroFactProg("");setBusqFacturacion("");setFiltroFactTipo("");}} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px",fontSize:13})}>Limpiar</button>}
                   <button onClick={exportCSV} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",fontSize:13,padding:"8px 16px"})}>Exportar CSV</button>
@@ -6999,9 +7001,15 @@ export default function App() {
                 const hoy = today();
 
                 // Clasificar módulos por estado
-                const pendientes  = []; // terminaron, 0 respuestas
-                const enCurso     = []; // activos o próximos (clase hoy o en los últimos/próximos 14 días)
+                const porTerminar = []; // terminan en 0-2 días, sin eval aún
+                const pendientes  = []; // terminaron hace 0-3 días, sin eval, ventana abierta
+                const enCurso     = []; // activos o próximos
                 const completadas = []; // tienen al menos 1 respuesta
+
+                const cerrarEval = (progId, modId, cerrar) => {
+                  save((programas||[]).map(p=>p.id!==progId?p:{...p,modulos:mods(p).map(m=>m.id!==modId?m:{...m,eval_cerrada:cerrar})}));
+                  notify(cerrar?"Evaluación cerrada.":"Evaluación reabierta.");
+                };
 
                 todosModulos.forEach(item=>{
                   const {mod, evals:evMod} = item;
@@ -7011,10 +7019,14 @@ export default function App() {
                   const termino = ultimaFecha && ultimaFecha < hoy;
                   const activo  = primeraFecha <= hoy && (!ultimaFecha || ultimaFecha >= hoy);
                   const proximo = primeraFecha > hoy;
+                  const diasDesdeTermino = ultimaFecha&&termino ? Math.round((new Date(hoy+"T12:00:00")-new Date(ultimaFecha+"T12:00:00"))/(86400000)) : null;
+                  const diasParaTermino  = ultimaFecha&&!termino ? Math.round((new Date(ultimaFecha+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000)) : null;
+                  const evalCerrada = mod.eval_cerrada || (diasDesdeTermino!==null && diasDesdeTermino>3);
 
-                  if(evMod.length > 0) completadas.push({...item, ultimaFecha, termino});
-                  else if(termino)     pendientes.push({...item, ultimaFecha});
-                  else                 enCurso.push({...item, ultimaFecha, activo, proximo});
+                  if(evMod.length > 0)        completadas.push({...item, ultimaFecha, termino, diasDesdeTermino, evalCerrada});
+                  else if(termino&&!evalCerrada) pendientes.push({...item, ultimaFecha, diasDesdeTermino, evalCerrada:false});
+                  else if(!termino&&diasParaTermino!==null&&diasParaTermino<=2) porTerminar.push({...item, ultimaFecha, diasParaTermino});
+                  else if(!termino)            enCurso.push({...item, ultimaFecha, activo, proximo});
                 });
 
                 // Filtro por programa
@@ -7022,21 +7034,22 @@ export default function App() {
                   ? lista.filter(({prog})=>prog.id===filtroProgEval)
                   : lista;
 
-                const tarjeta = ({prog, mod, evals:evMod, prom, ultimaFecha, estado}) => (
+                const tarjeta = ({prog, mod, evals:evMod, prom, ultimaFecha, estado, diasDesdeTermino, diasParaTermino, evalCerrada}) => (
                   <div key={mod.id} style={{...S.card,padding:"16px 20px",
-                    borderLeft:"4px solid "+(estado==="pendiente"?"#dc2626":estado==="completada"?"#16a34a":prog.color)}}>
+                    borderLeft:"4px solid "+(estado==="por_terminar"?"#d97706":estado==="pendiente"?"#dc2626":estado==="completada"?"#16a34a":prog.color)}}>
                     <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1,minWidth:200}}>
                         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3,flexWrap:"wrap"}}>
                           <span style={{background:prog.color,color:"#fff",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:800,fontFamily:"system-ui"}}>{mod.numero}</span>
                           <span style={{fontWeight:700,fontSize:14}}>{mod.nombre}</span>
-                          {estado==="pendiente"&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>Sin evaluar</span>}
+                          {estado==="por_terminar"&&<span style={{fontSize:10,background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>⏳ Termina en {diasParaTermino===0?"hoy":diasParaTermino===1?"1 día":`${diasParaTermino} días`}</span>}
+                          {estado==="pendiente"&&<span style={{fontSize:10,background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>Sin evaluar · {diasDesdeTermino===1?"1 día":diasDesdeTermino+" días"} restante{diasDesdeTermino!==1?"s":""}</span>}
                           {estado==="completada"&&<span style={{fontSize:10,background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"2px 7px",fontWeight:700,fontFamily:"system-ui"}}>✓ {evMod.length} respuesta{evMod.length!==1?"s":""}</span>}
                         </div>
                         <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",display:"flex",gap:10,flexWrap:"wrap"}}>
                           <span>{prog.nombre}{prog.generacion?" · "+prog.generacion+" gen.":""}</span>
                           {mod.docente&&<span>· {mod.docente}</span>}
-                          {ultimaFecha&&<span>· Terminó {fmtFecha(ultimaFecha)}</span>}
+                          {ultimaFecha&&<span>· {estado==="por_terminar"?"Termina":"Terminó"} {fmtFecha(ultimaFecha)}</span>}
                         </div>
                       </div>
                       {prom!==null&&(
@@ -7045,19 +7058,26 @@ export default function App() {
                           <div style={{fontSize:22,fontWeight:800,color:colorVal(prom),fontFamily:"system-ui"}}>{prom}<span style={{fontSize:12,color:"#9ca3af"}}>/5</span></div>
                         </div>
                       )}
-                      <div style={{display:"flex",gap:6,flexShrink:0}}>
-                        <button onClick={()=>generarEnlaceEval(prog.id,mod.id)}
-                          style={S.btn(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+mod.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#bbf7d0":"#e5e7eb")})}>
-                          {linkCopiado==="eval_"+prog.id+"_"+mod.id?"Copiado":"Copiar enlace"}
-                        </button>
-                        <button onClick={()=>enviarEvalPorCorreo(prog.id,mod.id)}
-                          style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
-                          ✉ Enviar
-                        </button>
+                      <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}}>
+                        {!evalCerrada&&<>
+                          <button onClick={()=>generarEnlaceEval(prog.id,mod.id)}
+                            style={S.btn(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#f0fdf4":"#f3f4f6",linkCopiado==="eval_"+prog.id+"_"+mod.id?"#16a34a":"#374151",{padding:"5px 11px",fontSize:12,border:"1px solid "+(linkCopiado==="eval_"+prog.id+"_"+mod.id?"#bbf7d0":"#e5e7eb")})}>
+                            {linkCopiado==="eval_"+prog.id+"_"+mod.id?"Copiado":"Copiar enlace"}
+                          </button>
+                          <button onClick={()=>enviarEvalPorCorreo(prog.id,mod.id)}
+                            style={S.btn("#f5f3ff","#7c3aed",{padding:"5px 11px",fontSize:12,border:"1px solid #ddd6fe"})}>
+                            ✉ Enviar
+                          </button>
+                        </>}
                         <button onClick={()=>setNpsModal({prog,mod})}
                           style={S.btn("#eff6ff","#2563eb",{padding:"5px 11px",fontSize:12,border:"1px solid #bfdbfe"})}>
                           + Registrar
                         </button>
+                        {estado!=="en_curso"&&estado!=="por_terminar"&&(
+                          mod.eval_cerrada
+                            ? <button onClick={()=>cerrarEval(prog.id,mod.id,false)} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 11px",fontSize:12,border:"1px solid #bbf7d0"})}>Reabrir</button>
+                            : <button onClick={()=>cerrarEval(prog.id,mod.id,true)}  style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12,border:"1px solid #fca5a5"})}>Cerrar eval.</button>
+                        )}
                       </div>
                     </div>
                     {evMod.length>0&&(
@@ -7081,6 +7101,7 @@ export default function App() {
                   </div>
                 );
 
+                const termFilt  = filtrarProg(porTerminar);
                 const pendFilt  = filtrarProg(pendientes);
                 const cursoFilt = filtrarProg(enCurso);
                 const compFilt  = filtrarProg(completadas);
@@ -7097,13 +7118,27 @@ export default function App() {
                       {filtroProgEval&&<button onClick={()=>setFiltroProgEval("")} style={S.btn("#f3f4f6","#374151")}>Ver todos</button>}
                     </div>
 
-                    {/* Pendientes de evaluar */}
+                    {/* Por terminar — enviar eval antes de que acabe */}
+                    {termFilt.length>0&&(
+                      <div style={{marginBottom:24}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                          <div style={{width:10,height:10,borderRadius:"50%",background:"#d97706",flexShrink:0}}/>
+                          <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#d97706"}}>Por terminar — enviar evaluación ahora ({termFilt.length})</span>
+                          <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>— Terminan en 0–2 días</span>
+                        </div>
+                        <div style={{display:"grid",gap:10}}>
+                          {termFilt.map(item=>tarjeta({...item,estado:"por_terminar"}))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pendientes de evaluar — ventana de 3 días */}
                     {pendFilt.length>0&&(
                       <div style={{marginBottom:24}}>
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
                           <div style={{width:10,height:10,borderRadius:"50%",background:"#dc2626",flexShrink:0}}/>
                           <span style={{fontWeight:700,fontSize:14,fontFamily:"system-ui",color:"#dc2626"}}>Pendientes de evaluación ({pendFilt.length})</span>
-                          <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>— Módulos terminados sin respuestas</span>
+                          <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>— Terminaron hace 0–3 días · se cierra automáticamente</span>
                         </div>
                         <div style={{display:"grid",gap:10}}>
                           {pendFilt.map(item=>tarjeta({...item,estado:"pendiente"}))}
@@ -7656,7 +7691,7 @@ export default function App() {
                               return(
                                 <div key={p.id} style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap",alignItems:"center"}}>
                                   <div style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
-                                  <span style={{flex:1,fontWeight:600,fontSize:13}}>{p.nombre}</span>
+                                  <span style={{flex:1,fontWeight:600,fontSize:13}}>{p.nombre}{p.generacion&&<span style={{marginLeft:6,fontSize:11,background:"#f0fdf4",color:"#16a34a",borderRadius:4,padding:"1px 6px",fontWeight:700}}>{p.generacion} gen.</span>}</span>
                                   {ingMes>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#16a34a"}}>Cobros: {fmtMXN(ingMes)}</span>}
                                   {honMes>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:RED}}>Honorarios: {fmtMXN(honMes)}</span>}
                                   {modsDelMes.map(m=><span key={m.id} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontFamily:"system-ui",color:"#6b7280"}}>{m.numero} · {m.docente||"Sin docente"} · {(m.clases||0)*(m.horasPorClase||0)}h</span>)}
