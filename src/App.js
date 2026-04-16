@@ -4475,29 +4475,10 @@ export default function App() {
     notify("Lista exportada con campos completos.");
   };
 
-  const exportPDF = async prog => {
+  const exportPDF = prog => {
     const ms = mods(prog);
     const DIAS_S = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 
-    // Convertir logo a base64 para que funcione en la ventana de impresión
-    const LOGO_SVG_FALLBACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 60"><rect width="160" height="60" fill="white" rx="4"/><text x="12" y="38" font-family="Georgia,serif" font-weight="900" font-size="32" fill="#C8102E" letter-spacing="1">IBERO</text><text x="13" y="52" font-family="Arial,sans-serif" font-size="11" fill="#9ca3af" letter-spacing="1">TIJUANA</text></svg>')}`;
-    let logoSrc = LOGO_SVG_FALLBACK;
-    try {
-      logoSrc = await new Promise((resolve)=>{
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          try {
-            const c = document.createElement("canvas");
-            c.width = img.naturalWidth; c.height = img.naturalHeight;
-            c.getContext("2d").drawImage(img, 0, 0);
-            resolve(c.toDataURL("image/png"));
-          } catch { resolve(LOGO_SVG_FALLBACK); }
-        };
-        img.onerror = () => resolve(LOGO_SVG_FALLBACK);
-        img.src = IBERO_LOGO;
-      });
-    } catch { logoSrc = LOGO_SVG_FALLBACK; }
 
     // Recopilar todas las fechas de clase por módulo
     const todasFechas = [];
@@ -4563,9 +4544,10 @@ export default function App() {
       .leyenda{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-family:Arial,sans-serif;font-size:12px;}
       .leyenda-item{display:flex;align-items:center;gap:6px;}
       .leyenda-dot{width:12px;height:12px;border-radius:3px;}
-      .cal-day.pago-limite{background:#eff6ff;border-color:#bfdbfe;}
-      .cal-num.pago{color:#1d4ed8;font-weight:800;}
-      .pago-badge{font-size:8px;color:#1d4ed8;font-weight:700;line-height:1.2;margin-top:1px;}
+      .cal-day.periodo-pago{background:#f0fdf4;border-color:#bbf7d0;}
+      .cal-day.pago-limite{background:#dcfce7;border-color:#86efac;}
+      .cal-num.pago{color:#15803d;font-weight:800;}
+      .pago-badge{font-size:8px;color:#15803d;font-weight:700;line-height:1.2;margin-top:1px;}
       .pago-info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-top:16px;font-family:Arial,sans-serif;font-size:12px;color:#1e40af;}
       .pago-info-box strong{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;color:#1d4ed8;}
       .pago-info-row{display:flex;gap:24px;flex-wrap:wrap;}
@@ -4573,7 +4555,7 @@ export default function App() {
       .pago-info-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
     </style></head><body><div class="page">
-    <div class="header"><img src="${logoSrc}" alt="IBERO"/><div class="header-text"><h1>IBERO TIJUANA</h1><p>COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div></div>
+    <div class="header"><div class="header-text"><h1>IBERO TIJUANA</h1><p>COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div></div>
     <div class="prog-title">${prog.nombre}</div>
     <div class="prog-meta">${prog.tipo}${prog.modalidad?" · "+prog.modalidad:""}${prog.generacion?" · "+prog.generacion+" generación":""}</div>`;
 
@@ -4601,13 +4583,14 @@ export default function App() {
     <div class="leyenda">
       ${ms.map(m=>`<div class="leyenda-item"><div class="leyenda-dot" style="background:${modColor[m.id]}"></div><span>${m.numero} · ${m.nombre.split(" ").slice(0,4).join(" ")}</span></div>`).join("")}
       <div class="leyenda-item"><div class="leyenda-dot" style="background:#fde68a;border:1px solid #d97706"></div><span>Festivo</span></div>
-      <div class="leyenda-item"><div class="leyenda-dot" style="background:#eff6ff;border:1px solid #bfdbfe"></div><span>Límite pago mensualidad (día 15)</span></div>
+      <div class="leyenda-item"><div class="leyenda-dot" style="background:#f0fdf4;border:1px solid #bbf7d0"></div><span>Período de pago (1–14)</span></div>
+      <div class="leyenda-item"><div class="leyenda-dot" style="background:#dcfce7;border:1px solid #86efac"></div><span>Último día de pago (día 15)</span></div>
     </div>
     <div class="pago-info-box">
       <strong>Información de pago de mensualidad</strong>
       <div class="pago-info-row">
         <div class="pago-info-item"><div class="pago-info-dot" style="background:#22c55e"></div><span>Días <strong>1 al 15</strong> de cada mes — período de pago sin recargo</span></div>
-        <div class="pago-info-item"><div class="pago-info-dot" style="background:#1d4ed8"></div><span>Día <strong>15</strong> — último día para pago al corriente</span></div>
+        <div class="pago-info-item"><div class="pago-info-dot" style="background:#15803d"></div><span>Día <strong>15</strong> — último día para pago al corriente</span></div>
         <div class="pago-info-item"><div class="pago-info-dot" style="background:#ef4444"></div><span>Después del día 15 — recargo del <strong>6.5%</strong> sobre el monto pendiente</span></div>
       </div>
     </div>`;
@@ -4628,10 +4611,16 @@ export default function App() {
         if(!valid){html+=`<div class="cal-day vacio"></div>`;continue;}
         const iso=anio+"-"+String(mes+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
         const fest=isFestivo(iso);
-        const esPagoLimite=d===15&&tieneRecordatorio;
+        const esPeriodoPago=tieneRecordatorio&&d>=1&&d<=14;
+        const esPagoLimite=tieneRecordatorio&&d===15;
         const clasesDelDia=byD[d]||[];
-        html+=`<div class="cal-day${fest?" festivo":""}${esPagoLimite?" pago-limite":""}">
-          <div class="cal-num${fest?" fest":""}${esPagoLimite?" pago":""}">${d}${fest?`<div style="font-size:8px;color:#d97706">${fest}</div>`:""}${esPagoLimite?`<div class="pago-badge">límite pago</div>`:""}</div>
+        const clasesDia=[
+          "cal-day",
+          fest?" festivo":"",
+          esPagoLimite?" pago-limite":esPeriodoPago?" periodo-pago":"",
+        ].join("");
+        html+=`<div class="${clasesDia}">
+          <div class="cal-num${fest?" fest":""}${esPagoLimite?" pago":""}">${d}${fest?`<div style="font-size:8px;color:#d97706">${fest}</div>`:""}${esPagoLimite?`<div class="pago-badge">límite</div>`:""}</div>
           ${clasesDelDia.map(m=>`<div class="clase-chip" style="background:${modColor[m.id]}">${m.numero}</div>`).join("")}
         </div>`;
       }
@@ -5466,6 +5455,7 @@ export default function App() {
                       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
                         <span style={{fontWeight:700,fontSize:16}}>{p.nombre}</span>
                         <span style={{background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>{p.tipo.toUpperCase()}</span>
+                        {p.generacion&&<span style={{background:"#f0fdf4",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>{p.generacion} gen.</span>}
                         <StatusBadge p={p}/>
                         {p.colaboracion&&<span style={{background:"#f5f3ff",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#7c3aed",fontFamily:"system-ui",fontWeight:700}}>Colaboración · {p.socio}</span>}
                       </div>
@@ -6082,7 +6072,7 @@ export default function App() {
                   <option value="">Todos los programas</option>
                   <option value="activos">Solo programas activos</option>
                   <option disabled>──────────</option>
-                  {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  {(programas||[]).map(p=><option key={p.id} value={p.id}>{p.nombre}{p.generacion?` · ${p.generacion} gen.`:""}</option>)}
                 </select>
                 <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",background:"#fff"}}>
                   <option value="">Todos los estados</option>
