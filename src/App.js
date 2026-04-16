@@ -4995,17 +4995,20 @@ export default function App() {
           const proyMensDash=proyeccionMensual(programas,docentes);
           const cobradoMes=proyMensDash[mesActual]?.cobrado||0; // por fecha_pago
           let esperadoTotal=0,cobradoTotal=0,pendienteTotal=0;
-          let cntVencidos=0,cntCriticos=0,montoVencido=0;
+          let cntVencidos=0,cntCriticos=0,montoVencido=0,faltaMes=0;
           todosEsts.forEach(({e,prog})=>{
             const p=e.pago||{};
             const mf=(p.monto_acordado||0)*(1-(p.descuento_pct||0)/100);
+            const total=(p.parcialidades||[]).length||1;
             const cobrado=getMontoCobrado(p);
             const pendiente=getMontoPendiente(p);
             esperadoTotal+=mf; cobradoTotal+=cobrado; pendienteTotal+=pendiente;
-            // Vencidos
+            // Vencidos — todas las parcialidades con fecha_vencimiento < hoy, sin pagar
             const ep=calcEstadoPagos(e);
-            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,(p.parcialidades||[]).length),0);}
-            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=getMontoParc(ep.conRecargo[0],mf,(p.parcialidades||[]).length);}
+            if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);}
+            else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);}
+            // Falta cobrar este mes — parcialidades con fecha_vencimiento en mesActual, sin pagar
+            faltaMes+=(p.parcialidades||[]).filter(parc=>!parc.pagado&&(parc.fecha_vencimiento||"").startsWith(mesActual)).reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);
           });
 
           // Facturas pendientes — misma lógica que facturación: pagaron en mesFactRef + no enviada
@@ -5091,7 +5094,7 @@ export default function App() {
                   <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
                     {datosMeses.map(({mes,cobrado,esperado})=>{
                       const esMesAct=mes===mesActual;
-                      const pendienteMes=esMesAct?Math.max(0,esperado-cobrado):0;
+                      const pendienteMes=esMesAct?faltaMes:0;
                       const totalBar=esMesAct?Math.max(cobrado+pendienteMes,cobrado,1):cobrado;
                       const pctCob=Math.round((totalBar/maxBar)*100);
                       const altoCob=Math.max(pctCob/100*110,cobrado>0?4:0);
@@ -5117,19 +5120,17 @@ export default function App() {
                     })}
                   </div>
                   {(()=>{
-                    const dMes=datosMeses.find(d=>d.mes===mesActual)||{cobrado:0,esperado:0};
-                    const pendMes=Math.max(0,dMes.esperado-dMes.cobrado);
                     return(
                       <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6",fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:pendMes>0?6:0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:faltaMes>0?6:0}}>
                           <span>Total cobrado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
                           <span>Esperado total: <strong>{fmtMXN(esperadoTotal)}</strong></span>
                         </div>
-                        {pendMes>0&&(
+                        {faltaMes>0&&(
                           <div style={{display:"flex",alignItems:"center",gap:6,background:"#fff5f5",borderRadius:6,padding:"6px 10px",border:"1px solid #fecaca"}}>
                             <div style={{width:8,height:8,borderRadius:2,background:"#fecaca",flexShrink:0}}/>
-                            <span style={{color:"#dc2626",fontWeight:600}}>Falta cobrar este mes: {fmtMXN(pendMes)}</span>
-                            <span style={{color:"#9ca3af",marginLeft:"auto"}}>de {fmtMXN(dMes.esperado)} esperado</span>
+                            <span style={{color:"#dc2626",fontWeight:600}}>Falta cobrar este mes: {fmtMXN(faltaMes)}</span>
+                            {montoVencido>faltaMes&&<span style={{color:"#9ca3af",marginLeft:"auto"}}>+{fmtMXN(montoVencido-faltaMes)} de meses anteriores</span>}
                           </div>
                         )}
                       </div>
