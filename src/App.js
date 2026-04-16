@@ -4462,9 +4462,19 @@ export default function App() {
     notify("Lista exportada con campos completos.");
   };
 
-  const exportPDF = prog => {
+  const exportPDF = async prog => {
     const ms = mods(prog);
     const DIAS_S = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+    // Convertir logo a base64 para que funcione en la ventana de impresión
+    let logoSrc = "";
+    try {
+      const res = await fetch(IBERO_LOGO);
+      const blob = await res.blob();
+      logoSrc = await new Promise(resolve=>{
+        const r=new FileReader(); r.onload=()=>resolve(r.result); r.readAsDataURL(blob);
+      });
+    } catch { logoSrc = IBERO_LOGO; }
 
     // Recopilar todas las fechas de clase por módulo
     const todasFechas = [];
@@ -4491,7 +4501,7 @@ export default function App() {
     const mesesPagoSet = new Set();
     ests(prog).forEach(e=>{
       const p=e.pago;
-      if(!p||p.tipo!=="mensualidad") return;
+      if(!p||p.tipo!=="parcialidades") return;
       (p.parcialidades||[]).forEach(parc=>{
         if(parc.fecha_vencimiento) mesesPagoSet.add(parc.fecha_vencimiento.substring(0,7));
       });
@@ -4540,7 +4550,7 @@ export default function App() {
       .pago-info-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
     </style></head><body><div class="page">
-    <div class="header"><img src="${IBERO_LOGO}" alt="IBERO"/><div class="header-text"><h1>IBERO TIJUANA</h1><p>COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div></div>
+    <div class="header"><img src="${logoSrc}" alt="IBERO"/><div class="header-text"><h1>IBERO TIJUANA</h1><p>COORDINACIÓN DE EDUCACIÓN CONTINUA</p></div></div>
     <div class="prog-title">${prog.nombre}</div>
     <div class="prog-meta">${prog.tipo}${prog.modalidad?" · "+prog.modalidad:""}${prog.generacion?" · "+prog.generacion+" generación":""}</div>`;
 
@@ -6179,12 +6189,16 @@ export default function App() {
                                     </div>
                                   )}
                                   {/* Pago rápido */}
-                                  {mf>0&&!esInactivo&&<>
+                                  {mf>0&&!esInactivo&&(()=>{
+                                    const montoVencido=ep?(ep.conRecargo||[]).reduce((a,parc)=>a+getMontoParc(parc,mf,total),0):0;
+                                    return(<>
                                     <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>ACORDADO</div><div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>{fmtMXN(mf)}</div></div>
                                     <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>COBRADO</div><div style={{fontWeight:700,fontSize:13,color:"#16a34a",fontFamily:"system-ui"}}>{fmtMXN(cobrado)}</div></div>
+                                    {montoVencido>0&&<div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#dc2626",fontWeight:700,fontFamily:"system-ui"}}>VENCIDO</div><div style={{fontWeight:700,fontSize:13,color:"#dc2626",fontFamily:"system-ui"}}>{fmtMXN(montoVencido)}</div></div>}
                                     <div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PENDIENTE</div><div style={{fontWeight:700,fontSize:13,color:pendiente>0?"#d97706":"#16a34a",fontFamily:"system-ui"}}>{fmtMXN(pendiente)}</div></div>
                                     {p.tipo==="parcialidades"&&<div style={{textAlign:"center",flexShrink:0}}><div style={{fontSize:10,color:"#9ca3af",fontWeight:700,fontFamily:"system-ui"}}>PARC.</div><div style={{fontWeight:700,fontSize:13,fontFamily:"system-ui"}}>{pagadas}/{total}</div></div>}
-                                  </>}
+                                    </>);
+                                  })()}
                                   <span style={{color:"#d1d5db",fontSize:16,flexShrink:0}}>{estAbierto?"▲":"▼"}</span>
                                 </div>
 
