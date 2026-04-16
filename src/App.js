@@ -193,7 +193,7 @@ const syncDocentesToSupabase = async (docentes) => {
   try {
     if(!docentes||!docentes.length) return;
     const rows = docentes.map(d=>({
-      id: d.id, nombre: d.nombre||"", email: d.email||"",
+      id: d.id, prefijo: d.prefijo||"", nombre: d.nombre||"", email: d.email||"",
       telefono: d.telefono||"", especialidad: d.especialidad||"",
       honorarios_por_hora: d.honorariosPorHora||d.honorarios_por_hora||0,
       banco: d.banco||"", clabe: d.clabe||"", rfc: d.rfc||"",
@@ -339,6 +339,8 @@ const fmtFecha = d => {
   return parseInt(day)+" "+MESES_C[parseInt(m)-1]+" "+y;
 };
 const fmtMXN = n => n!=null ? "$"+Number(n).toLocaleString("es-MX",{minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
+const fmtDocente = doc => doc ? [doc.prefijo, doc.nombre].filter(Boolean).join(" ") : "";
+const PREFIJOS_DOCENTE = ["","Lic.","Mtro.","Mtra.","Dr.","Dra.","Ing.","Arq.","C.P.","Sr.","Sra."];
 const newId  = () => Math.random().toString(36).slice(2,9);
 const can    = (s,p) => !!(s && (s.rol==="admin" || (s.permisos && s.permisos[p])));
 const today  = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
@@ -1979,11 +1981,11 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const [showM,setShowM]   = useState(false);
   const gradosOrden=["Licenciatura","Maestría","Doctorado"];
   const gradoMax=grados=>{for(const g of["Doctorado","Maestría","Licenciatura"])if((grados||[]).includes(g))return g;return"Licenciatura";};
-  const [form,setForm]     = useState({id:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16});
+  const [form,setForm]     = useState({id:"",prefijo:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
 
-  const openNew = () => { setForm({id:newId(),nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
+  const openNew = () => { setForm({id:newId(),prefijo:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => {
     if(!form.nombre)return;
@@ -2033,7 +2035,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
               <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:200}}>
                   <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-                    <span style={{fontWeight:700,fontSize:16}}>{doc.nombre}</span>
+                    <span style={{fontWeight:700,fontSize:16}}>{fmtDocente(doc)}</span>
                     {docGrados.map(g=>{const c=GRADO_C[g]||GRADO_C.Licenciatura;return<span key={g} style={{background:c.bg,color:c.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{g}</span>;})}
                     <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{cat.label} · {fmtMXN(cat.tarifa)}/hr</span>
                     {(doc.perfil_incompleto||!doc.banco||!doc.clabe||!doc.rfc||!(doc.honorariosPorHora||doc.honorarios_por_hora))&&(
@@ -2117,6 +2119,17 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
               <button onClick={()=>setShowM(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#9ca3af"}}>×</button>
             </div>
             <div style={{padding:"20px 24px"}}>
+              <div style={{marginBottom:13}}>
+                <label style={S.lbl}>Prefijo / Título</label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {PREFIJOS_DOCENTE.map(p=>(
+                    <button key={p||"ninguno"} onClick={()=>setForm({...form,prefijo:p})}
+                      style={{border:"2px solid "+(form.prefijo===p?RED:"#e5e7eb"),borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.prefijo===p?"#fef2f2":"#fff",color:form.prefijo===p?RED:"#6b7280"}}>
+                      {p||"Sin prefijo"}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {[["Nombre completo","nombre","text"],["Correo electrónico","email","email"],["Teléfono","telefono","tel"]].map(([l,k,t])=>(
                 <div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input type={t} value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})} style={S.inp}/></div>
               ))}
@@ -3764,7 +3777,7 @@ export default function App() {
     const docentesSupabase = await supa.get("docentes","?order=nombre");
     if(docentesSupabase&&docentesSupabase.length>0){
       setDocentes(docentesSupabase.map(d=>({
-        id:d.id, nombre:d.nombre, email:d.email||"", telefono:d.telefono||"",
+        id:d.id, prefijo:d.prefijo||"", nombre:d.nombre, email:d.email||"", telefono:d.telefono||"",
         especialidad:d.especialidad||"", honorariosPorHora:d.honorarios_por_hora||0,
         banco:d.banco||"", clabe:d.clabe||"", rfc:d.rfc||"",
         iva:d.iva||16,
@@ -4467,14 +4480,24 @@ export default function App() {
     const DIAS_S = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 
     // Convertir logo a base64 para que funcione en la ventana de impresión
-    let logoSrc = "";
+    const LOGO_SVG_FALLBACK = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 60"><rect width="160" height="60" fill="white" rx="4"/><text x="12" y="38" font-family="Georgia,serif" font-weight="900" font-size="32" fill="#C8102E" letter-spacing="1">IBERO</text><text x="13" y="52" font-family="Arial,sans-serif" font-size="11" fill="#9ca3af" letter-spacing="1">TIJUANA</text></svg>')}`;
+    let logoSrc = LOGO_SVG_FALLBACK;
     try {
-      const res = await fetch(IBERO_LOGO);
-      const blob = await res.blob();
-      logoSrc = await new Promise(resolve=>{
-        const r=new FileReader(); r.onload=()=>resolve(r.result); r.readAsDataURL(blob);
+      logoSrc = await new Promise((resolve)=>{
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          try {
+            const c = document.createElement("canvas");
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            c.getContext("2d").drawImage(img, 0, 0);
+            resolve(c.toDataURL("image/png"));
+          } catch { resolve(LOGO_SVG_FALLBACK); }
+        };
+        img.onerror = () => resolve(LOGO_SVG_FALLBACK);
+        img.src = IBERO_LOGO;
       });
-    } catch { logoSrc = IBERO_LOGO; }
+    } catch { logoSrc = LOGO_SVG_FALLBACK; }
 
     // Recopilar todas las fechas de clase por módulo
     const todasFechas = [];
@@ -4702,9 +4725,9 @@ export default function App() {
     if(!modFinal.docenteId && modFinal.docente){
       const yaExiste=(docentes||[]).find(d=>d.nombre.trim().toLowerCase()===modFinal.docente.trim().toLowerCase());
       if(!yaExiste){
-        const nuevoDoc={id:newId(),nombre:modFinal.docente,email:modFinal.emailDocente||"",telefono:"",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorariosPorHora:0,banco:"",clabe:"",rfc:"",perfil_incompleto:true};
+        const nuevoDoc={id:newId(),prefijo:"",nombre:modFinal.docente,email:modFinal.emailDocente||"",telefono:"",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorariosPorHora:0,banco:"",clabe:"",rfc:"",perfil_incompleto:true};
         setDocentes([...(docentes||[]),nuevoDoc]);
-        supa.upsert("docentes",[{id:nuevoDoc.id,nombre:nuevoDoc.nombre,email:nuevoDoc.email,telefono:"",grado:"Licenciatura",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorarios_por_hora:0,banco:"",clabe:"",rfc:""}]).catch(e=>console.error("Auto-create docente:",e));
+        supa.upsert("docentes",[{id:nuevoDoc.id,prefijo:"",nombre:nuevoDoc.nombre,email:nuevoDoc.email,telefono:"",grado:"Licenciatura",grados:[],programas_egreso:{},categoria:"A",semblanza:"",iva:16,honorarios_por_hora:0,banco:"",clabe:"",rfc:""}]).catch(e=>console.error("Auto-create docente:",e));
         notify("Docente creado — completa su perfil en la sección Docentes","warning");
       }
     }
@@ -8289,7 +8312,7 @@ export default function App() {
               ))}
               <div style={{marginBottom:13}}>
                 <label style={S.lbl}>Docente</label>
-                <select value={modForm.docenteId||"__manual__"} onChange={e=>{if(e.target.value==="__manual__"){setModForm({...modForm,docenteId:"",docente:""});}else{const d=(docentes||[]).find(d=>d.id===e.target.value);if(d)setModForm({...modForm,docenteId:d.id,docente:d.nombre,emailDocente:d.email||modForm.emailDocente});}}} style={S.inp}>
+                <select value={modForm.docenteId||"__manual__"} onChange={e=>{if(e.target.value==="__manual__"){setModForm({...modForm,docenteId:"",docente:""});}else{const d=(docentes||[]).find(d=>d.id===e.target.value);if(d)setModForm({...modForm,docenteId:d.id,docente:fmtDocente(d),emailDocente:d.email||modForm.emailDocente});}}} style={S.inp}>
                   <option value="__manual__">Escribir manualmente...</option>
                   {(docentes||[]).map(d=>{const gs=d.grados&&d.grados.length>0?d.grados.join(", "):(d.grado||"");return<option key={d.id} value={d.id}>{d.nombre+(gs?" ("+gs+")":"")}</option>;})}
                 </select>
