@@ -476,7 +476,7 @@ const calcEstadoPagos = (est) => {
   return {vencidas, conRecargo, total:(p.parcialidades||[]).length, pagadas:(p.parcialidades||[]).filter(x=>x.pagado).length};
 };
 
-const getAlertas = programas => {
+const getAlertas = (programas, docentes=[]) => {
   const alerts = [];
   const hoy = today();
   (programas||[]).forEach(prog => {
@@ -485,30 +485,36 @@ const getAlertas = programas => {
       const diff = Math.round((new Date(mod.fechaInicio+"T12:00:00") - new Date(hoy+"T12:00:00"))/(86400000));
       if (diff < 0 || diff > 14) return;
       if (!mod.docente) {
-        // Sin docente asignado
         alerts.push({tipo:"sin_docente",prog,mod,dias:diff});
       } else if (mod.estatus==="propuesta") {
-        // Docente asignado pero no confirmado
         alerts.push({tipo:"sin_confirmar",prog,mod,dias:diff});
       }
+    });
+    // Módulo activo o próximo sin fechas de clase registradas
+    mods(prog).forEach(mod=>{
+      if(!mod.docente||!mod.fechaInicio)return;
+      if(progStatus(prog)==="finalizado")return;
+      const fechas=getFechasMod(mod);
+      if(fechas.length===0) alerts.push({tipo:"sin_fechas_clase",prog,mod});
     });
     if (progStatus(prog)!=="activo") return;
     ests(prog).forEach(est => {
       if (est.estatus==="baja"||est.estatus==="inactivo") return;
 
-      // Asistencia: más de 3 faltas en cualquier módulo con clases ya transcurridas
-      let maxFaltas=0, modFaltas=null;
+      // Asistencia: >20% de faltas en cualquier módulo con sesiones transcurridas
+      let maxPct=0, maxFaltas=0, modFaltas=null;
       mods(prog).forEach(mod=>{
         const pasadas=getFechasMod(mod).filter(f=>f<=hoy);
         if(!pasadas.length)return;
         const v=est.asistencia&&est.asistencia["mod_"+mod.id];
         const presentes=Array.isArray(v)?v.length:(v||0);
         const faltas=pasadas.length-presentes;
-        if(faltas>maxFaltas){maxFaltas=faltas;modFaltas=mod;}
+        const pct=faltas/pasadas.length;
+        if(pct>maxPct){maxPct=pct;maxFaltas=faltas;modFaltas=mod;}
       });
-      if(maxFaltas>3&&modFaltas) alerts.push({tipo:"asistencia",prog,est,faltas:maxFaltas,mod:modFaltas});
+      if(maxPct>0.2&&modFaltas) alerts.push({tipo:"asistencia",prog,est,faltas:maxFaltas,pct:Math.round(maxPct*100),mod:modFaltas});
 
-      // Pagos vencidos desde día 16
+      // Pagos vencidos
       const ep = calcEstadoPagos(est);
       if (!ep) return;
       const mf = (est.pago.monto_acordado||0)*(1-(est.pago.descuento_pct||0)/100);
@@ -526,7 +532,7 @@ const getAlertas = programas => {
       const diff=Math.round((new Date(mod.fechaInicio+"T12:00:00")-new Date(hoy+"T12:00:00"))/(86400000));
       if(diff>=0&&diff<=3) alerts.push({tipo:"recordatorio_docente",prog,mod,dias:diff});
     });
-    // Factura docente pendiente: módulo que termina este mes, sin factura solicitada
+    // Factura docente pendiente
     const mesHoy=hoy.substring(0,7);
     const diaHoy=parseInt(hoy.substring(8,10));
     mods(prog).forEach(mod=>{
@@ -535,8 +541,12 @@ const getAlertas = programas => {
         alerts.push({tipo:"factura_docente",prog,mod});
     });
   });
-  // Ordenar: crítico > recargo > factura_docente > recordatorio_docente > asistencia > sin_confirmar > sin_docente
-  const prioridad = {pago_critico:0,pago_recargo:1,factura_docente:2,recordatorio_docente:3,asistencia:4,sin_confirmar:5,sin_docente:6};
+  // Docente sin contacto (sin email ni teléfono)
+  (docentes||[]).forEach(doc=>{
+    if(!doc.nombre)return;
+    if(!doc.email&&!doc.telefono) alerts.push({tipo:"docente_sin_contacto",doc});
+  });
+  const prioridad = {pago_critico:0,pago_recargo:1,factura_docente:2,recordatorio_docente:3,sin_fechas_clase:4,docente_sin_contacto:5,asistencia:6,sin_confirmar:7,sin_docente:8};
   return alerts.sort((a,b)=>(prioridad[a.tipo]??9)-(prioridad[b.tipo]??9));
 };
 
@@ -3644,6 +3654,7 @@ export default function App() {
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
   const [showAlertas,setShowAl]  = useState(false);
+  const [alertaTab,setAlertaTab] = useState("finanzas");
   const [presencia,setPresencia] = useState([]);
   const [alertasDesc,setAlertasDesc] = useState([]);
   const [pagoModal,setPagoModal] = useState(null); // {est, prog}
@@ -4302,14 +4313,17 @@ export default function App() {
 
   const prog    = getProg();
   const alertaKey = a => {
-    if(a.tipo==="sin_docente")         return `sin_docente_${a.mod.id}`;
-    if(a.tipo==="sin_confirmar")       return `sin_confirmar_${a.mod.id}`;
+    if(a.tipo==="sin_docente")          return `sin_docente_${a.mod.id}`;
+    if(a.tipo==="sin_confirmar")        return `sin_confirmar_${a.mod.id}`;
     if(a.tipo==="recordatorio_docente") return `recordatorio_docente_${a.mod.id}`;
     if(a.tipo==="factura_docente")      return `factura_docente_${a.mod.id}`;
-    if(a.tipo==="asistencia")          return `asistencia_${a.est.id}_${a.prog.id}`;
-    if(a.tipo==="pago_recargo")        return `pago_recargo_${a.est.id}`;
-    if(a.tipo==="pago_critico")        return `pago_critico_${a.est.id}`;
-    if(a.tipo==="orden_firmada")       return `orden_firmada_${a.orden.id}`;
+    if(a.tipo==="asistencia")           return `asistencia_${a.est.id}_${a.prog.id}`;
+    if(a.tipo==="pago_recargo")         return `pago_recargo_${a.est.id}`;
+    if(a.tipo==="pago_critico")         return `pago_critico_${a.est.id}`;
+    if(a.tipo==="orden_firmada")        return `orden_firmada_${a.orden.id}`;
+    if(a.tipo==="sin_fechas_clase")     return `sin_fechas_clase_${a.mod.id}`;
+    if(a.tipo==="docente_sin_contacto") return `docente_sin_contacto_${a.doc.id}`;
+    if(a.tipo==="eval_pendiente")       return `eval_pendiente_${a.mod.id}`;
     return `alerta_${Math.random()}`;
   };
 
@@ -4378,9 +4392,28 @@ export default function App() {
     guardarAlertasDesc([...new Set([...alertasDesc, ...keys])]);
     setShowAl(false);
   };
+  // Eval pendientes: módulos terminados hace 0-3 días sin respuestas
+  const evalPendientesAlertas = (()=>{
+    const hoy=today();
+    const res=[];
+    (programas||[]).forEach(prog=>{
+      mods(prog).forEach(mod=>{
+        if(mod.eval_cerrada)return;
+        const fechas=getFechasMod(mod);
+        const ultimaFecha=fechas.length?fechas[fechas.length-1]:mod.fechaFin||"";
+        if(!ultimaFecha||ultimaFecha>=hoy)return;
+        const dias=Math.round((new Date(hoy+"T12:00:00")-new Date(ultimaFecha+"T12:00:00"))/(86400000));
+        if(dias<0||dias>3)return;
+        const tieneRespuestas=(npsData||[]).some(e=>e.modId===mod.id);
+        if(!tieneRespuestas) res.push({tipo:"eval_pendiente",prog,mod,dias});
+      });
+    });
+    return res;
+  })();
   const alertasTodas  = [
-    ...getAlertas(programas),
+    ...getAlertas(programas, docentes),
     ...(ordenes||[]).filter(o=>o.estatus==="firmada").map(o=>({tipo:"orden_firmada",orden:o})),
+    ...evalPendientesAlertas,
   ];
   const alertasVisible = alertasTodas.filter(a=>!alertasDesc.includes(alertaKey(a)));
   const alertas = alertasVisible;
@@ -4893,88 +4926,127 @@ export default function App() {
               {alertas.length>0&&<div style={{width:7,height:7,borderRadius:"50%",background:RED,flexShrink:0}}/>}
               {alertas.length>0?"Alertas ("+alertas.length+")":"Sin alertas"}
             </button>
-            {showAlertas&&(
-              <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"#fff",border:"1px solid #EBEBEB",borderRadius:14,boxShadow:"0 8px 40px rgba(0,0,0,0.12)",width:360,zIndex:999,overflow:"hidden"}}>
-                <div style={{padding:"14px 18px",borderBottom:"1px solid #F3F4F6",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:700,fontSize:14,fontFamily:FONT_BODY}}>{alertas.length>0?"Alertas activas":"Sin alertas pendientes"}</span>
-                  {alertas.length>0&&<button onClick={descartarTodas} style={{fontSize:11,color:"#9CA3AF",background:"none",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:500}}>Borrar todas</button>}
-                </div>
-                {alertas.length===0&&<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Todo en orden ✓</div>}
-                <div style={{maxHeight:400,overflowY:"auto"}}>
-                  {alertas.map((a,i)=>{
-                    const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="factura_docente"?"#7c3aed":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":a.tipo==="orden_firmada"?"#16a34a":"#6b7280";
-                    const irA = () => {
-                      if(a.tipo==="pago_critico"||a.tipo==="pago_recargo"){setView("pagos_global");setProgPagos(a.prog.id);setShowAl(false);}
-                      else if(a.tipo==="asistencia"){setView("asistencia");setShowAl(false);}
-                      else if(a.tipo==="sin_docente"||a.tipo==="sin_confirmar"){setSelProg(a.prog.id);setProgTab("modulos");setView("programa");setShowAl(false);}
-                      else if(a.tipo==="factura_docente"||a.tipo==="recordatorio_docente"){setView("honorarios");setShowAl(false);}
-                      else if(a.tipo==="orden_firmada"){window.open(window.location.href.split("?")[0]+"?orden="+a.orden.id,"_blank");setShowAl(false);}
-                    };
-                    return(
-                      <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:dot,marginTop:5,flexShrink:0}}/>
-                        <div style={{flex:1,fontFamily:FONT_BODY,minWidth:0}}>
-                          {a.tipo==="sin_docente"&&<>
-                            <div style={{fontWeight:600,fontSize:13,color:"#374151"}}>Sin docente asignado</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""}</div>
-                          </>}
-                          {a.tipo==="sin_confirmar"&&<>
-                            <div style={{fontWeight:600,fontSize:13,color:"#92400e"}}>Docente sin confirmar</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""} — estatus: propuesta</div>
-                          </>}
-                          {a.tipo==="recordatorio_docente"&&<>
-                            <div style={{fontWeight:600,fontSize:13,color:"#2563eb"}}>Recordar calendario al docente</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} — inicia en {a.dias} día{a.dias!==1?"s":""}</div>
-                          </>}
-                          {a.tipo==="factura_docente"&&<>
-                            <div style={{fontWeight:700,fontSize:13,color:"#7c3aed"}}>Factura pendiente — vence día 20</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · Termina {fmtFecha(a.mod.fechaFin)}</div>
-                          </>}
-                          {a.tipo==="asistencia"&&<>
-                            <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.faltas} falta{a.faltas!==1?"s":""}</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · {a.mod?.nombre||""}</div>
-                          </>}
-                          {a.tipo==="pago_recargo"&&<>
-                            <div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>{a.est.nombre} — 1 pago vencido</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Recargo: {fmtMXN(a.recargo)}</div>
-                          </>}
-                          {a.tipo==="pago_critico"&&<>
-                            <div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>{a.est.nombre} — {a.vencidas} pagos vencidos</div>
-                            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div>
-                          </>}
-                          {a.tipo==="orden_firmada"&&(()=>{
-                            const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-                            const mes=a.orden.datos?.mes||"";
-                            const mesLabel=mes?MESES_N[parseInt(mes.split("-")[1])-1]+" "+mes.split("-")[0]:"";
-                            return<>
-                              <div style={{fontWeight:700,fontSize:13,color:"#16a34a"}}>✓ Solicitud firmada — lista para descargar</div>
-                              <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{mesLabel&&<>{mesLabel} · </>}Ambas firmas completadas</div>
-                            </>;
-                          })()}
-                          <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
-                            <button onClick={irA} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F7F7F8",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#374151"}}>Ver</button>
-                            {(a.tipo==="pago_recargo"||a.tipo==="pago_critico")&&(
-                              <button onClick={()=>abrirWhatsApp("vencido",a.est,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WhatsApp recordatorio</button>
-                            )}
-                            {a.tipo==="asistencia"&&(
-                              <button onClick={()=>abrirWAAsistencia(a.est,a.prog,a.faltas)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WhatsApp seguimiento</button>
-                            )}
-                            {a.tipo==="recordatorio_docente"&&<>
-                              <button onClick={()=>enviarCalendarioWA(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Enviar WA</button>
-                              <button onClick={()=>enviarCalendarioEmail(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#2563eb"}}>Enviar Email</button>
-                            </>}
-                            {a.tipo==="orden_firmada"&&(
-                              <button onClick={()=>{window.open(window.location.href.split("?")[0]+"?orden="+a.orden.id,"_blank");descartarAlerta(alertaKey(a));setShowAl(false);}} style={{fontSize:11,fontWeight:700,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Abrir y descargar PDF</button>
-                            )}
-                          </div>
-                        </div>
-                        <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
+            {showAlertas&&(()=>{
+              const TABS=[
+                {key:"finanzas",  label:"Finanzas",  tipos:["pago_critico","pago_recargo","factura_docente","orden_firmada"]},
+                {key:"academico", label:"Académico", tipos:["sin_docente","sin_confirmar","recordatorio_docente","sin_fechas_clase","docente_sin_contacto","eval_pendiente"]},
+                {key:"asistencia",label:"Asistencia",tipos:["asistencia"]},
+              ];
+              const alertasPorTab = tab => alertas.filter(a=>tab.tipos.includes(a.tipo));
+              const renderAlerta = (a,i) => {
+                const dot = a.tipo==="pago_critico"?"#dc2626":a.tipo==="pago_recargo"?"#d97706":a.tipo==="factura_docente"?"#7c3aed":a.tipo==="orden_firmada"?"#16a34a":a.tipo==="asistencia"?"#ea580c":a.tipo==="recordatorio_docente"?"#2563eb":a.tipo==="sin_confirmar"?"#f59e0b":a.tipo==="eval_pendiente"?"#8b5cf6":"#6b7280";
+                const irA = () => {
+                  if(a.tipo==="pago_critico"||a.tipo==="pago_recargo"){setView("pagos_global");setProgPagos(a.prog.id);setShowAl(false);}
+                  else if(a.tipo==="asistencia"){setView("asistencia");setShowAl(false);}
+                  else if(a.tipo==="sin_docente"||a.tipo==="sin_confirmar"||a.tipo==="sin_fechas_clase"){setSelProg(a.prog.id);setProgTab("modulos");setView("programa");setShowAl(false);}
+                  else if(a.tipo==="factura_docente"||a.tipo==="recordatorio_docente"){setView("honorarios");setShowAl(false);}
+                  else if(a.tipo==="docente_sin_contacto"){setView("docentes");setShowAl(false);}
+                  else if(a.tipo==="eval_pendiente"){setView("evaluaciones");setEvalTab("modulos");setShowAl(false);}
+                  else if(a.tipo==="orden_firmada"){window.open(window.location.href.split("?")[0]+"?orden="+a.orden.id,"_blank");setShowAl(false);}
+                };
+                return(
+                  <div key={i} style={{padding:"12px 18px",borderBottom:"1px solid #F9F9F9",display:"flex",gap:12,alignItems:"flex-start"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:dot,marginTop:5,flexShrink:0}}/>
+                    <div style={{flex:1,fontFamily:FONT_BODY,minWidth:0}}>
+                      {a.tipo==="sin_docente"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#374151"}}>Sin docente asignado</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                      </>}
+                      {a.tipo==="sin_confirmar"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#92400e"}}>Docente sin confirmar</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                      </>}
+                      {a.tipo==="recordatorio_docente"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#2563eb"}}>Recordar calendario al docente</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} — inicia en {a.dias} día{a.dias!==1?"s":""}</div>
+                      </>}
+                      {a.tipo==="sin_fechas_clase"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#374151"}}>Sin fechas de clase registradas</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.mod.docente||"Sin docente"}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}</div>
+                      </>}
+                      {a.tipo==="docente_sin_contacto"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#374151"}}>Docente sin datos de contacto</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.doc.prefijo?a.doc.prefijo+" ":""}{a.doc.nombre} — sin email ni teléfono</div>
+                      </>}
+                      {a.tipo==="eval_pendiente"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#8b5cf6"}}>Evaluación pendiente</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.nombre} · {a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Terminó hace {a.dias} día{a.dias!==1?"s":""} — sin respuestas</div>
+                      </>}
+                      {a.tipo==="factura_docente"&&<>
+                        <div style={{fontWeight:700,fontSize:13,color:"#7c3aed"}}>Factura pendiente — vence día 20</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.mod.docente} · {a.mod.nombre}<br/>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}</div>
+                      </>}
+                      {a.tipo==="asistencia"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#ea580c"}}>{a.est.nombre} — {a.pct}% de faltas</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""} · {a.mod?.nombre||""}<br/>{a.faltas} sesión{a.faltas!==1?"es":""} sin asistir</div>
+                      </>}
+                      {a.tipo==="pago_recargo"&&<>
+                        <div style={{fontWeight:600,fontSize:13,color:"#d97706"}}>{a.est.nombre} — 1 pago vencido</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Recargo: {fmtMXN(a.recargo)}</div>
+                      </>}
+                      {a.tipo==="pago_critico"&&<>
+                        <div style={{fontWeight:700,fontSize:13,color:"#dc2626"}}>{a.est.nombre} — {a.vencidas} pagos vencidos</div>
+                        <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{a.prog.nombre}{a.prog.generacion?` · ${a.prog.generacion} gen.`:""}<br/>Recargo acumulado: {fmtMXN(a.recargo)}</div>
+                      </>}
+                      {a.tipo==="orden_firmada"&&(()=>{
+                        const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                        const mes=a.orden.datos?.mes||"";
+                        const mesLabel=mes?MESES_N[parseInt(mes.split("-")[1])-1]+" "+mes.split("-")[0]:"";
+                        return<>
+                          <div style={{fontWeight:700,fontSize:13,color:"#16a34a"}}>✓ Solicitud firmada — lista para descargar</div>
+                          <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{mesLabel&&<>{mesLabel} · </>}Ambas firmas completadas</div>
+                        </>;
+                      })()}
+                      <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                        {a.tipo!=="orden_firmada"&&<button onClick={irA} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F7F7F8",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#374151"}}>Ver</button>}
+                        {(a.tipo==="pago_recargo"||a.tipo==="pago_critico")&&(
+                          <button onClick={()=>abrirWhatsApp("vencido",a.est,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WA recordatorio</button>
+                        )}
+                        {a.tipo==="asistencia"&&(
+                          <button onClick={()=>abrirWAAsistencia(a.est,a.prog,a.faltas)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>WA seguimiento</button>
+                        )}
+                        {a.tipo==="recordatorio_docente"&&<>
+                          <button onClick={()=>enviarCalendarioWA(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Enviar WA</button>
+                          <button onClick={()=>enviarCalendarioEmail(a.mod,a.prog)} style={{fontSize:11,fontWeight:600,fontFamily:FONT_BODY,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#2563eb"}}>Enviar Email</button>
+                        </>}
+                        {a.tipo==="orden_firmada"&&(
+                          <button onClick={()=>{window.open(window.location.href.split("?")[0]+"?orden="+a.orden.id,"_blank");descartarAlerta(alertaKey(a));setShowAl(false);}} style={{fontSize:11,fontWeight:700,fontFamily:FONT_BODY,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,padding:"3px 10px",cursor:"pointer",color:"#16a34a"}}>Abrir y descargar PDF</button>
+                        )}
                       </div>
-                    );
-                  })}
+                    </div>
+                    <button onClick={()=>descartarAlerta(alertaKey(a))} title="Descartar" style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:18,padding:"0 2px",flexShrink:0,lineHeight:1,fontWeight:400}}>×</button>
+                  </div>
+                );
+              };
+              const tabActual=TABS.find(t=>t.key===alertaTab)||TABS[0];
+              const alertasTab=alertasPorTab(tabActual);
+              return(
+                <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"#fff",border:"1px solid #EBEBEB",borderRadius:14,boxShadow:"0 8px 40px rgba(0,0,0,0.12)",width:390,zIndex:999,overflow:"hidden"}}>
+                  <div style={{padding:"14px 18px",borderBottom:"1px solid #F3F4F6",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontWeight:700,fontSize:14,fontFamily:FONT_BODY}}>Alertas</span>
+                    {alertas.length>0&&<button onClick={descartarTodas} style={{fontSize:11,color:"#9CA3AF",background:"none",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:500}}>Borrar todas</button>}
+                  </div>
+                  {/* Pestañas */}
+                  <div style={{display:"flex",borderBottom:"1px solid #F3F4F6"}}>
+                    {TABS.map(t=>{
+                      const cnt=alertasPorTab(t).length;
+                      const activa=alertaTab===t.key;
+                      return(
+                        <button key={t.key} onClick={()=>setAlertaTab(t.key)}
+                          style={{flex:1,padding:"9px 4px",border:"none",borderBottom:activa?"2px solid "+RED:"2px solid transparent",cursor:"pointer",background:"#fff",fontFamily:FONT_BODY,fontSize:11,fontWeight:activa?700:500,color:activa?RED:"#6b7280",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                          {t.label}
+                          {cnt>0&&<span style={{background:activa?RED:"#e5e7eb",color:activa?"#fff":"#6b7280",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,lineHeight:1.4}}>{cnt}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {alertasTab.length===0
+                    ?<div style={{padding:28,textAlign:"center",color:"#9ca3af",fontFamily:FONT_BODY,fontSize:13}}>Sin alertas en esta categoría ✓</div>
+                    :<div style={{maxHeight:380,overflowY:"auto"}}>{alertasTab.map((a,i)=>renderAlerta(a,i))}</div>
+                  }
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 
