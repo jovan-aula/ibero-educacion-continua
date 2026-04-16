@@ -1334,7 +1334,7 @@ function PagoModal({est,prog,onSave,onClose}) {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <label style={S.lbl}>Parcialidades ({pagosPagados}/{totalParcialidades} pagadas)</label>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                  {[3,5,6,10,12].map(n=>(
+                  {[1,2,3,4,5,6,7,8].map(n=>(
                     <button key={n} onClick={()=>generarParcialidades(n)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",background:totalParcialidades===n?"#fef2f2":"#fff",color:totalParcialidades===n?RED:"#6b7280",fontWeight:totalParcialidades===n?700:400}}>{n}</button>
                   ))}
                   {totalParcialidades>0&&(
