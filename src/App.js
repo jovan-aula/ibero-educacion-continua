@@ -7226,7 +7226,7 @@ export default function App() {
             const key = e.docenteId||e.docenteNombre;
             if(!key||docentesVistos.has(key))return;
             docentesVistos.add(key);
-            const evalsDoc = (npsData||[]).filter(ev=>ev.docenteId===e.docenteId||ev.docenteNombre===e.docenteNombre);
+            const evalsDoc = (npsData||[]).filter(ev=>e.docenteId?ev.docenteId===e.docenteId:ev.docenteNombre===e.docenteNombre);
             const prom = evalsDoc.length?Math.round(evalsDoc.reduce((a,ev)=>a+(ev.promedio||0),0)/evalsDoc.length*10)/10:0;
             docentesConEvals.push({nombre:e.docenteNombre,id:e.docenteId,evals:evalsDoc,prom});
           });
