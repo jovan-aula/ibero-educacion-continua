@@ -3706,6 +3706,7 @@ export default function App() {
   const [filtroModEval,setFiltroModEval]   = useState("");
   const [evalReporteModal,setEvalReporteModal] = useState(null); // {docente, evals}
   const [editEstModal,setEditEstModal] = useState(null);
+  const [newEstModal,setNewEstModal]   = useState(null); // prog
   const [inactivoModal,setInactivoModal] = useState(null); // {est, prog}
   const [inactivoRazon,setInactivoRazon] = useState("");
   const [bajaModal,setBajaModal]         = useState(null); // {est, prog}
@@ -5834,6 +5835,7 @@ export default function App() {
                   <div style={{fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>{ests(prog).length} estudiantes</div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     {can(session,"importarEstudiantes")&&<button onClick={()=>setShowImp(true)} style={S.btn(RED,"#fff")}>Importar / Sincronizar</button>}
+                    {can(session,"importarEstudiantes")&&<button onClick={()=>setNewEstModal(prog)} style={S.btn("#f3f4f6","#374151")}>+ Agregar alumno</button>}
                     {ests(prog).length>0&&<><button onClick={()=>exportCSV(prog)} style={S.btn("#f3f4f6","#374151")}>Exportar CSV</button><button onClick={()=>exportDocente(prog)} style={S.btn("#f3f4f6","#374151")}>Exportar lista completa</button></>}
                   </div>
                 </div>
@@ -8380,6 +8382,7 @@ export default function App() {
       {confirmSimple&&<ConfirmSimple titulo={confirmSimple.titulo} mensaje={confirmSimple.mensaje} onConfirm={confirmSimple.onConfirm} onClose={()=>setCS(null)} btnLabel={confirmSimple.btnLabel} btnColor={confirmSimple.btnColor}/>}
       {confirmEscrita&&<ConfirmEscrita titulo={confirmEscrita.titulo} subtitulo={confirmEscrita.subtitulo} mensaje={confirmEscrita.mensaje} onConfirm={confirmEscrita.onConfirm} onClose={()=>setCE(null)}/>}
       {editEstModal&&<EditEstModal est={editEstModal.est} prog={editEstModal.prog} onSave={datos=>saveEstudiante(editEstModal.prog.id,editEstModal.est.id,datos)} onClose={()=>setEditEstModal(null)}/>}
+      {newEstModal&&<EditEstModal est={{id:newId(),nombre:"",email:"",telefono:"",empresa:"",puesto:"",carrera:"",estatus:"activo",manual:true}} prog={newEstModal} onSave={datos=>{save((programas||[]).map(p=>p.id!==newEstModal.id?p:{...p,estudiantes:[...ests(p),{...datos,programa_id:newEstModal.id}]}));notify("Alumno agregado.");}} onClose={()=>setNewEstModal(null)}/>}
       {pagoModal&&<PagoModal est={pagoModal.est} prog={pagoModal.prog} onSave={pago=>savePago(pagoModal.prog.id,pagoModal.est.id,pago)} onClose={()=>setPagoModal(null)}/>}
       {/* ── MODAL REPORTE PDF EVALUACIÓN DOCENTE ── */}
       {evalReporteModal&&(()=>{
