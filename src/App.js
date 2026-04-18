@@ -3716,6 +3716,8 @@ export default function App() {
   const [tableroNotas,setTableroNotas] = useState([]);
   const [tableroForm,setTableroForm]   = useState({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[]});
   const [tableroLoaded,setTableroLoaded] = useState(false);
+  const [tableroEditId,setTableroEditId] = useState(null);
+  const [tableroEditTxt,setTableroEditTxt] = useState("");
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -5126,16 +5128,14 @@ export default function App() {
             setTableroForm(f=>({...f,para_emails:nuevo}));
           };
 
+          const guardarEdicion=async(n)=>{
+            if(!tableroEditTxt.trim()){setTableroEditId(null);return;}
+            setTableroNotas(tableroNotas.map(x=>x.id===n.id?{...x,texto:tableroEditTxt.trim()}:x));
+            setTableroEditId(null);
+            await supa.upsert("tablero_notas",[{...n,texto:tableroEditTxt.trim()}]);
+          };
           const PostIt=({n,checkbox=false})=>{
-            const [editando,setEditando] = React.useState(false);
-            const [textoEdit,setTextoEdit] = React.useState(n.texto);
-            const guardarEdicion=async()=>{
-              if(!textoEdit.trim()){setEditando(false);setTextoEdit(n.texto);return;}
-              const updated=tableroNotas.map(x=>x.id===n.id?{...x,texto:textoEdit.trim()}:x);
-              setTableroNotas(updated);
-              setEditando(false);
-              await supa.upsert("tablero_notas",[{...n,texto:textoEdit.trim()}]);
-            };
+            const editando=tableroEditId===n.id;
             return(
               <div style={{background:n.color||"#fef08a",borderRadius:10,padding:"14px",boxShadow:"0 3px 10px rgba(0,0,0,0.1)",minHeight:90,display:"flex",flexDirection:"column",justifyContent:"space-between",opacity:n.completado?0.55:1,transition:"opacity .2s"}}>
                 <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
@@ -5143,7 +5143,7 @@ export default function App() {
                   <div style={{flex:1}}>
                     {n.emoji&&<span style={{fontSize:18,marginRight:5}}>{n.emoji}</span>}
                     {editando
-                      ? <input autoFocus value={textoEdit} onChange={e=>setTextoEdit(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")guardarEdicion();if(e.key==="Escape"){setEditando(false);setTextoEdit(n.texto);}}} style={{width:"100%",border:"none",background:"transparent",fontFamily:"system-ui",fontSize:13,color:"#1a1a1a",outline:"1px solid #374151",borderRadius:4,padding:"2px 4px"}}/>
+                      ? <input autoFocus value={tableroEditTxt} onChange={e=>setTableroEditTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")guardarEdicion(n);if(e.key==="Escape")setTableroEditId(null);}} style={{width:"100%",border:"none",background:"transparent",fontFamily:"system-ui",fontSize:13,color:"#1a1a1a",outline:"1px solid #374151",borderRadius:4,padding:"2px 4px"}}/>
                       : <span style={{fontSize:13,fontFamily:"system-ui",textDecoration:n.completado?"line-through":"none",color:"#1a1a1a",lineHeight:1.5}}>{n.texto}</span>
                     }
                   </div>
@@ -5153,8 +5153,8 @@ export default function App() {
                   {n.usuario_email===miEmail&&(
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
                       {editando
-                        ? <button onClick={guardarEdicion} style={{background:"none",border:"none",color:"#16a34a",cursor:"pointer",fontSize:14,padding:0,lineHeight:1}}>✓</button>
-                        : <button onClick={()=>{setEditando(true);setTextoEdit(n.texto);}} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>✏️</button>
+                        ? <button onClick={()=>guardarEdicion(n)} style={{background:"none",border:"none",color:"#16a34a",cursor:"pointer",fontSize:14,padding:0,lineHeight:1}}>✓</button>
+                        : <button onClick={()=>{setTableroEditId(n.id);setTableroEditTxt(n.texto);}} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>✏️</button>
                       }
                       <button onClick={()=>eliminarNota(n.id)} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>
                     </div>
