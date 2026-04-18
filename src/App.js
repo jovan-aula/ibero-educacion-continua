@@ -3714,10 +3714,12 @@ export default function App() {
   const [npsModal,setNpsModal]         = useState(null);
   const [npsData,setNpsData] = useState([]);
   const [tableroNotas,setTableroNotas] = useState([]);
-  const [tableroForm,setTableroForm]   = useState({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[]});
+  const [tableroForm,setTableroForm]   = useState({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[],fecha_limite:""});
   const [tableroLoaded,setTableroLoaded] = useState(false);
   const [tableroEditId,setTableroEditId] = useState(null);
   const [tableroEditTxt,setTableroEditTxt] = useState("");
+  const [tableroFiltro,setTableroFiltro] = useState({color:"",autor:""});
+  const [tableroVerArchivados,setTableroVerArchivados] = useState(false);
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
@@ -5082,33 +5084,40 @@ export default function App() {
 
         {/* TABLERO */}
         {view==="tablero"&&(()=>{
+          const FONT_HAND="Georgia, serif";
           const COLORES=[{v:"#fef08a",l:"Amarillo"},{v:"#86efac",l:"Verde"},{v:"#93c5fd",l:"Azul"},{v:"#f9a8d4",l:"Rosa"},{v:"#fdba74",l:"Naranja"},{v:"#c4b5fd",l:"Morado"},{v:"#fff",l:"Blanco"}];
           const EMOJIS=["","⭐","🔥","📌","✅","⚠️","💡","🎯","📅","🙌"];
+          const REACCIONES_OPT=["👍","❤️","🔥","😂","😮","👏"];
           const yo = session?.nombre||session?.user?.email||"";
           const miEmail = session?.user?.email||"";
-          // visibilidad: "solo" | "todos" | "especificos"
           const visibilidad = tableroForm.visibilidad||"solo";
+          const hoy = today();
 
-          const puedoVer = n => {
-            if(n.usuario_email===miEmail) return true;
-            if(n.publico) return true;
-            if(n.para_emails&&n.para_emails.includes(miEmail)) return true;
-            return false;
+          const puedoVer = n => n.usuario_email===miEmail||n.publico||(n.para_emails&&n.para_emails.includes(miEmail));
+
+          const aplicarFiltro = n => {
+            if(tableroFiltro.color&&n.color!==tableroFiltro.color) return false;
+            if(tableroFiltro.autor&&n.usuario_email!==tableroFiltro.autor) return false;
+            return true;
           };
 
-          const misNotas  = tableroNotas.filter(n=>n.usuario_email===miEmail&&!n.publico&&(!n.para_emails||n.para_emails.length===0));
-          const muro      = tableroNotas.filter(n=>n.publico);
-          const compartidas = tableroNotas.filter(n=>!n.publico&&n.para_emails&&n.para_emails.length>0&&puedoVer(n));
+          const misNotas    = tableroNotas.filter(n=>n.usuario_email===miEmail&&!n.publico&&(!n.para_emails||n.para_emails.length===0)&&!n.archivado&&aplicarFiltro(n));
+          const compartidas = tableroNotas.filter(n=>!n.publico&&n.para_emails&&n.para_emails.length>0&&puedoVer(n)&&!n.archivado&&aplicarFiltro(n));
+          const muro        = tableroNotas.filter(n=>n.publico&&!n.archivado&&aplicarFiltro(n));
+          const archivadas  = tableroNotas.filter(n=>n.archivado&&n.usuario_email===miEmail);
           const otrosUsuarios = (users||[]).filter(u=>u.email!==miEmail);
+          const autoresUnicos = [...new Set(tableroNotas.map(n=>n.usuario_email))].map(e=>({email:e,nombre:(users||[]).find(u=>u.email===e)?.nombre||e}));
 
           const agregarNota = async()=>{
             if(!tableroForm.texto.trim())return;
             const esPublico = visibilidad==="todos";
             const paraEmails = visibilidad==="especificos"?(tableroForm.para_emails||[]):[];
-            const nueva={id:newId(),usuario_email:miEmail,usuario_nombre:yo,texto:tableroForm.texto.trim(),color:tableroForm.color,emoji:tableroForm.emoji,publico:esPublico,para_emails:paraEmails,completado:false,created_at:new Date().toISOString()};
+            const nueva={id:newId(),usuario_email:miEmail,usuario_nombre:yo,texto:tableroForm.texto.trim(),color:tableroForm.color,emoji:tableroForm.emoji,publico:esPublico,para_emails:paraEmails,completado:false,archivado:false,fecha_limite:tableroForm.fecha_limite||null,reacciones:{},created_at:new Date().toISOString()};
             setTableroNotas([...tableroNotas,nueva]);
-            setTableroForm({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[]});
+            setTableroForm({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[],fecha_limite:""});
             await supa.upsert("tablero_notas",[nueva]);
+            // Notificar a personas específicas
+            if(paraEmails.length>0) notify(`Nota compartida con ${paraEmails.length} persona${paraEmails.length>1?"s":""}`);
           };
 
           const toggleCompletado=async(nota)=>{
@@ -5117,15 +5126,34 @@ export default function App() {
             await supa.upsert("tablero_notas",[{...nota,completado:!nota.completado}]);
           };
 
+          const archivarNota=async(nota)=>{
+            setTableroNotas(tableroNotas.map(n=>n.id===nota.id?{...n,archivado:true}:n));
+            await supa.upsert("tablero_notas",[{...nota,archivado:true}]);
+            notify("Nota archivada");
+          };
+
+          const desarchivarNota=async(nota)=>{
+            setTableroNotas(tableroNotas.map(n=>n.id===nota.id?{...n,archivado:false}:n));
+            await supa.upsert("tablero_notas",[{...nota,archivado:false}]);
+          };
+
           const eliminarNota=async(id)=>{
             setTableroNotas(tableroNotas.filter(n=>n.id!==id));
             await supa.del("tablero_notas",id);
           };
 
+          const toggleReaccion=async(nota,emoji)=>{
+            const reacs={...(nota.reacciones||{})};
+            const lista=reacs[emoji]||[];
+            reacs[emoji]=lista.includes(miEmail)?lista.filter(e=>e!==miEmail):[...lista,miEmail];
+            if(reacs[emoji].length===0)delete reacs[emoji];
+            setTableroNotas(tableroNotas.map(n=>n.id===nota.id?{...n,reacciones:reacs}:n));
+            await supa.upsert("tablero_notas",[{...nota,reacciones:reacs}]);
+          };
+
           const toggleParaEmail=(email)=>{
             const actual=tableroForm.para_emails||[];
-            const nuevo=actual.includes(email)?actual.filter(e=>e!==email):[...actual,email];
-            setTableroForm(f=>({...f,para_emails:nuevo}));
+            setTableroForm(f=>({...f,para_emails:actual.includes(email)?actual.filter(e=>e!==email):[...actual,email]}));
           };
 
           const guardarEdicion=async(n)=>{
@@ -5134,28 +5162,59 @@ export default function App() {
             setTableroEditId(null);
             await supa.upsert("tablero_notas",[{...n,texto:tableroEditTxt.trim()}]);
           };
+
+          const venceHoy = n => n.fecha_limite&&n.fecha_limite===hoy;
+          const vencido  = n => n.fecha_limite&&n.fecha_limite<hoy&&!n.completado;
+
           const PostIt=({n,checkbox=false})=>{
             const editando=tableroEditId===n.id;
+            const bordColor = vencido(n)?"#dc2626":venceHoy(n)?"#d97706":"transparent";
             return(
-              <div style={{background:n.color||"#fef08a",borderRadius:10,padding:"14px",boxShadow:"0 3px 10px rgba(0,0,0,0.1)",minHeight:90,display:"flex",flexDirection:"column",justifyContent:"space-between",opacity:n.completado?0.55:1,transition:"opacity .2s"}}>
+              <div style={{background:n.color||"#fef08a",borderRadius:10,padding:"14px",boxShadow:"0 3px 10px rgba(0,0,0,0.1)",minHeight:90,display:"flex",flexDirection:"column",justifyContent:"space-between",opacity:n.completado?0.5:1,transition:"opacity .3s",border:`2px solid ${bordColor}`}}>
                 <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
                   {checkbox&&<input type="checkbox" checked={!!n.completado} onChange={()=>toggleCompletado(n)} style={{marginTop:3,accentColor:"#374151",cursor:"pointer",flexShrink:0}}/>}
                   <div style={{flex:1}}>
                     {n.emoji&&<span style={{fontSize:18,marginRight:5}}>{n.emoji}</span>}
                     {editando
-                      ? <input autoFocus value={tableroEditTxt} onChange={e=>setTableroEditTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")guardarEdicion(n);if(e.key==="Escape")setTableroEditId(null);}} style={{width:"100%",border:"none",background:"transparent",fontFamily:"system-ui",fontSize:13,color:"#1a1a1a",outline:"1px solid #374151",borderRadius:4,padding:"2px 4px"}}/>
-                      : <span style={{fontSize:13,fontFamily:"system-ui",textDecoration:n.completado?"line-through":"none",color:"#1a1a1a",lineHeight:1.5}}>{n.texto}</span>
+                      ? <input autoFocus value={tableroEditTxt} onChange={e=>setTableroEditTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")guardarEdicion(n);if(e.key==="Escape")setTableroEditId(null);}} style={{width:"100%",border:"none",background:"transparent",fontFamily:FONT_HAND,fontSize:15,color:"#1a1a1a",outline:"1px solid #374151",borderRadius:4,padding:"2px 4px"}}/>
+                      : <span style={{fontSize:15,fontFamily:FONT_HAND,textDecoration:n.completado?"line-through":"none",color:"#1a1a1a",lineHeight:1.5}}>{n.texto}</span>
                     }
                   </div>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-                  <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{n.usuario_nombre||n.usuario_email}</span>
+                {/* Fecha límite */}
+                {n.fecha_limite&&!n.completado&&(
+                  <div style={{fontSize:11,marginTop:6,fontFamily:"system-ui",color:vencido(n)?"#dc2626":venceHoy(n)?"#d97706":"#6b7280",fontWeight:vencido(n)||venceHoy(n)?700:400}}>
+                    {vencido(n)?"⚠️ Venció":venceHoy(n)?"⏰ Vence hoy":"📅"} {n.fecha_limite}
+                  </div>
+                )}
+                {/* Reacciones */}
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:8}}>
+                  {REACCIONES_OPT.map(emoji=>{
+                    const lista=(n.reacciones||{})[emoji]||[];
+                    const yoReaccioné=lista.includes(miEmail);
+                    return lista.length>0||true?(
+                      <button key={emoji} onClick={()=>toggleReaccion(n,emoji)}
+                        title={lista.map(e=>(users||[]).find(u=>u.email===e)?.nombre||e).join(", ")||emoji}
+                        style={{background:yoReaccioné?"rgba(0,0,0,0.12)":"rgba(0,0,0,0.05)",border:"none",borderRadius:99,padding:"2px 7px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",display:"flex",alignItems:"center",gap:3}}>
+                        {emoji}{lista.length>0&&<span style={{fontSize:10}}>{lista.length}</span>}
+                      </button>
+                    ):null;
+                  })}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                    <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{n.usuario_nombre||n.usuario_email}</span>
+                    {n.usuario_email===miEmail&&n.para_emails&&n.para_emails.length>0&&(
+                      <span style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>Compartida con: {n.para_emails.map(e=>(users||[]).find(u=>u.email===e)?.nombre||e).join(", ")}</span>
+                    )}
+                  </div>
                   {n.usuario_email===miEmail&&(
-                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
                       {editando
-                        ? <button onClick={()=>guardarEdicion(n)} style={{background:"none",border:"none",color:"#16a34a",cursor:"pointer",fontSize:14,padding:0,lineHeight:1}}>✓</button>
-                        : <button onClick={()=>{setTableroEditId(n.id);setTableroEditTxt(n.texto);}} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>✏️</button>
+                        ? <button onClick={()=>guardarEdicion(n)} style={{background:"none",border:"none",color:"#16a34a",cursor:"pointer",fontSize:14,padding:0}}>✓</button>
+                        : <button onClick={()=>{setTableroEditId(n.id);setTableroEditTxt(n.texto);}} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:13,padding:0}}>✏️</button>
                       }
+                      <button onClick={()=>archivarNota(n)} title="Archivar" style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:13,padding:0}}>📦</button>
                       <button onClick={()=>eliminarNota(n.id)} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>
                     </div>
                   )}
@@ -5166,9 +5225,23 @@ export default function App() {
 
           return(
             <div>
-              <div style={{marginBottom:24}}>
-                <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Tablero</h1>
-                <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Tus pendientes y el muro del equipo</p>
+              <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
+                <div>
+                  <h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Tablero</h1>
+                  <p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Tus pendientes y el muro del equipo</p>
+                </div>
+                {/* Filtros */}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                  <select value={tableroFiltro.color} onChange={e=>setTableroFiltro(f=>({...f,color:e.target.value}))} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"6px 10px",fontSize:12,fontFamily:"system-ui",background:"#fff"}}>
+                    <option value="">Todos los colores</option>
+                    {COLORES.map(c=><option key={c.v} value={c.v}>{c.l}</option>)}
+                  </select>
+                  <select value={tableroFiltro.autor} onChange={e=>setTableroFiltro(f=>({...f,autor:e.target.value}))} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"6px 10px",fontSize:12,fontFamily:"system-ui",background:"#fff"}}>
+                    <option value="">Todos los autores</option>
+                    {autoresUnicos.map(a=><option key={a.email} value={a.email}>{a.nombre}</option>)}
+                  </select>
+                  {(tableroFiltro.color||tableroFiltro.autor)&&<button onClick={()=>setTableroFiltro({color:"",autor:""})} style={S.btn("#f3f4f6","#374151",{fontSize:12})}>Limpiar</button>}
+                </div>
               </div>
 
               {/* FORM NUEVA NOTA */}
@@ -5183,6 +5256,8 @@ export default function App() {
                   <select value={tableroForm.emoji} onChange={e=>setTableroForm(f=>({...f,emoji:e.target.value}))} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"4px 8px",fontSize:14,fontFamily:"system-ui"}}>
                     {EMOJIS.map(e=><option key={e} value={e}>{e||"—"}</option>)}
                   </select>
+                  <span style={{fontSize:13,fontWeight:600,fontFamily:"system-ui",color:"#374151",marginLeft:8}}>Fecha límite:</span>
+                  <input type="date" value={tableroForm.fecha_limite} onChange={e=>setTableroForm(f=>({...f,fecha_limite:e.target.value}))} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"4px 8px",fontSize:12,fontFamily:"system-ui"}}/>
                 </div>
                 <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
                   {[["solo","🔒 Solo yo"],["todos","🌎 Todo el equipo"],["especificos","👥 Personas específicas"]].map(([v,l])=>(
@@ -5208,7 +5283,7 @@ export default function App() {
                 <div style={{display:"flex",gap:10}}>
                   <input value={tableroForm.texto} onChange={e=>setTableroForm(f=>({...f,texto:e.target.value}))}
                     onKeyDown={e=>e.key==="Enter"&&agregarNota()}
-                    placeholder="Escribe un pendiente o nota..." style={{...S.inp,flex:1}}/>
+                    placeholder="Escribe un pendiente o nota..." style={{...S.inp,flex:1,fontFamily:FONT_HAND,fontSize:15}}/>
                   <button onClick={agregarNota} style={S.btn(RED,"#fff")}>Agregar</button>
                 </div>
               </div>
@@ -5218,15 +5293,35 @@ export default function App() {
                 <div>
                   <div style={{fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,marginBottom:14,color:"#111"}}>Mis pendientes</div>
                   {misNotas.length===0&&<div style={{color:"#9ca3af",fontSize:13,fontFamily:"system-ui",padding:"20px 0"}}>Sin pendientes. ¡Todo en orden!</div>}
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
                     {misNotas.slice().reverse().map(n=><PostIt key={n.id} n={n} checkbox/>)}
                   </div>
                   {compartidas.length>0&&(
                     <div style={{marginTop:20}}>
                       <div style={{fontWeight:600,fontSize:13,fontFamily:"system-ui",color:"#6b7280",marginBottom:10}}>Compartidas contigo</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:10}}>
                         {compartidas.slice().reverse().map(n=><PostIt key={n.id} n={n} checkbox={n.usuario_email===miEmail}/>)}
                       </div>
+                    </div>
+                  )}
+                  {archivadas.length>0&&(
+                    <div style={{marginTop:20}}>
+                      <button onClick={()=>setTableroVerArchivados(v=>!v)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#9ca3af",fontFamily:"system-ui",padding:0,marginBottom:8}}>
+                        {tableroVerArchivados?"▼":"▶"} Archivadas ({archivadas.length})
+                      </button>
+                      {tableroVerArchivados&&(
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {archivadas.map(n=>(
+                            <div key={n.id} style={{background:"#f3f4f6",borderRadius:8,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,fontFamily:FONT_HAND,color:"#6b7280"}}>
+                              <span>{n.emoji} {n.texto}</span>
+                              <div style={{display:"flex",gap:8}}>
+                                <button onClick={()=>desarchivarNota(n)} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>Restaurar</button>
+                                <button onClick={()=>eliminarNota(n.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:14,color:"#9ca3af"}}>×</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
