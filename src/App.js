@@ -5739,6 +5739,7 @@ export default function App() {
                     <div style={{display:"flex",gap:8,flexShrink:0}}>
                       <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff")}>Ver</button>
                       {can(session,"importarEstudiantes")&&p.ghl_pipeline_id&&p.ghl_stage_id&&<button onClick={()=>{setSelProg(p.id);setShowImp(true);}} style={S.btn("#eff6ff","#2563eb",{padding:"8px 12px",border:"1px solid #bfdbfe"})}>Importar</button>}
+                      {can(session,"importarEstudiantes")&&<button onClick={()=>setNewEstModal(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>+ Alumno</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>Editar</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
                     </div>
