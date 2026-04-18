@@ -3714,7 +3714,7 @@ export default function App() {
   const [npsModal,setNpsModal]         = useState(null);
   const [npsData,setNpsData] = useState([]);
   const [tableroNotas,setTableroNotas] = useState([]);
-  const [tableroForm,setTableroForm]   = useState({texto:"",color:"#fef08a",emoji:"",publico:false});
+  const [tableroForm,setTableroForm]   = useState({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[]});
   const [tableroLoaded,setTableroLoaded] = useState(false);
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
@@ -4843,7 +4843,7 @@ export default function App() {
           {([
             {group:"Coordinación",items:[
               {v:"dashboard",l:"Dashboard",  perm:"verProgramas"},
-              {v:"tablero",  l:"Tablero",    perm:"verProgramas"},
+              {v:"tablero",  l:"Tablero ✨",  perm:"verProgramas"},
               {v:"lista",   l:"Programas",  perm:"verProgramas"},
               {v:"hoy",     l:"Hoy",        perm:"verProgramas"},
               {v:"calendario",l:"Calendario",perm:"verProgramas"},
@@ -5084,16 +5084,28 @@ export default function App() {
           const EMOJIS=["","⭐","🔥","📌","✅","⚠️","💡","🎯","📅","🙌"];
           const yo = session?.nombre||session?.user?.email||"";
           const miEmail = session?.user?.email||"";
+          // visibilidad: "solo" | "todos" | "especificos"
+          const visibilidad = tableroForm.visibilidad||"solo";
 
-          const misNotas = tableroNotas.filter(n=>n.usuario_email===miEmail&&!n.publico);
-          const muro     = tableroNotas.filter(n=>n.publico);
+          const puedoVer = n => {
+            if(n.usuario_email===miEmail) return true;
+            if(n.publico) return true;
+            if(n.para_emails&&n.para_emails.includes(miEmail)) return true;
+            return false;
+          };
+
+          const misNotas  = tableroNotas.filter(n=>n.usuario_email===miEmail&&!n.publico&&(!n.para_emails||n.para_emails.length===0));
+          const muro      = tableroNotas.filter(n=>n.publico);
+          const compartidas = tableroNotas.filter(n=>!n.publico&&n.para_emails&&n.para_emails.length>0&&puedoVer(n));
+          const otrosUsuarios = (users||[]).filter(u=>u.email!==miEmail);
 
           const agregarNota = async()=>{
             if(!tableroForm.texto.trim())return;
-            const nueva={id:newId(),usuario_email:miEmail,usuario_nombre:yo,texto:tableroForm.texto.trim(),color:tableroForm.color,emoji:tableroForm.emoji,publico:tableroForm.publico,completado:false,created_at:new Date().toISOString()};
-            const nuevas=[...tableroNotas,nueva];
-            setTableroNotas(nuevas);
-            setTableroForm({texto:"",color:"#fef08a",emoji:"",publico:false});
+            const esPublico = visibilidad==="todos";
+            const paraEmails = visibilidad==="especificos"?(tableroForm.para_emails||[]):[];
+            const nueva={id:newId(),usuario_email:miEmail,usuario_nombre:yo,texto:tableroForm.texto.trim(),color:tableroForm.color,emoji:tableroForm.emoji,publico:esPublico,para_emails:paraEmails,completado:false,created_at:new Date().toISOString()};
+            setTableroNotas([...tableroNotas,nueva]);
+            setTableroForm({texto:"",color:"#fef08a",emoji:"",visibilidad:"solo",para_emails:[]});
             await supa.upsert("tablero_notas",[nueva]);
           };
 
@@ -5106,6 +5118,50 @@ export default function App() {
           const eliminarNota=async(id)=>{
             setTableroNotas(tableroNotas.filter(n=>n.id!==id));
             await supa.del("tablero_notas",id);
+          };
+
+          const toggleParaEmail=(email)=>{
+            const actual=tableroForm.para_emails||[];
+            const nuevo=actual.includes(email)?actual.filter(e=>e!==email):[...actual,email];
+            setTableroForm(f=>({...f,para_emails:nuevo}));
+          };
+
+          const PostIt=({n,checkbox=false})=>{
+            const [editando,setEditando] = React.useState(false);
+            const [textoEdit,setTextoEdit] = React.useState(n.texto);
+            const guardarEdicion=async()=>{
+              if(!textoEdit.trim()){setEditando(false);setTextoEdit(n.texto);return;}
+              const updated=tableroNotas.map(x=>x.id===n.id?{...x,texto:textoEdit.trim()}:x);
+              setTableroNotas(updated);
+              setEditando(false);
+              await supa.upsert("tablero_notas",[{...n,texto:textoEdit.trim()}]);
+            };
+            return(
+              <div style={{background:n.color||"#fef08a",borderRadius:10,padding:"14px",boxShadow:"0 3px 10px rgba(0,0,0,0.1)",minHeight:90,display:"flex",flexDirection:"column",justifyContent:"space-between",opacity:n.completado?0.55:1,transition:"opacity .2s"}}>
+                <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  {checkbox&&<input type="checkbox" checked={!!n.completado} onChange={()=>toggleCompletado(n)} style={{marginTop:3,accentColor:"#374151",cursor:"pointer",flexShrink:0}}/>}
+                  <div style={{flex:1}}>
+                    {n.emoji&&<span style={{fontSize:18,marginRight:5}}>{n.emoji}</span>}
+                    {editando
+                      ? <input autoFocus value={textoEdit} onChange={e=>setTextoEdit(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")guardarEdicion();if(e.key==="Escape"){setEditando(false);setTextoEdit(n.texto);}}} style={{width:"100%",border:"none",background:"transparent",fontFamily:"system-ui",fontSize:13,color:"#1a1a1a",outline:"1px solid #374151",borderRadius:4,padding:"2px 4px"}}/>
+                      : <span style={{fontSize:13,fontFamily:"system-ui",textDecoration:n.completado?"line-through":"none",color:"#1a1a1a",lineHeight:1.5}}>{n.texto}</span>
+                    }
+                  </div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
+                  <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{n.usuario_nombre||n.usuario_email}</span>
+                  {n.usuario_email===miEmail&&(
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      {editando
+                        ? <button onClick={guardarEdicion} style={{background:"none",border:"none",color:"#16a34a",cursor:"pointer",fontSize:14,padding:0,lineHeight:1}}>✓</button>
+                        : <button onClick={()=>{setEditando(true);setTextoEdit(n.texto);}} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>✏️</button>
+                      }
+                      <button onClick={()=>eliminarNota(n.id)} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
           };
 
           return(
@@ -5127,11 +5183,28 @@ export default function App() {
                   <select value={tableroForm.emoji} onChange={e=>setTableroForm(f=>({...f,emoji:e.target.value}))} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"4px 8px",fontSize:14,fontFamily:"system-ui"}}>
                     {EMOJIS.map(e=><option key={e} value={e}>{e||"—"}</option>)}
                   </select>
-                  <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,fontFamily:"system-ui",color:"#374151",cursor:"pointer",marginLeft:8}}>
-                    <input type="checkbox" checked={tableroForm.publico} onChange={e=>setTableroForm(f=>({...f,publico:e.target.checked}))} style={{accentColor:RED}}/>
-                    Publicar en el muro
-                  </label>
                 </div>
+                <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                  {[["solo","🔒 Solo yo"],["todos","🌎 Todo el equipo"],["especificos","👥 Personas específicas"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setTableroForm(f=>({...f,visibilidad:v,para_emails:[]}))}
+                      style={{border:"2px solid "+(visibilidad===v?RED:"#e5e7eb"),borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"system-ui",background:visibilidad===v?"#fef2f2":"#fff",color:visibilidad===v?RED:"#6b7280"}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {visibilidad==="especificos"&&otrosUsuarios.length>0&&(
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+                    {otrosUsuarios.map(u=>{
+                      const sel=(tableroForm.para_emails||[]).includes(u.email);
+                      return(
+                        <button key={u.email} onClick={()=>toggleParaEmail(u.email)}
+                          style={{border:"2px solid "+(sel?RED:"#e5e7eb"),borderRadius:99,padding:"4px 12px",cursor:"pointer",fontSize:12,fontFamily:"system-ui",fontWeight:sel?700:400,background:sel?"#fef2f2":"#fff",color:sel?RED:"#374151"}}>
+                          {u.nombre||u.email}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div style={{display:"flex",gap:10}}>
                   <input value={tableroForm.texto} onChange={e=>setTableroForm(f=>({...f,texto:e.target.value}))}
                     onKeyDown={e=>e.key==="Enter"&&agregarNota()}
@@ -5146,17 +5219,16 @@ export default function App() {
                   <div style={{fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,marginBottom:14,color:"#111"}}>Mis pendientes</div>
                   {misNotas.length===0&&<div style={{color:"#9ca3af",fontSize:13,fontFamily:"system-ui",padding:"20px 0"}}>Sin pendientes. ¡Todo en orden!</div>}
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {misNotas.slice().reverse().map(n=>(
-                      <div key={n.id} style={{background:n.color||"#fef08a",borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"flex-start",gap:10,boxShadow:"0 2px 8px rgba(0,0,0,0.07)",opacity:n.completado?0.55:1,transition:"opacity .2s"}}>
-                        <input type="checkbox" checked={!!n.completado} onChange={()=>toggleCompletado(n)} style={{marginTop:3,accentColor:"#374151",cursor:"pointer",flexShrink:0}}/>
-                        <div style={{flex:1}}>
-                          {n.emoji&&<span style={{fontSize:16,marginRight:6}}>{n.emoji}</span>}
-                          <span style={{fontSize:13,fontFamily:"system-ui",textDecoration:n.completado?"line-through":"none",color:"#1a1a1a"}}>{n.texto}</span>
-                        </div>
-                        {n.usuario_email===miEmail&&<button onClick={()=>eliminarNota(n.id)} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>}
-                      </div>
-                    ))}
+                    {misNotas.slice().reverse().map(n=><PostIt key={n.id} n={n} checkbox/>)}
                   </div>
+                  {compartidas.length>0&&(
+                    <div style={{marginTop:20}}>
+                      <div style={{fontWeight:600,fontSize:13,fontFamily:"system-ui",color:"#6b7280",marginBottom:10}}>Compartidas contigo</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {compartidas.slice().reverse().map(n=><PostIt key={n.id} n={n} checkbox={n.usuario_email===miEmail}/>)}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* MURO DEL EQUIPO */}
@@ -5164,18 +5236,7 @@ export default function App() {
                   <div style={{fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,marginBottom:14,color:"#111"}}>Muro del equipo</div>
                   {muro.length===0&&<div style={{color:"#9ca3af",fontSize:13,fontFamily:"system-ui",padding:"20px 0"}}>Nadie ha publicado aún. ¡Sé el primero!</div>}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                    {muro.slice().reverse().map(n=>(
-                      <div key={n.id} style={{background:n.color||"#fef08a",borderRadius:10,padding:"14px",boxShadow:"0 3px 10px rgba(0,0,0,0.1)",position:"relative",minHeight:90,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
-                        <div>
-                          {n.emoji&&<span style={{fontSize:20,display:"block",marginBottom:4}}>{n.emoji}</span>}
-                          <p style={{margin:0,fontSize:13,fontFamily:"system-ui",color:"#1a1a1a",lineHeight:1.5}}>{n.texto}</p>
-                        </div>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-                          <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{n.usuario_nombre||n.usuario_email}</span>
-                          {n.usuario_email===miEmail&&<button onClick={()=>eliminarNota(n.id)} style={{background:"none",border:"none",color:"#9ca3af",cursor:"pointer",fontSize:16,padding:0,lineHeight:1}}>×</button>}
-                        </div>
-                      </div>
-                    ))}
+                    {muro.slice().reverse().map(n=><PostIt key={n.id} n={n}/>)}
                   </div>
                 </div>
               </div>
