@@ -712,7 +712,7 @@ function ListaDocente({programas, onSave}) {
   const numClaseHoy = fechasClase.indexOf(hoy)+1;
   const maxClases = fechasClase.length||mod.clases||0;
 
-  const [local,setLocal] = useState(()=>ests(prog).map(e=>({...e,asistencia:{...(e.asistencia||{})}})));
+  const [local,setLocal] = useState(()=>ests(prog).filter(e=>e.estatus!=="baja").map(e=>({...e,asistencia:{...(e.asistencia||{})}})));
   const [saved,setSaved] = useState(false);
 
   // Presente/ausente por fecha — asistencia guardada como array de fechas
