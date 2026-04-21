@@ -119,8 +119,7 @@ const ghlFetchContacts = async (apiKey, locationId, pipelineId, stageId) => {
         const cr=await fetch(`https://services.leadconnectorhq.com/contacts/${op.contactId}`,{headers:{"Authorization":"Bearer "+apiKey,"Version":"2021-04-15"}});
         const cd=await cr.json();
         const mergedCF=[...(cd.contact?.customFields||[]),...(op.customFields||[])].filter((f,i,arr)=>arr.findIndex(x=>x.id===f.id)===i);
-        console.log("[GHL opp fields]", {createdAt:op.createdAt, lastStageChangeAt:op.lastStageChangeAt, lastStatusChangeAt:op.lastStatusChangeAt, dateAdded:op.dateAdded});
-        return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF, _oppCreatedAt:op.createdAt||op.lastStageChangeAt||op.lastStatusChangeAt||op.dateAdded||""};
+return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF, _oppCreatedAt:op.createdAt||op.lastStageChangeAt||op.lastStatusChangeAt||op.dateAdded||""};
       } catch(e){ return null; }
     }));
     return enriched.filter(Boolean);
@@ -3907,6 +3906,8 @@ export default function App() {
                 estado: e.estado||"", uso_cfdi: e.uso_cfdi||"",
                 estatus: e.estatus||"activo",
                 fecha_nacimiento: e.fecha_nacimiento||"",
+                fecha_lead: e.fecha_lead||"",
+                fecha_conversion: e.fecha_conversion||"",
                 fiscal_token: e.fiscal_token||null,
                 fiscal_completado: e.fiscal_completado||false,
                 cobranza_estado: e.cobranza_estado||null,
@@ -5472,13 +5473,14 @@ export default function App() {
                 <KPICard label="Facturas pendientes" value={factPendientes} color="#7c3aed" onClick={()=>{setView("facturacion");setFiltroFactTipo("pendiente");}}/>
                 {edadPromGeneral&&<KPICard label="Edad promedio general" value={edadPromGeneral+" años"} sub={edadesGeneral.length+" estudiantes con datos"} color="#0d9488"/>}
                 {(()=>{
+                  const mediana=arr=>{if(!arr.length)return null;const s=[...arr].sort((a,b)=>a-b);const m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);};
                   const dias=(programas||[]).flatMap(p=>ests(p).filter(e=>e.fecha_lead&&e.fecha_conversion).map(e=>{
                     const d1=new Date(e.fecha_lead),d2=new Date(e.fecha_conversion);
                     return(!isNaN(d1)&&!isNaN(d2))?Math.max(0,Math.round((d2-d1)/(1000*60*60*24))):null;
-                  }).filter(x=>x!==null));
+                  }).filter(x=>x!==null&&x<=365));
                   if(!dias.length) return null;
-                  const prom=Math.round(dias.reduce((a,b)=>a+b,0)/dias.length);
-                  return <KPICard label="Conversión promedio" value={prom+"d"} sub={dias.length+" estudiantes con datos"} color="#7c3aed" onClick={()=>setView("reportes")}/>;
+                  const med=mediana(dias);
+                  return <KPICard label="Conversión mediana" value={med+"d"} sub={dias.length+" estudiantes con datos"} color="#7c3aed" onClick={()=>setView("reportes")}/>;
                 })()}
               </div>
 
@@ -8033,12 +8035,13 @@ export default function App() {
           <div>
             <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 24px",letterSpacing:"-0.5px"}}>Reportes y estadísticas</h1>
             {(()=>{
-              // Cálculo de tiempo de conversión global
+              // Cálculo de tiempo de conversión global — mediana + filtro 365d
+              const mediana=arr=>{if(!arr.length)return null;const s=[...arr].sort((a,b)=>a-b);const m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);};
               const diasConv=(programas||[]).flatMap(p=>ests(p).filter(e=>e.fecha_lead&&e.fecha_conversion).map(e=>{
                 const d1=new Date(e.fecha_lead), d2=new Date(e.fecha_conversion);
                 return isNaN(d1)||isNaN(d2)?null:Math.max(0,Math.round((d2-d1)/(1000*60*60*24)));
-              }).filter(x=>x!==null));
-              const promConvGlobal=diasConv.length?Math.round(diasConv.reduce((a,b)=>a+b,0)/diasConv.length):null;
+              }).filter(x=>x!==null&&x<=365));
+              const medConvGlobal=mediana(diasConv);
               return(
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
                   {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados EC",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Alumni IBERO cursando",egresadosIberoActivos.length],["Alumni IBERO egresados de EC",egresadosIberoConcluyeron.length]].map(([l,v])=>(
@@ -8047,11 +8050,11 @@ export default function App() {
                       <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
                     </div>
                   ))}
-                  {promConvGlobal!==null&&(
+                  {medConvGlobal!==null&&(
                     <div style={{...S.card,padding:"20px 22px",border:"1px solid #c4b5fd"}}>
-                      <div style={{fontSize:28,fontWeight:800,color:"#7c3aed",fontFamily:"system-ui"}}>{promConvGlobal}d</div>
-                      <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>Conversión promedio</div>
-                      <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:2}}>{diasConv.length} estudiantes con datos</div>
+                      <div style={{fontSize:28,fontWeight:800,color:"#7c3aed",fontFamily:"system-ui"}}>{medConvGlobal}d</div>
+                      <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>Conversión mediana</div>
+                      <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:2}}>{diasConv.length} estudiantes · outliers +365d excluidos</div>
                     </div>
                   )}
                 </div>
@@ -8059,15 +8062,16 @@ export default function App() {
             })()}
             {/* TIEMPO DE CONVERSIÓN POR PROGRAMA */}
             {(()=>{
+              const medianaProg=arr=>{if(!arr.length)return null;const s=[...arr].sort((a,b)=>a-b);const m=Math.floor(s.length/2);return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2);};
               const porProg=(programas||[]).map(p=>{
                 const dias=ests(p).filter(e=>e.fecha_lead&&e.fecha_conversion).map(e=>{
                   const d1=new Date(e.fecha_lead), d2=new Date(e.fecha_conversion);
                   return isNaN(d1)||isNaN(d2)?null:Math.max(0,Math.round((d2-d1)/(1000*60*60*24)));
-                }).filter(x=>x!==null);
+                }).filter(x=>x!==null&&x<=365);
                 if(!dias.length) return null;
-                const prom=Math.round(dias.reduce((a,b)=>a+b,0)/dias.length);
+                const med=medianaProg(dias);
                 const min=Math.min(...dias), max=Math.max(...dias);
-                return {prog:p, prom, min, max, n:dias.length};
+                return {prog:p, prom:med, min, max, n:dias.length};
               }).filter(Boolean).sort((a,b)=>a.prom-b.prom);
               if(!porProg.length) return null;
               return(
