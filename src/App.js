@@ -4803,6 +4803,28 @@ export default function App() {
     notify("Módulo eliminado","warning");
   };
   const openNewProg=()=>{setProgForm({...eProg,id:newId()});setEditProgId(null);setShowProgM(true);};
+  const duplicarProg=p=>{
+    const modulosDuplicados=(p.modulos||[]).map(m=>({
+      ...m,
+      id:newId(),
+      fechaInicio:"",
+      fechaFin:"",
+      estatus:"pendiente",
+    }));
+    const copia={
+      ...p,
+      id:newId(),
+      nombre:p.nombre+" (copia)",
+      generacion:"",
+      estudiantes:[],
+      modulos:modulosDuplicados,
+    };
+    // No guardar aún — el modal actúa como confirmación
+    const modalFija=MODALIDADES.map(m=>m.valor).includes(copia.modalidad);
+    setProgForm({...copia,modalidad:modalFija?copia.modalidad:"Otro",modalidadCustom:modalFija?"":copia.modalidad});
+    setEditProgId(null); // null = nuevo programa, se guarda solo al hacer clic en Guardar
+    setShowProgM(true);
+  };
   const openEditProg=p=>{
     const modalFija=MODALIDADES.map(m=>m.valor).includes(p.modalidad);
     setProgForm({...p,modalidad:modalFija?p.modalidad:"Otro",modalidadCustom:modalFija?"":p.modalidad});
@@ -6021,6 +6043,7 @@ export default function App() {
                       {can(session,"importarEstudiantes")&&p.ghl_pipeline_id&&p.ghl_stage_id&&<button onClick={()=>{setSelProg(p.id);setShowImp(true);}} style={S.btn("#eff6ff","#2563eb",{padding:"6px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>Importar</button>}
                       {can(session,"importarEstudiantes")&&<button onClick={()=>setNewEstModal(p)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>+ Alumno</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>}
+                      {can(session,"editarProgramas")&&<button onClick={()=>duplicarProg(p)} style={S.btn("#f5f3ff","#7c3aed",{padding:"6px 12px",fontSize:12})}>Duplicar</button>}
                       {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>}
                     </div>
                   </div>
