@@ -119,7 +119,8 @@ const ghlFetchContacts = async (apiKey, locationId, pipelineId, stageId) => {
         const cr=await fetch(`https://services.leadconnectorhq.com/contacts/${op.contactId}`,{headers:{"Authorization":"Bearer "+apiKey,"Version":"2021-04-15"}});
         const cd=await cr.json();
         const mergedCF=[...(cd.contact?.customFields||[]),...(op.customFields||[])].filter((f,i,arr)=>arr.findIndex(x=>x.id===f.id)===i);
-        return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF, _oppCreatedAt:op.createdAt||op.dateAdded||""};
+        console.log("[GHL opp fields]", {createdAt:op.createdAt, lastStageChangeAt:op.lastStageChangeAt, lastStatusChangeAt:op.lastStatusChangeAt, dateAdded:op.dateAdded});
+        return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF, _oppCreatedAt:op.createdAt||op.lastStageChangeAt||op.lastStatusChangeAt||op.dateAdded||""};
       } catch(e){ return null; }
     }));
     return enriched.filter(Boolean);
