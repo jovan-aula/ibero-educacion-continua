@@ -3743,8 +3743,6 @@ export default function App() {
   const [evalReporteModal,setEvalReporteModal] = useState(null); // {docente, evals}
   const [editEstModal,setEditEstModal] = useState(null);
   const [newEstModal,setNewEstModal]   = useState(null); // prog
-  const [inactivoModal,setInactivoModal] = useState(null); // {est, prog}
-  const [inactivoRazon,setInactivoRazon] = useState("");
   const [bajaModal,setBajaModal]         = useState(null); // {est, prog}
   const [bajaRazon,setBajaRazon]         = useState("");
   const [npsModal,setNpsModal]         = useState(null);
@@ -6277,12 +6275,11 @@ export default function App() {
                             <button onClick={()=>setPagoModal({est:e,prog})} style={S.btn("#f3f4f6","#374151",{padding:"5px 10px",fontSize:12})}>Pago</button>
                             <select value={e.estatus||"activo"} onChange={ev=>{
                                 const nuevo=ev.target.value;
-                                if(nuevo==="inactivo"){setInactivoRazon("");setInactivoModal({est:e,prog});}
-                                else if(nuevo==="baja"){setCS({titulo:"Dar de baja",mensaje:`¿Dar de baja a "${e.nombre}"? Se excluirá de todos los reportes y pagos. Esta acción se puede revertir cambiando su estatus manualmente.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:"baja"}:es)}:p))});}
+                                if(nuevo==="baja"){setBajaRazon("");setBajaModal({est:e,prog});}
                                 else save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===e.id?{...es,estatus:nuevo}:es)}:p));
                               }}
                               style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"5px 8px",fontSize:12,fontFamily:"system-ui",outline:"none",cursor:"pointer"}}>
-                              <option value="activo">Activo</option><option value="inactivo">Inactivo</option><option value="egresado">Egresado EC</option><option value="baja">Baja</option>
+                              <option value="activo">Activo</option><option value="egresado">Egresado EC</option><option value="baja">Baja</option>
                             </select>
                             <button onClick={()=>setCS({titulo:"Quitar estudiante",mensaje:`¿Estás seguro de que deseas quitar a "${e.nombre}" de este programa? Se perderá su registro de asistencia.`,onConfirm:()=>{save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).filter(es=>es.id!==e.id)}:p));supa.del("estudiantes",e.id).catch(err=>console.error("Del estudiante:",err));supa.del("pagos",e.id+"_pago").catch(err=>console.error("Del pago:",err));}})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 10px",fontSize:12})}>Quitar</button>
                           </div>
@@ -6892,11 +6889,10 @@ export default function App() {
                                       )}
                                       {/* Botón Activo / Inactivo / Baja */}
                                       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                                      {esInactivo
-                                        ?<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${est.nombre}"? Volverá a aparecer en reportes y control de pagos.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"activo"),btnLabel:"Sí, reactivar",btnColor:"#16a34a"});}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
-                                        :<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Marcar como inactivo",mensaje:`¿Marcar a "${est.nombre}" como inactivo? Saldrá de los reportes activos y contará en la tasa de deserción.`,onConfirm:()=>marcarInactivo(prog.id,est.id,"inactivo"),btnLabel:"Sí, confirmar",btnColor:"#d97706"});}} style={S.btn("#fffbeb","#d97706",{padding:"5px 12px",fontSize:12,border:"1px solid #fde68a"})}>Marcar inactivo</button>
+                                      {(est.estatus==="baja"||est.estatus==="inactivo")
+                                        ?<button onClick={ev=>{ev.stopPropagation();setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${est.nombre}"? Volverá a aparecer en reportes y control de pagos.`,onConfirm:()=>save((programas||[]).map(p=>p.id===prog.id?{...p,estudiantes:ests(p).map(es=>es.id===est.id?{...es,estatus:"activo"}:es)}:p)),btnLabel:"Sí, reactivar",btnColor:"#16a34a"});}} style={S.btn("#f0fdf4","#16a34a",{padding:"5px 12px",fontSize:12,border:"1px solid #bbf7d0"})}>Reactivar</button>
+                                        :<button onClick={ev=>{ev.stopPropagation();setBajaRazon("");setBajaModal({est,prog});}} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>Dar de baja</button>
                                       }
-                                      <button onClick={ev=>{ev.stopPropagation();setBajaRazon("");setBajaModal({est,prog});}} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12,border:"1px solid #fca5a5"})}>Dar de baja</button>
                                       </div>
                                       {esInactivo&&<span style={{fontSize:11,color:"#d97706",fontFamily:"system-ui",fontStyle:"italic"}}>Cuenta en tasa de deserción en Reportes</span>}
                                       {estado==="critico"&&!esInactivo&&<span style={{fontSize:11,color:"#dc2626",fontFamily:"system-ui",fontStyle:"italic"}}>2+ pagos vencidos — considera marcar inactivo</span>}
@@ -8208,54 +8204,53 @@ export default function App() {
               )}
             </div>
             {/* TASA DE DESERCIÓN */}
-            {inactivos.length>0&&(
-              <div style={{...S.card,marginBottom:16,border:"1px solid #fde68a"}}>
-                <button onClick={()=>setRepExp(repExp==="desercion"?null:"desercion")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
-                  <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                    <span style={{fontWeight:700,fontSize:14}}>Tasa de deserción</span>
-                    <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>
-                      {inactivos.length} inactivo{inactivos.length!==1?"s":""}
-                    </span>
-                    {(()=>{
-                      const totalEst=(programas||[]).reduce((a,p)=>a+ests(p).filter(e=>e.estatus!=="baja").length,0);
-                      const pctDeserc=totalEst>0?Math.round(inactivos.length/totalEst*100):0;
-                      return<span style={{background:pctDeserc>=20?"#fef2f2":"#fffbeb",color:pctDeserc>=20?"#dc2626":"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>{pctDeserc}% de deserción</span>;
-                    })()}
-                  </div>
-                  <span style={{color:"#9ca3af"}}>{repExp==="desercion"?"▲":"▼"}</span>
-                </button>
-                {repExp==="desercion"&&(
-                  <div style={{borderTop:"1px solid #fde68a",padding:"0 20px 16px"}}>
-                    <div style={{fontSize:12,color:"#92400e",fontFamily:"system-ui",padding:"10px 0 8px",fontStyle:"italic"}}>Estudiantes marcados como inactivos por falta de pago. Se recomienda seguimiento antes de dar de baja definitiva.</div>
-                    {inactivos.map((e,i)=>(
-                      <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #fef3c7",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center",flexWrap:"wrap"}}>
-                        <div style={{flex:1,minWidth:140}}>
-                          <span style={{fontWeight:600}}>{e.nombre}</span>
-                          {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
-                        </div>
-                        <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
-                        <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>Inactivo</span>
-                        {/* Acciones */}
-                        <div style={{display:"flex",gap:6}}>
-                          {(()=>{
-                            const progObj=(programas||[]).find(p=>p.nombre===e.programa||(p.estudiantes||[]).some(x=>x.id===e.id));
-                            const estObj=progObj&&ests(progObj).find(x=>x.id===e.id);
-                            const tel=(estObj?.telefono||"").replace(/\D/g,"");
-                            const msg=`Hola ${e.nombre}, te contactamos de IBERO Tijuana Educación Continua para hacerte saber que tienes un adeudo pendiente. Por favor comunícate con nosotros para regularizar tu situación.`;
-                            const waUrl=tel?"https://wa.me/52"+tel+"?text="+encodeURIComponent(msg):"https://wa.me/?text="+encodeURIComponent(msg);
-                            return(<>
-                              <button onClick={()=>window.open(waUrl,"_blank")} style={{fontSize:11,background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>WA</button>
-                              {progObj&&estObj&&<button onClick={()=>setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${e.nombre}"? Volverá a aparecer en asistencia y reportes.`,onConfirm:()=>save((programas||[]).map(p=>p.id!==progObj.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estObj.id?es:{...es,estatus:"activo"})}))})} style={{fontSize:11,background:"#eff6ff",color:"#2563eb",border:"1px solid #bfdbfe",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>Reactivar</button>}
-                              {progObj&&estObj&&<button onClick={()=>setCS({titulo:"Baja definitiva",mensaje:`¿Dar de baja definitiva a "${e.nombre}"? Se excluirá de todos los reportes. Se puede revertir desde su ficha.`,onConfirm:()=>save((programas||[]).map(p=>p.id!==progObj.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estObj.id?es:{...es,estatus:"baja"})}))})} style={{fontSize:11,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>Dar de baja</button>}
-                            </>);
-                          })()}
-                        </div>
+            {(()=>{
+              const desercion=(programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="baja"||e.estatus==="inactivo").map(e=>({...e,programa:p.nombre,progObj:p})));
+              if(!desercion.length) return null;
+              const totalEst=(programas||[]).reduce((a,p)=>a+ests(p).length,0);
+              const pctDeserc=totalEst>0?Math.round(desercion.length/totalEst*100):0;
+              // Agrupar por motivo
+              const porMotivo={};
+              desercion.forEach(e=>{const m=e.campos_extra?.motivo_baja||e.campos_extra?.motivo_inactivo||"Sin especificar";porMotivo[m]=(porMotivo[m]||0)+1;});
+              return(
+                <div style={{...S.card,marginBottom:16,border:"1px solid #fca5a5"}}>
+                  <button onClick={()=>setRepExp(repExp==="desercion"?null:"desercion")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                    <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontWeight:700,fontSize:14}}>Deserción</span>
+                      <span style={{background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>{desercion.length} baja{desercion.length!==1?"s":""}</span>
+                      <span style={{background:pctDeserc>=20?"#fef2f2":"#fffbeb",color:pctDeserc>=20?"#dc2626":"#d97706",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700}}>{pctDeserc}%</span>
+                    </div>
+                    <span style={{color:"#9ca3af"}}>{repExp==="desercion"?"▲":"▼"}</span>
+                  </button>
+                  {repExp==="desercion"&&(
+                    <div style={{borderTop:"1px solid #fca5a5",padding:"16px 20px"}}>
+                      {/* Resumen por motivo */}
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+                        {Object.entries(porMotivo).sort((a,b)=>b[1]-a[1]).map(([m,n])=>(
+                          <span key={m} style={{background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"3px 10px",fontSize:12,fontFamily:"system-ui",fontWeight:600}}>{m}: {n}</span>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                      {desercion.map((e,i)=>{
+                        const motivo=e.campos_extra?.motivo_baja||e.campos_extra?.motivo_inactivo||"Sin especificar";
+                        const fecha=e.campos_extra?.fecha_baja||e.campos_extra?.fecha_inactivo||"";
+                        return(
+                          <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #fef2f2",display:"flex",gap:12,fontFamily:"system-ui",fontSize:13,alignItems:"center",flexWrap:"wrap"}}>
+                            <div style={{flex:1,minWidth:140}}>
+                              <span style={{fontWeight:600}}>{e.nombre}</span>
+                              {e.empresa&&<span style={{color:"#9ca3af",marginLeft:8,fontSize:12}}>{e.empresa}</span>}
+                            </div>
+                            <div style={{color:"#6b7280",fontSize:12}}>{e.programa}</div>
+                            <span style={{background:"#fef2f2",color:"#dc2626",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>{motivo}</span>
+                            {fecha&&<span style={{color:"#9ca3af",fontSize:11}}>{fmtFecha(fecha)}</span>}
+                            <button onClick={()=>setCS({titulo:"Reactivar estudiante",mensaje:`¿Reactivar a "${e.nombre}"?`,onConfirm:()=>save((programas||[]).map(p=>p.id!==e.progObj.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==e.id?es:{...es,estatus:"activo"})})),btnLabel:"Sí, reactivar",btnColor:"#16a34a"})} style={{fontSize:11,background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",borderRadius:4,padding:"3px 10px",fontWeight:700,cursor:"pointer"}}>Reactivar</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{...S.card,padding:24}}>
               <div style={{fontWeight:700,fontSize:12,marginBottom:16,color:RED,fontFamily:"system-ui",letterSpacing:"0.5px"}}>DETALLE POR PROGRAMA</div>
               <div style={{overflowX:"auto"}}>
@@ -8812,56 +8807,31 @@ export default function App() {
       </div>
 
       {/* MODALES */}
-      {inactivoModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setInactivoModal(null)}>
-          <div onClick={ev=>ev.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:"28px 28px 24px",width:"100%",maxWidth:400,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:FONT_BODY}}>
-            <div style={{fontWeight:700,fontSize:17,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",marginBottom:4,color:"#111"}}>Marcar como Inactivo</div>
-            <div style={{fontSize:13,color:"#6B7280",marginBottom:20}}>{inactivoModal.est.nombre} · {inactivoModal.prog.nombre}</div>
-            <label style={S.lbl}>Motivo</label>
-            <textarea
-              autoFocus
-              value={inactivoRazon}
-              onChange={ev=>setInactivoRazon(ev.target.value)}
-              placeholder="Ej. Solicitud del estudiante, situación económica, cambio de horario, viaje..."
-              rows={3}
-              style={{...S.inp,resize:"vertical",lineHeight:1.6,marginBottom:20}}
-            />
-            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <button onClick={()=>setInactivoModal(null)} style={S.btn("#F3F4F6","#374151")}>Cancelar</button>
-              <button onClick={()=>{
-                const {est:estI,prog:progI}=inactivoModal;
-                save((programas||[]).map(p=>p.id!==progI.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estI.id?es:{...es,estatus:"inactivo",campos_extra:{...(es.campos_extra||{}),motivo_inactivo:inactivoRazon||"Sin especificar",fecha_inactivo:today()}})}));
-                notify("Estudiante marcado como inactivo.");
-                setInactivoModal(null);
-                setInactivoRazon("");
-              }} style={S.btn(RED,"#fff",{fontWeight:700})}>Confirmar</button>
-            </div>
-          </div>
-        </div>
-      )}
       {bajaModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setBajaModal(null)}>
           <div onClick={ev=>ev.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:"28px 28px 24px",width:"100%",maxWidth:400,boxShadow:"0 8px 40px rgba(0,0,0,0.18)",fontFamily:FONT_BODY}}>
             <div style={{fontWeight:700,fontSize:17,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",marginBottom:4,color:"#dc2626"}}>Dar de baja</div>
             <div style={{fontSize:13,color:"#6B7280",marginBottom:20}}>{bajaModal.est.nombre} · {bajaModal.prog.nombre}</div>
             <label style={S.lbl}>Motivo de baja</label>
-            <textarea
-              autoFocus
-              value={bajaRazon}
-              onChange={ev=>setBajaRazon(ev.target.value)}
-              placeholder="Ej. Solicitud del estudiante, incumplimiento de pagos, cambio de situación..."
-              rows={3}
-              style={{...S.inp,resize:"vertical",lineHeight:1.6,marginBottom:8}}
-            />
-            <div style={{fontSize:11,color:"#9ca3af",marginBottom:20}}>Esta acción excluye al estudiante de reportes y pagos. Se puede revertir manualmente desde su ficha.</div>
+            <select value={bajaRazon} onChange={ev=>setBajaRazon(ev.target.value)} autoFocus
+              style={{...S.inp,marginBottom:8,cursor:"pointer"}}>
+              <option value="">Selecciona un motivo...</option>
+              <option value="Económica">Económica</option>
+              <option value="Personal">Personal</option>
+              <option value="Laboral">Laboral</option>
+              <option value="Cambio de programa">Cambio de programa</option>
+              <option value="Incumplimiento de pagos">Incumplimiento de pagos</option>
+              <option value="Otra">Otra</option>
+            </select>
+            <div style={{fontSize:11,color:"#9ca3af",marginBottom:20}}>El estudiante dejará de aparecer en listas activas y contará en la tasa de deserción. Se puede revertir con "Reactivar".</div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <button onClick={()=>setBajaModal(null)} style={S.btn("#F3F4F6","#374151")}>Cancelar</button>
-              <button onClick={()=>{
+              <button disabled={!bajaRazon} onClick={()=>{
                 const {est:estB,prog:progB}=bajaModal;
-                save((programas||[]).map(p=>p.id!==progB.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estB.id?es:{...es,estatus:"baja",campos_extra:{...(es.campos_extra||{}),motivo_baja:bajaRazon||"Sin especificar",fecha_baja:today()}})}));
+                save((programas||[]).map(p=>p.id!==progB.id?p:{...p,estudiantes:ests(p).map(es=>es.id!==estB.id?es:{...es,estatus:"baja",campos_extra:{...(es.campos_extra||{}),motivo_baja:bajaRazon,fecha_baja:today()}})}));
                 notify("Estudiante dado de baja.","warning");
                 setBajaModal(null);setBajaRazon("");
-              }} style={S.btn("#dc2626","#fff",{fontWeight:700})}>Confirmar baja</button>
+              }} style={S.btn(bajaRazon?"#dc2626":"#e5e7eb",bajaRazon?"#fff":"#9ca3af",{fontWeight:700})}>Confirmar baja</button>
             </div>
           </div>
         </div>
