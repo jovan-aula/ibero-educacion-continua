@@ -2018,6 +2018,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const [form,setForm]     = useState({id:"",prefijo:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
+  const [expandido,setExpandido] = useState(null);
 
   const openNew = () => { setForm({id:newId(),prefijo:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16}); setEditId(null); setShowM(true); };
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
@@ -2058,91 +2059,120 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
         </div>
       )}
       {(docentes||[]).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:80,fontFamily:"system-ui"}}>Sin docentes registrados.</div>}
-      <div style={{display:"grid",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14}}>
         {filtrados.map(doc=>{
           const hist=historial(doc), horas=hist.reduce((a,{mod})=>a+(mod.clases||0)*(mod.horasPorClase||0),0);
           const docGrados=doc.grados&&doc.grados.length>0?doc.grados:(doc.grado?[doc.grado]:[]);
-          const gc=GRADO_C[gradoMax(docGrados)]||GRADO_C.Licenciatura;
           const cat=CATEGORIA_DOCENTE[doc.categoria||"A"];
+          const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
+          const promEval=evals.length?Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10:null;
+          const cpEval=promEval>=4?"#16a34a":promEval>=3?"#d97706":"#dc2626";
+          const incompleto=doc.perfil_incompleto||!doc.banco||!doc.clabe||!doc.rfc||!(doc.honorariosPorHora||doc.honorarios_por_hora);
+          const abierto=expandido===doc.id;
+          // Iniciales para avatar
+          const iniciales=(doc.nombre||"").split(" ").filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
           return(
-            <div key={doc.id} style={{...S.card,borderLeft:"4px solid "+RED,padding:"18px 22px"}}>
-              <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:200}}>
-                  <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-                    <span style={{fontWeight:700,fontSize:16}}>{fmtDocente(doc)}</span>
-                    {docGrados.map(g=>{const c=GRADO_C[g]||GRADO_C.Licenciatura;return<span key={g} style={{background:c.bg,color:c.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{g}</span>;})}
-                    <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700}}>{cat.label} · {fmtMXN(cat.tarifa)}/hr</span>
-                    {(doc.perfil_incompleto||!doc.banco||!doc.clabe||!doc.rfc||!(doc.honorariosPorHora||doc.honorarios_por_hora))&&(
-                      <span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 9px",fontSize:11,fontFamily:"system-ui",fontWeight:700,border:"1px solid #fde68a"}}>Perfil incompleto</span>
-                    )}
-                  </div>
-                  <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
-                    {doc.email&&<span>{doc.email}</span>}{doc.telefono&&<span>{doc.telefono}</span>}
-                  </div>
-                  {(doc.programasIds||[]).length>0&&(
-                    <div style={{marginTop:10}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>PROGRAMAS ASIGNADOS</div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {(doc.programasIds||[]).map(pid=>{const pr=(programas||[]).find(p=>p.id===pid);if(!pr)return null;return <span key={pid} style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui",border:"1px solid #fca5a5",fontWeight:600}}>{pr.nombre}</span>;})}
-                      </div>
-                    </div>
-                  )}
-                  {doc.semblanza&&(
-                    <div style={{marginTop:10,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:4}}>SEMBLANZA</div>
-                      <p style={{fontSize:13,color:"#374151",fontFamily:"system-ui",lineHeight:1.6,margin:0}}>{doc.semblanza}</p>
-                    </div>
-                  )}
-                  {hist.length>0&&(
-                    <div style={{marginTop:10}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:6}}>HISTORIAL · {horas}H IMPARTIDAS</div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {hist.map(({prog,mod},i)=><span key={i} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{prog.nombre+" · "+mod.numero}</span>)}
-                      </div>
-                    </div>
-                  )}
-                  {/* EVALUACIONES NPS — resumen en tarjeta, detalle en sección Evaluaciones */}
-                  {(()=>{
-                    const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
-                    if(!evals.length)return null;
-                    const prom=evals.length?Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10:0;
-                    const cp=prom>=4?"#16a34a":prom>=3?"#d97706":"#dc2626";
-                    const dimLabels=["Expect.","Relevancia","Aplicación","Didáctica","Dominio"];
-                    return(
-                      <div style={{marginTop:12,padding:"10px 14px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <div style={{textAlign:"center"}}>
-                            <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",fontWeight:700,marginBottom:2}}>EVALUACIONES</div>
-                            <div style={{fontSize:22,fontWeight:800,color:cp,fontFamily:"system-ui",lineHeight:1}}>{prom}<span style={{fontSize:11,color:"#9ca3af"}}>/5</span></div>
-                            <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>{evals.length} módulo{evals.length!==1?"s":""}</div>
-                          </div>
-                        </div>
-                        <div style={{display:"flex",gap:10,flexWrap:"wrap",flex:1}}>
-                          {dimLabels.map((l,i)=>{
-                            const key="q"+(i+1);
-                            const dim=evals.length?Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10:0;
-                            const cd=dim>=4?"#16a34a":dim>=3?"#d97706":"#dc2626";
-                            return(
-                              <div key={key} style={{textAlign:"center"}}>
-                                <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",marginBottom:1}}>{l.toUpperCase()}</div>
-                                <div style={{fontSize:14,fontWeight:800,color:cd,fontFamily:"system-ui"}}>{dim}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
+            <div key={doc.id} style={{...S.card,padding:0,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+              {/* Cabecera clickeable */}
+              <div onClick={()=>setExpandido(abierto?null:doc.id)} style={{padding:"16px 18px",cursor:"pointer",display:"flex",gap:14,alignItems:"center"}}>
+                {/* Avatar */}
+                <div style={{width:44,height:44,borderRadius:"50%",background:RED,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:15,fontFamily:"system-ui",flexShrink:0}}>
+                  {iniciales||"?"}
                 </div>
-                <div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <button onClick={()=>openEdit(doc)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>
-                  <button onClick={()=>setCS({titulo:"Eliminar docente",mensaje:`¿Estás seguro de que deseas eliminar a "${doc.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delDoc(doc.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:14,marginBottom:4,lineHeight:1.2}}>{fmtDocente(doc)}</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                    {docGrados.map(g=>{const c=GRADO_C[g]||GRADO_C.Licenciatura;return<span key={g} style={{background:c.bg,color:c.color,borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"system-ui",fontWeight:700}}>{g}</span>;})}
+                    <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"system-ui",fontWeight:700}}>{cat.label}</span>
+                    {incompleto&&<span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"system-ui",fontWeight:700,border:"1px solid #fde68a"}}>Incompleto</span>}
+                  </div>
+                </div>
+                {/* Stats rápidos */}
+                <div style={{display:"flex",gap:12,alignItems:"center",flexShrink:0}}>
+                  {promEval!==null&&(
+                    <div style={{textAlign:"center"}}>
+                      <div style={{fontSize:16,fontWeight:800,color:cpEval,fontFamily:"system-ui",lineHeight:1}}>{promEval}</div>
+                      <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>NPS</div>
+                    </div>
+                  )}
+                  {horas>0&&(
+                    <div style={{textAlign:"center"}}>
+                      <div style={{fontSize:16,fontWeight:800,color:"#374151",fontFamily:"system-ui",lineHeight:1}}>{horas}</div>
+                      <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui"}}>horas</div>
+                    </div>
+                  )}
+                  <span style={{color:"#d1d5db",fontSize:14}}>{abierto?"▲":"▼"}</span>
                 </div>
               </div>
+
+              {/* Detalle expandido */}
+              {abierto&&(
+                <div style={{borderTop:"1px solid #f3f4f6"}}>
+                  {/* Contacto */}
+                  {(doc.email||doc.telefono)&&(
+                    <div style={{padding:"10px 18px",display:"flex",gap:16,fontSize:12,color:"#6b7280",fontFamily:"system-ui",borderBottom:"1px solid #f9f9f9"}}>
+                      {doc.email&&<span>{doc.email}</span>}
+                      {doc.telefono&&<span>{doc.telefono}</span>}
+                    </div>
+                  )}
+                  <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:12}}>
+                    {/* Tarifa */}
+                    <div style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui"}}>
+                      <span style={{fontWeight:700,color:"#374151"}}>{fmtMXN(cat.tarifa)}/hr</span> · Cat. {doc.categoria||"A"} · IVA {doc.iva||16}%
+                    </div>
+                    {/* Programas */}
+                    {(doc.programasIds||[]).length>0&&(
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:5}}>PROGRAMAS ASIGNADOS</div>
+                        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                          {(doc.programasIds||[]).map(pid=>{const pr=(programas||[]).find(p=>p.id===pid);if(!pr)return null;return<span key={pid} style={{fontSize:11,background:"#fef2f2",borderRadius:4,padding:"2px 8px",color:RED,fontFamily:"system-ui",border:"1px solid #fca5a5",fontWeight:600}}>{pr.nombre}</span>;})}
+                        </div>
+                      </div>
+                    )}
+                    {/* Historial */}
+                    {hist.length>0&&(
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:5}}>HISTORIAL · {horas}H</div>
+                        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                          {hist.map(({prog,mod},i)=><span key={i} style={{fontSize:11,background:"#f3f4f6",borderRadius:4,padding:"2px 8px",color:"#374151",fontFamily:"system-ui"}}>{prog.nombre+" · "+mod.numero}</span>)}
+                        </div>
+                      </div>
+                    )}
+                    {/* Semblanza */}
+                    {doc.semblanza&&(
+                      <div style={{padding:"10px 12px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",letterSpacing:"0.5px",marginBottom:4}}>SEMBLANZA</div>
+                        <p style={{fontSize:12,color:"#374151",fontFamily:"system-ui",lineHeight:1.6,margin:0}}>{doc.semblanza}</p>
+                      </div>
+                    )}
+                    {/* Evaluaciones NPS detalle */}
+                    {evals.length>0&&(()=>{
+                      const dimLabels=["Expect.","Relevancia","Aplicación","Didáctica","Dominio"];
+                      return(
+                        <div style={{padding:"10px 12px",background:"#f9f9f9",borderRadius:6,border:"1px solid #e5e7eb",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",fontWeight:700,marginBottom:2}}>EVALUACIÓN</div>
+                            <div style={{fontSize:22,fontWeight:800,color:cpEval,fontFamily:"system-ui",lineHeight:1}}>{promEval}<span style={{fontSize:11,color:"#9ca3af"}}>/5</span></div>
+                            <div style={{fontSize:10,color:"#9ca3af",fontFamily:"system-ui"}}>{evals.length} mód.</div>
+                          </div>
+                          <div style={{display:"flex",gap:10,flexWrap:"wrap",flex:1}}>
+                            {dimLabels.map((l,i)=>{const key="q"+(i+1);const dim=Math.round(evals.reduce((a,e)=>a+(e[key]||0),0)/evals.length*10)/10;const cd=dim>=4?"#16a34a":dim>=3?"#d97706":"#dc2626";return(<div key={key} style={{textAlign:"center"}}><div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",marginBottom:1}}>{l.toUpperCase()}</div><div style={{fontSize:14,fontWeight:800,color:cd,fontFamily:"system-ui"}}>{dim}</div></div>);})}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  {/* Acciones en pie */}
+                  <div style={{borderTop:"1px solid #f3f4f6",padding:"10px 14px",display:"flex",gap:6,background:"#fafafa"}}>
+                    <button onClick={e=>{e.stopPropagation();openEdit(doc);}} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>
+                    <button onClick={e=>{e.stopPropagation();setCS({titulo:"Eliminar docente",mensaje:`¿Estás seguro de que deseas eliminar a "${doc.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delDoc(doc.id)});}} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
-        {filtrados.length===0&&busq&&<div style={{textAlign:"center",color:"#9ca3af",padding:40,fontFamily:"system-ui"}}>Sin resultados para "{busq}".</div>}
+        {filtrados.length===0&&busq&&<div style={{textAlign:"center",color:"#9ca3af",padding:40,fontFamily:"system-ui",gridColumn:"1/-1"}}>Sin resultados para "{busq}".</div>}
       </div>
 
       {showM&&(
