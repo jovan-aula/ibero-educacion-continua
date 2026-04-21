@@ -1628,7 +1628,7 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         fecha_nacimiento: parseFechaNac(c.dateOfBirth)||e.fecha_nacimiento||"",
         csf_url:          getCSFUrl(cf)||e.csf_url,
         requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura")||e.requiere_factura,
-        fecha_lead:       e.fecha_lead||(c._oppCreatedAt||c.dateAdded||""),
+        fecha_lead:       c._oppCreatedAt||c.dateAdded||e.fecha_lead||"",
         fecha_conversion: e.fecha_conversion||today(),
       };
     });
@@ -5470,6 +5470,15 @@ export default function App() {
                 <KPICard label="Programas activos" value={progsActivos.length} sub={progsProximos.length>0?progsProximos.length+" próximos":""} color="#2563eb" onClick={()=>setView("lista")}/>
                 <KPICard label="Facturas pendientes" value={factPendientes} color="#7c3aed" onClick={()=>{setView("facturacion");setFiltroFactTipo("pendiente");}}/>
                 {edadPromGeneral&&<KPICard label="Edad promedio general" value={edadPromGeneral+" años"} sub={edadesGeneral.length+" estudiantes con datos"} color="#0d9488"/>}
+                {(()=>{
+                  const dias=(programas||[]).flatMap(p=>ests(p).filter(e=>e.fecha_lead&&e.fecha_conversion).map(e=>{
+                    const d1=new Date(e.fecha_lead),d2=new Date(e.fecha_conversion);
+                    return(!isNaN(d1)&&!isNaN(d2))?Math.max(0,Math.round((d2-d1)/(1000*60*60*24))):null;
+                  }).filter(x=>x!==null));
+                  if(!dias.length) return null;
+                  const prom=Math.round(dias.reduce((a,b)=>a+b,0)/dias.length);
+                  return <KPICard label="Conversión promedio" value={prom+"d"} sub={dias.length+" estudiantes con datos"} color="#7c3aed" onClick={()=>setView("reportes")}/>;
+                })()}
               </div>
 
               {/* Gráfica + Pendientes */}
