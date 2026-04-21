@@ -2050,7 +2050,27 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
     <div>
       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20}}>
         <div><h1 style={{fontSize:26,fontWeight:700,margin:"0 0 4px",letterSpacing:"-0.5px",fontFamily:FONT_TITLE}}>Docentes</h1><p style={{margin:0,color:"#6B7280",fontSize:13,fontFamily:FONT_BODY}}>Catálogo de docentes de educación continua</p></div>
-        <button onClick={openNew} style={S.btn(RED,"#fff")}>Agregar docente</button>
+        <div style={{display:"flex",gap:8}}>
+          {(docentes||[]).length>0&&(
+            <button onClick={()=>{
+              const hdrs=["Prefijo","Nombre","Email","Teléfono","Grados","Categoría","Tarifa/hr","IVA%","Honorarios/hr","RFC","Banco","CLABE","Programas asignados","Horas impartidas","Evaluación NPS"];
+              const rows=(docentes||[]).map(doc=>{
+                const docGrados=doc.grados&&doc.grados.length>0?doc.grados:(doc.grado?[doc.grado]:[]);
+                const cat=CATEGORIA_DOCENTE[doc.categoria||"A"];
+                const hist=(programas||[]).flatMap(p=>mods(p).filter(m=>m.docenteId===doc.id||m.docente===doc.nombre).map(m=>({mod:m})));
+                const horas=hist.reduce((a,{mod})=>a+(mod.clases||0)*(mod.horasPorClase||0),0);
+                const progs=(doc.programasIds||[]).map(pid=>{const pr=(programas||[]).find(p=>p.id===pid);return pr?pr.nombre:"";}).filter(Boolean).join(" | ");
+                const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
+                const promEval=evals.length?Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10:"";
+                return[doc.prefijo||"",doc.nombre||"",doc.email||"",doc.telefono||"",docGrados.join(" | "),doc.categoria||"A",cat.tarifa,doc.iva||16,doc.honorariosPorHora||doc.honorarios_por_hora||"",doc.rfc||"",doc.banco||"",doc.clabe||"",progs,horas,promEval];
+              });
+              const csv=[hdrs,...rows].map(r=>r.map(v=>'"'+(String(v||"")).replace(/"/g,'""')+'"').join(",")).join("\n");
+              const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+              a.download="docentes_ibero_"+today()+".csv";a.click();
+            }} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #86efac"})}>Exportar CSV</button>
+          )}
+          <button onClick={openNew} style={S.btn(RED,"#fff")}>Agregar docente</button>
+        </div>
       </div>
       {(docentes||[]).length>0&&(
         <div style={{display:"flex",gap:10,marginBottom:20}}>
