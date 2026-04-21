@@ -5975,46 +5975,82 @@ export default function App() {
               </select>
               {(busqProg||filtroProg||filtroSt)&&<button onClick={()=>{setBusqProg("");setFiltroPr("");setFiltroSt("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
             </div>
-            <div style={{display:"grid",gap:14}}>
-              {progsF.map(p=>{
+            {(()=>{
+              const grupos=[
+                {key:"proximo", label:"Por iniciar", dot:"#0891b2"},
+                {key:"activo",  label:"Activos",     dot:"#16a34a"},
+                {key:"finalizado", label:"Finalizados", dot:"#9ca3af"},
+              ];
+              const progCard=(p)=>{
                 const conf=mods(p).filter(m=>m.estatus==="confirmado").length, tot=mods(p).length;
                 const inicio=mods(p).map(m=>m.fechaInicio).filter(Boolean).sort()[0], fin=mods(p).map(m=>m.fechaFin).filter(Boolean).sort().reverse()[0];
                 const horas=mods(p).reduce((a,m)=>a+(m.clases||0)*(m.horasPorClase||0),0), pct=tot?Math.round(conf/tot*100):0;
                 return(
-                  <div key={p.id} style={{...S.card,borderLeft:"4px solid "+p.color,padding:"20px 24px",display:"flex",gap:20,alignItems:"center"}}>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-                        <span style={{fontWeight:700,fontSize:16}}>{p.nombre}</span>
-                        <span style={{background:"#f3f4f6",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>{p.tipo.toUpperCase()}</span>
-                        {p.generacion&&<span style={{background:"#f0fdf4",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>{p.generacion} gen.</span>}
+                  <div key={p.id} style={{...S.card,padding:0,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                    {/* Franja de color superior */}
+                    <div style={{height:5,background:p.color,flexShrink:0}}/>
+                    {/* Cuerpo */}
+                    <div style={{padding:"16px 18px",flex:1}}>
+                      <div style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:8}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:15,lineHeight:1.3,marginBottom:5}}>{p.nombre}</div>
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                            <span style={{background:"#f3f4f6",borderRadius:4,padding:"2px 7px",fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>{p.tipo.toUpperCase()}</span>
+                            {p.generacion&&<span style={{background:"#f0fdf4",borderRadius:4,padding:"2px 7px",fontSize:11,color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>{p.generacion} gen.</span>}
+                            {p.colaboracion&&<span style={{background:"#f5f3ff",borderRadius:4,padding:"2px 7px",fontSize:11,color:"#7c3aed",fontFamily:"system-ui",fontWeight:700}}>{p.socio}</span>}
+                          </div>
+                        </div>
                         <StatusBadge p={p}/>
-                        {p.colaboracion&&<span style={{background:"#f5f3ff",borderRadius:4,padding:"2px 8px",fontSize:11,color:"#7c3aed",fontFamily:"system-ui",fontWeight:700}}>Colaboración · {p.socio}</span>}
                       </div>
-                      <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui",marginBottom:12}}>
-                        {inicio&&<span>{fmtFecha(inicio)} — {fmtFecha(fin)}</span>}
-                        {horas>0&&<span>{horas}h totales</span>}
+                      <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:12,color:"#6b7280",fontFamily:"system-ui",marginBottom:10}}>
+                        {inicio&&<span>{fmtFecha(inicio)}{fin?" — "+fmtFecha(fin):""}</span>}
+                        {horas>0&&<span>{horas}h</span>}
                         <span>{tot} módulos</span>
                         <span>{ests(p).length} estudiantes</span>
                       </div>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div style={{width:160,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{flex:1,height:4,background:"#f3f4f6",borderRadius:4,overflow:"hidden"}}>
                           <div style={{width:pct+"%",height:"100%",background:conf===tot&&tot>0?"#16a34a":RED,borderRadius:4}}/>
                         </div>
-                        <span style={{fontSize:12,color:"#6b7280",fontFamily:"system-ui"}}>{conf}/{tot} docentes confirmados</span>
+                        <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",whiteSpace:"nowrap"}}>{conf}/{tot} confirmados</span>
                       </div>
                     </div>
-                    <div style={{display:"flex",gap:8,flexShrink:0}}>
-                      <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff")}>Ver</button>
-                      {can(session,"importarEstudiantes")&&p.ghl_pipeline_id&&p.ghl_stage_id&&<button onClick={()=>{setSelProg(p.id);setShowImp(true);}} style={S.btn("#eff6ff","#2563eb",{padding:"8px 12px",border:"1px solid #bfdbfe"})}>Importar</button>}
-                      {can(session,"importarEstudiantes")&&<button onClick={()=>setNewEstModal(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>+ Alumno</button>}
-                      {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"8px 12px"})}>Editar</button>}
-                      {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"8px 12px"})}>Eliminar</button>}
+                    {/* Pie con acciones */}
+                    <div style={{borderTop:"1px solid #f3f4f6",padding:"10px 14px",display:"flex",gap:6,flexWrap:"wrap",background:"#fafafa"}}>
+                      <button onClick={()=>{setSelProg(p.id);setProgTab("modulos");setView("programa");}} style={S.btn(RED,"#fff",{padding:"6px 12px",fontSize:12})}>Ver</button>
+                      {can(session,"importarEstudiantes")&&p.ghl_pipeline_id&&p.ghl_stage_id&&<button onClick={()=>{setSelProg(p.id);setShowImp(true);}} style={S.btn("#eff6ff","#2563eb",{padding:"6px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>Importar</button>}
+                      {can(session,"importarEstudiantes")&&<button onClick={()=>setNewEstModal(p)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>+ Alumno</button>}
+                      {can(session,"editarProgramas")&&<button onClick={()=>openEditProg(p)} style={S.btn("#f3f4f6","#374151",{padding:"6px 12px",fontSize:12})}>Editar</button>}
+                      {can(session,"editarProgramas")&&<button onClick={()=>setCE({titulo:"Eliminar programa",subtitulo:p.nombre,mensaje:"Esta acción eliminará permanentemente el programa y todos sus módulos. Los estudiantes importados también serán desvinculados. Esta acción es irreversible.",onConfirm:()=>delProg(p.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"6px 12px",fontSize:12})}>Eliminar</button>}
                     </div>
                   </div>
                 );
-              })}
-              {progsF.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>{busqProg||filtroProg||filtroSt?"Sin resultados. Intenta con otros filtros.":"Sin programas registrados."}</div>}
-            </div>
+              };
+              const hayFiltro=busqProg||filtroProg||filtroSt;
+              if(hayFiltro){
+                return progsF.length===0
+                  ? <div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>Sin resultados. Intenta con otros filtros.</div>
+                  : <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14}}>{progsF.map(p=>progCard(p))}</div>;
+              }
+              const totalProgs=(programas||[]).length;
+              if(totalProgs===0) return <div style={{textAlign:"center",color:"#9ca3af",padding:60,fontFamily:"system-ui"}}>Sin programas registrados.</div>;
+              return grupos.map(g=>{
+                const lista=(programas||[]).filter(p=>progStatus(p)===g.key);
+                if(!lista.length) return null;
+                return(
+                  <div key={g.key} style={{marginBottom:28}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:g.dot}}/>
+                      <span style={{fontWeight:700,fontSize:13,fontFamily:"system-ui",color:"#374151",letterSpacing:"0.2px"}}>{g.label}</span>
+                      <span style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui"}}>{lista.length} programa{lista.length!==1?"s":""}</span>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14}}>
+                      {lista.map(p=>progCard(p))}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
             <div style={{marginTop:48,padding:"22px 28px",...S.card,display:"flex",gap:32,flexWrap:"wrap",justifyContent:"space-between"}}>
               <div><div style={{fontWeight:700,fontSize:11,marginBottom:8,color:RED,letterSpacing:"1px",fontFamily:"system-ui"}}>DIRECCIÓN DE EDUCACIÓN CONTINUA</div><div style={{fontSize:12,color:"#6b7280",lineHeight:1.9,fontFamily:"system-ui"}}>Av. Centro Universitario #2501, Playas de Tijuana, C.P. 22500<br/>Tel: 664 630 1577 Ext. 2576 · WhatsApp: 664 764 1119<br/><a href="mailto:info@tijuana.ibero.mx" style={{color:RED,textDecoration:"none"}}>info@tijuana.ibero.mx</a></div></div>
               <div style={{maxWidth:260,fontSize:11,color:"#9ca3af",fontFamily:"system-ui",lineHeight:1.7,alignSelf:"flex-end"}}>Pertenecemos a la red universitaria más grande del mundo, con más de 220 instituciones en los 5 continentes.<br/>© 2026 IBERO Tijuana.</div>
