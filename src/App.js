@@ -6870,6 +6870,22 @@ export default function App() {
                                           {est.carrera&&<div><span style={{color:"#9ca3af"}}>Carrera: </span>{est.carrera}</div>}
                                           {est.grado&&<div><span style={{color:"#9ca3af"}}>Grado: </span>{est.grado}</div>}
                                           {est.egresado_ibero&&<div><span style={{color:"#9ca3af"}}>Eg. IBERO: </span><span style={{color:"#2563eb",fontWeight:600}}>{est.egresado_ibero}</span></div>}
+                                          {est.fecha_lead&&est.fecha_conversion&&(()=>{
+                                            const d1=new Date(est.fecha_lead), d2=new Date(est.fecha_conversion);
+                                            const dias=(!isNaN(d1)&&!isNaN(d2))?Math.max(0,Math.round((d2-d1)/(1000*60*60*24))):null;
+                                            return(
+                                              <div style={{marginTop:6,paddingTop:6,borderTop:"1px solid #f3f4f6"}}>
+                                                <div><span style={{color:"#9ca3af"}}>Lead desde: </span>{fmtFecha(est.fecha_lead.slice(0,10))}</div>
+                                                <div><span style={{color:"#9ca3af"}}>Inscrito: </span>{fmtFecha(est.fecha_conversion)}</div>
+                                                {dias!==null&&<div><span style={{color:"#9ca3af"}}>Conversión: </span><span style={{fontWeight:700,color:"#7c3aed"}}>{dias} día{dias!==1?"s":""}</span></div>}
+                                              </div>
+                                            );
+                                          })()}
+                                          {est.fecha_lead&&!est.fecha_conversion&&(
+                                            <div style={{marginTop:6,paddingTop:6,borderTop:"1px solid #f3f4f6"}}>
+                                              <div><span style={{color:"#9ca3af"}}>Lead desde: </span>{fmtFecha(est.fecha_lead.slice(0,10))}</div>
+                                            </div>
+                                          )}
                                         </div>
                                         {/* Factura / CSF */}
                                         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -8588,7 +8604,7 @@ export default function App() {
                   </button>
                   {notifCfg?.apiKey&&notifCfg?.locationId&&(
                     <button onClick={async ()=>{
-                      const sinFecha=(programas||[]).flatMap(p=>ests(p).filter(e=>!e.fecha_lead).map(e=>({e,p})));
+                      const sinFecha=(programas||[]).flatMap(p=>ests(p).filter(e=>!e.fecha_lead&&!e.manual&&e.id&&e.id.length>10).map(e=>({e,p})));
                       if(!sinFecha.length){notify("Todos los estudiantes ya tienen fecha de lead.");return;}
                       notify(`Obteniendo fechas de ${sinFecha.length} estudiantes desde GHL...`);
                       let actualizados=0, errores=0;
