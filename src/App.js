@@ -119,7 +119,7 @@ const ghlFetchContacts = async (apiKey, locationId, pipelineId, stageId) => {
         const cr=await fetch(`https://services.leadconnectorhq.com/contacts/${op.contactId}`,{headers:{"Authorization":"Bearer "+apiKey,"Version":"2021-04-15"}});
         const cd=await cr.json();
         const mergedCF=[...(cd.contact?.customFields||[]),...(op.customFields||[])].filter((f,i,arr)=>arr.findIndex(x=>x.id===f.id)===i);
-        return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF};
+        return {...cd.contact, monetaryValue:op.monetaryValue||cd.contact?.monetaryValue||0, customFields:mergedCF, _oppCreatedAt:op.createdAt||op.dateAdded||""};
       } catch(e){ return null; }
     }));
     return enriched.filter(Boolean);
@@ -175,6 +175,8 @@ const syncToSupabase = async (programas) => {
     cobranza_nota: e.cobranza_nota||"",
     factura_enviada: e.factura_enviada||false,
     fecha_nacimiento: e.fecha_nacimiento||null,
+    fecha_lead: e.fecha_lead||null,
+    fecha_conversion: e.fecha_conversion||null,
   })));
   if(estudiantes.length){ const ok = await supa.upsert("estudiantes", estudiantes); if(!ok) throw new Error("Error al guardar estudiantes"); }
 
@@ -1626,6 +1628,8 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         fecha_nacimiento: parseFechaNac(c.dateOfBirth)||e.fecha_nacimiento||"",
         csf_url:          getCSFUrl(cf)||e.csf_url,
         requiere_factura: getCF(cf,"HoscJ6RVoX90tYqlkcUb","contact.requiere_factura")||e.requiere_factura,
+        fecha_lead:       e.fecha_lead||(c._oppCreatedAt||c.dateAdded||""),
+        fecha_conversion: e.fecha_conversion||today(),
       };
     });
 
@@ -1661,6 +1665,8 @@ function ImportModal({prog,notifConfig,fieldMap,onImport,onClose}) {
         estado:           getCF(cf,"Pno7iCF7nVNCVnIxqO3z",""),
         uso_cfdi:         getCF(cf,"eocaFnqmQ4qHD60KYjry",""),
         fecha_nacimiento: parseFechaNac(c.dateOfBirth),
+        fecha_lead:       c._oppCreatedAt||c.dateAdded||"",
+        fecha_conversion: today(),
         estatus:          "activo",
         asistencia:       {},
         campos_extra:     {},
@@ -8000,14 +8006,82 @@ export default function App() {
         {view==="reportes"&&can(session,"verReportes")&&(
           <div>
             <h1 style={{fontSize:24,fontWeight:700,margin:"0 0 24px",letterSpacing:"-0.5px"}}>Reportes y estadísticas</h1>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
-              {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados EC",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Alumni IBERO cursando",egresadosIberoActivos.length],["Alumni IBERO egresados de EC",egresadosIberoConcluyeron.length]].map(([l,v])=>(
-                <div key={l} style={{...S.card,padding:"20px 22px"}}>
-                  <div style={{fontSize:28,fontWeight:800,color:RED,fontFamily:"system-ui"}}>{v}</div>
-                  <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
+            {(()=>{
+              // Cálculo de tiempo de conversión global
+              const diasConv=(programas||[]).flatMap(p=>ests(p).filter(e=>e.fecha_lead&&e.fecha_conversion).map(e=>{
+                const d1=new Date(e.fecha_lead), d2=new Date(e.fecha_conversion);
+                return isNaN(d1)||isNaN(d2)?null:Math.max(0,Math.round((d2-d1)/(1000*60*60*24)));
+              }).filter(x=>x!==null));
+              const promConvGlobal=diasConv.length?Math.round(diasConv.reduce((a,b)=>a+b,0)/diasConv.length):null;
+              return(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:28}}>
+                  {[["Programas",(programas||[]).length],["Est. activos",activos.length],["Egresados EC",egresados.length],["Bajas",bajas.length],["Inactivos",inactivos.length],["Docentes",(docentes||[]).length],["Por confirmar",porConf],["Alumni IBERO cursando",egresadosIberoActivos.length],["Alumni IBERO egresados de EC",egresadosIberoConcluyeron.length]].map(([l,v])=>(
+                    <div key={l} style={{...S.card,padding:"20px 22px"}}>
+                      <div style={{fontSize:28,fontWeight:800,color:RED,fontFamily:"system-ui"}}>{v}</div>
+                      <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>{l}</div>
+                    </div>
+                  ))}
+                  {promConvGlobal!==null&&(
+                    <div style={{...S.card,padding:"20px 22px",border:"1px solid #c4b5fd"}}>
+                      <div style={{fontSize:28,fontWeight:800,color:"#7c3aed",fontFamily:"system-ui"}}>{promConvGlobal}d</div>
+                      <div style={{fontSize:13,color:"#6b7280",marginTop:4,fontFamily:"system-ui"}}>Conversión promedio</div>
+                      <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:2}}>{diasConv.length} estudiantes con datos</div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
+            {/* TIEMPO DE CONVERSIÓN POR PROGRAMA */}
+            {(()=>{
+              const porProg=(programas||[]).map(p=>{
+                const dias=ests(p).filter(e=>e.fecha_lead&&e.fecha_conversion).map(e=>{
+                  const d1=new Date(e.fecha_lead), d2=new Date(e.fecha_conversion);
+                  return isNaN(d1)||isNaN(d2)?null:Math.max(0,Math.round((d2-d1)/(1000*60*60*24)));
+                }).filter(x=>x!==null);
+                if(!dias.length) return null;
+                const prom=Math.round(dias.reduce((a,b)=>a+b,0)/dias.length);
+                const min=Math.min(...dias), max=Math.max(...dias);
+                return {prog:p, prom, min, max, n:dias.length};
+              }).filter(Boolean).sort((a,b)=>a.prom-b.prom);
+              if(!porProg.length) return null;
+              return(
+                <div style={{...S.card,marginBottom:16,border:"1px solid #c4b5fd"}}>
+                  <button onClick={()=>setRepExp(repExp==="conversion"?null:"conversion")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
+                    <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                      <span style={{fontWeight:700,fontSize:14}}>Tiempo de conversión por programa</span>
+                      <span style={{background:"#f5f3ff",color:"#7c3aed",borderRadius:4,padding:"2px 10px",fontSize:12,fontWeight:700,fontFamily:"system-ui"}}>{porProg.length} programas con datos</span>
+                    </div>
+                    <span style={{color:"#9ca3af"}}>{repExp==="conversion"?"▲":"▼"}</span>
+                  </button>
+                  {repExp==="conversion"&&(
+                    <div style={{borderTop:"1px solid #e5e7eb",padding:"16px 20px"}}>
+                      <div style={{fontSize:12,color:"#9ca3af",fontFamily:"system-ui",marginBottom:14}}>Días desde que el lead entró al CRM hasta que fue importado como estudiante.</div>
+                      <div style={{display:"grid",gap:10}}>
+                        {porProg.map(({prog:p,prom,min,max,n})=>{
+                          const maxProm=Math.max(...porProg.map(x=>x.prom),1);
+                          return(
+                            <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,fontFamily:"system-ui"}}>
+                              <div style={{width:4,height:32,borderRadius:2,background:p.color,flexShrink:0}}/>
+                              <div style={{width:180,flexShrink:0}}>
+                                <div style={{fontWeight:600,fontSize:13,lineHeight:1.2}}>{p.nombre}</div>
+                                <div style={{fontSize:11,color:"#9ca3af"}}>{n} estudiante{n!==1?"s":""}</div>
+                              </div>
+                              <div style={{flex:1,background:"#f3f4f6",borderRadius:4,height:8,overflow:"hidden"}}>
+                                <div style={{width:(prom/maxProm*100)+"%",height:"100%",background:"#7c3aed",borderRadius:4,transition:"width .4s"}}/>
+                              </div>
+                              <div style={{textAlign:"right",flexShrink:0}}>
+                                <span style={{fontWeight:700,fontSize:14,color:"#7c3aed"}}>{prom}d</span>
+                                <span style={{fontSize:11,color:"#9ca3af",marginLeft:6}}>({min}–{max})</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{...S.card,marginBottom:16}}>
               <button onClick={()=>setRepExp(repExp==="egresados"?null:"egresados")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"system-ui"}}>
                 <span style={{fontWeight:700,fontSize:14}}>{"Egresados de EC ("+egresados.length+")"}</span>
@@ -8512,6 +8586,32 @@ export default function App() {
                   }} style={S.btn("#f0fdf4","#16a34a",{padding:"8px 16px",fontSize:13,border:"1px solid #bbf7d0"})}>
                     ↑ Forzar sync a Supabase
                   </button>
+                  {notifCfg?.apiKey&&notifCfg?.locationId&&(
+                    <button onClick={async ()=>{
+                      const sinFecha=(programas||[]).flatMap(p=>ests(p).filter(e=>!e.fecha_lead).map(e=>({e,p})));
+                      if(!sinFecha.length){notify("Todos los estudiantes ya tienen fecha de lead.");return;}
+                      notify(`Obteniendo fechas de ${sinFecha.length} estudiantes desde GHL...`);
+                      let actualizados=0, errores=0;
+                      const progActualizados=[...(programas||[])];
+                      for(const {e,p} of sinFecha){
+                        try{
+                          const r=await fetch(`https://services.leadconnectorhq.com/contacts/${e.id}`,{headers:{"Authorization":"Bearer "+notifCfg.apiKey,"Version":"2021-04-15"}});
+                          if(!r.ok){errores++;continue;}
+                          const d=await r.json();
+                          const fechaLead=d.contact?.dateAdded||d.dateAdded||"";
+                          if(!fechaLead){errores++;continue;}
+                          const pi=progActualizados.findIndex(x=>x.id===p.id);
+                          if(pi===-1) continue;
+                          progActualizados[pi]={...progActualizados[pi],estudiantes:(progActualizados[pi].estudiantes||[]).map(x=>x.id===e.id?{...x,fecha_lead:fechaLead,fecha_conversion:x.fecha_conversion||x.fecha_importacion||today()}:x)};
+                          actualizados++;
+                        }catch(err){errores++;}
+                      }
+                      save(progActualizados);
+                      notify(`Listo: ${actualizados} estudiantes actualizados${errores>0?`, ${errores} sin datos en GHL`:"."}`);
+                    }} style={S.btn("#eff6ff","#2563eb",{padding:"8px 16px",fontSize:13,border:"1px solid #bfdbfe"})}>
+                      ↓ Backfill fechas de lead
+                    </button>
+                  )}
                 </div>
               </div>
             )}
