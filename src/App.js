@@ -205,6 +205,7 @@ const syncDocentesToSupabase = async (docentes) => {
       grados: d.grados||[], programas_egreso: d.programas_egreso||{},
       categoria: d.categoria||"A", semblanza: d.semblanza||"",
       perfil_incompleto: d.perfil_incompleto||false,
+      programas_ids: d.programasIds||[],
     }));
     await supa.upsert("docentes", rows);
   } catch(e) { console.error("Sync docentes error:", e); }
@@ -3880,6 +3881,7 @@ export default function App() {
         programas_egreso:d.programas_egreso||{},
         categoria:d.categoria||"A", semblanza:d.semblanza||"",
         perfil_incompleto:d.perfil_incompleto||false,
+        programasIds:Array.isArray(d.programas_ids)?d.programas_ids:[],
       })));
     } else {
       setDocentes([]);
