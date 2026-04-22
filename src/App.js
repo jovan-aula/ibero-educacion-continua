@@ -5461,8 +5461,13 @@ export default function App() {
             const ep=calcEstadoPagos(e);
             if(ep?.conRecargo?.length>=2){cntCriticos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);}
             else if(ep?.conRecargo?.length>=1){cntVencidos++;montoVencido+=ep.conRecargo.reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);}
-            // Falta cobrar este mes — parcialidades con fecha_vencimiento en mesActual, sin pagar
-            faltaMes+=(p.parcialidades||[]).filter(parc=>!parc.pagado&&(parc.fecha_vencimiento||"").startsWith(mesActual)).reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);
+            // Falta cobrar este mes — mismo criterio que proyeccionMensual: unico→mes inicio, parcialidades→fecha_vencimiento
+            if(p.tipo==="unico"){
+              const mesEsp=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
+              if(mesEsp===mesActual&&!(p.parcialidades||[]).some(x=>x.pagado)) faltaMes+=mf;
+            } else {
+              faltaMes+=(p.parcialidades||[]).filter(parc=>!parc.pagado&&(parc.fecha_vencimiento||"").startsWith(mesActual)).reduce((a,parc)=>a+getMontoParc(parc,mf,total),0);
+            }
           });
 
           // Facturas pendientes — misma lógica que facturación: pagaron en mesFactRef + no enviada
@@ -8416,14 +8421,26 @@ export default function App() {
                   {repVista==="mes"&&(()=>{
                     const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
                     const margen=d.esperado-d.honorarios;
-                    // Calcular cobrado y por cobrar por fecha_vencimiento del mes → cobrado+porcobrar = esperado siempre
-                    const {cobradoMesVenc,porCobrarMes}=(programas||[]).flatMap(p=>ests(p)).reduce((acc,e)=>{
-                      const pg=e.pago; if(!pg||!pg.monto_acordado) return acc;
-                      const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
-                      const total=(pg.parcialidades||[]).length||1;
-                      (pg.parcialidades||[]).filter(pa=>(pa.fecha_vencimiento||"").startsWith(repMes)).forEach(pa=>{
-                        const m=getMontoParc(pa,mf,total);
-                        if(pa.pagado) acc.cobradoMesVenc+=m; else acc.porCobrarMes+=m;
+                    // Cobrado y por cobrar usando la misma lógica que proyeccionMensual para esperado
+                    // → unico: asignado al mes de inicio del programa | parcialidades: por fecha_vencimiento
+                    // → cobrado + porCobrar = esperado siempre
+                    const {cobradoMesVenc,porCobrarMes}=(programas||[]).reduce((acc,prog)=>{
+                      ests(prog).forEach(e=>{
+                        const pg=e.pago; if(!pg||!pg.monto_acordado) return;
+                        const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
+                        const total=(pg.parcialidades||[]).length||1;
+                        if(pg.tipo==="unico"){
+                          const mesEsp=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
+                          if(mesEsp===repMes){
+                            const paid=(pg.parcialidades||[]).some(p=>p.pagado);
+                            if(paid) acc.cobradoMesVenc+=mf; else acc.porCobrarMes+=mf;
+                          }
+                        } else {
+                          (pg.parcialidades||[]).filter(pa=>(pa.fecha_vencimiento||"").startsWith(repMes)).forEach(pa=>{
+                            const m=getMontoParc(pa,mf,total);
+                            if(pa.pagado) acc.cobradoMesVenc+=m; else acc.porCobrarMes+=m;
+                          });
+                        }
                       });
                       return acc;
                     },{cobradoMesVenc:0,porCobrarMes:0});
