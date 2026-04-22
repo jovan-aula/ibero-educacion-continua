@@ -292,20 +292,20 @@ const TIPOS_PROG = [
   {valor:"Otro",      desc:"Personalizable"},
 ];
 const ALL_PERMISOS = [
-  {key:"verProgramas",        label:"Ver programas y módulos"},
-  {key:"editarProgramas",     label:"Agregar / editar programas"},
-  {key:"editarModulos",       label:"Agregar / editar módulos"},
-  {key:"verPagos",            label:"Ver control de pagos"},
-  {key:"verFacturacion",      label:"Ver facturación"},
-  {key:"verAsistencia",       label:"Ver asistencia"},
-  {key:"verEvaluaciones",     label:"Ver evaluaciones"},
-  {key:"verReportes",         label:"Ver reportes / estadísticas"},
-  {key:"importarEstudiantes", label:"Importar / sincronizar estudiantes"},
-  {key:"confirmarDocentes",   label:"Confirmar docentes"},
-  {key:"gestionarDocentes",   label:"Gestionar catálogo de docentes"},
-  {key:"gestionarUsuarios",   label:"Gestionar usuarios"},
-  {key:"configurarNotif",     label:"Configurar notificaciones"},
-  {key:"verProyecciones",     label:"Ver proyecciones financieras"},
+  {key:"verProgramas",        label:"Ver dashboard, programas y calendario", grupo:"Coordinación", desc:"Dashboard · Tablero · Programas · Hoy · Calendario"},
+  {key:"editarProgramas",     label:"Crear / editar / eliminar programas",   grupo:"Coordinación", desc:"Botones de nuevo, editar, duplicar y eliminar programa"},
+  {key:"editarModulos",       label:"Agregar / editar módulos",              grupo:"Coordinación", desc:"Botón agregar módulo dentro de cada programa"},
+  {key:"importarEstudiantes", label:"Importar y agregar estudiantes",        grupo:"Coordinación", desc:"Importar desde GHL · Agregar alumno manualmente"},
+  {key:"verAsistencia",       label:"Ver y registrar asistencia",            grupo:"Académico",    desc:"Sección Asistencia"},
+  {key:"verEvaluaciones",     label:"Ver evaluaciones y NPS",                grupo:"Académico",    desc:"Sección Evaluaciones"},
+  {key:"confirmarDocentes",   label:"Confirmar docentes en módulos",         grupo:"Académico",    desc:"Botón Confirmar en módulos con docente asignado"},
+  {key:"verPagos",            label:"Ver pagos y cobranza",                  grupo:"Finanzas",     desc:"Sección Pagos · Sección Cobranza"},
+  {key:"verFacturacion",      label:"Ver facturación y honorarios",          grupo:"Finanzas",     desc:"Sección Facturación · Sección Honorarios Docentes"},
+  {key:"verReportes",         label:"Ver reportes y estadísticas",           grupo:"Finanzas",     desc:"Sección Reportes"},
+  {key:"verProyecciones",     label:"Ver proyecciones financieras",          grupo:"Finanzas",     desc:"Sección Proyecciones (incluye sueldos y gastos)"},
+  {key:"gestionarDocentes",   label:"Gestionar catálogo de docentes",        grupo:"Administración",desc:"Sección Docentes"},
+  {key:"gestionarUsuarios",   label:"Gestionar usuarios y accesos",          grupo:"Administración",desc:"Configuración → Usuarios · Datos · Sincronización"},
+  {key:"configurarNotif",     label:"Configurar integración CRM / GHL",      grupo:"Administración",desc:"Configuración → API Key GHL · Pipelines · Campos extra"},
 ];
 const ADMIN_P    = Object.fromEntries(ALL_PERMISOS.map(p=>[p.key,true]));
 const VIEWER_P   = {verProgramas:true,verPagos:false,verFacturacion:false,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false,verProyecciones:false};
@@ -8846,11 +8846,11 @@ export default function App() {
                             <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",padding:"8px 10px",background:"#f9fafb",borderRadius:8}}>
                               <div style={{fontSize:12,fontWeight:600,color:"#374151",fontFamily:FONT_BODY,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
                               <input type="number" placeholder="$0" value={pp.monto||""} onChange={e=>{
-                                const nuevo={...cfg,pauta_por_prog:{...(cfg.pauta_por_prog||{}),(p.id):{...pp,monto:parseFloat(e.target.value)||0}}};
+                                const nuevo={...cfg,pauta_por_prog:{...(cfg.pauta_por_prog||{}),[p.id]:{...pp,monto:parseFloat(e.target.value)||0}}};
                                 saveProyConfig(nuevo);
                               }} style={{width:100,padding:"5px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}/>
                               <select value={pp.mes||""} onChange={e=>{
-                                const nuevo={...cfg,pauta_por_prog:{...(cfg.pauta_por_prog||{}),(p.id):{...pp,mes:e.target.value}}};
+                                const nuevo={...cfg,pauta_por_prog:{...(cfg.pauta_por_prog||{}),[p.id]:{...pp,mes:e.target.value}}};
                                 saveProyConfig(nuevo);
                               }} style={{padding:"5px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}>
                                 <option value="">Mes</option>
@@ -9229,14 +9229,28 @@ export default function App() {
                           <button onClick={()=>{setEditUserIdx(i);setEditUserForm({nombre:u.nombre,email:u.email,avatar_url:u.avatar_url||"",newPassword:""});}} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Editar</button>
                           {u.email!==session.email&&<button onClick={()=>setCS({titulo:"Eliminar usuario",mensaje:`¿Estás seguro de que deseas eliminar al usuario "${u.nombre}"? Perderá acceso al sistema.`,onConfirm:()=>saveUsers((users||[]).filter((_,j)=>j!==i))})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 12px",fontSize:12})}>Eliminar</button>}
                         </div>
-                        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                          {ALL_PERMISOS.map(p=>(
-                            <label key={p.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:u.email===session.email?"default":"pointer",background:u.permisos&&u.permisos[p.key]?"#fef2f2":"#f3f4f6",padding:"3px 10px",borderRadius:4,border:"1px solid "+(u.permisos&&u.permisos[p.key]?"#fca5a5":"#e5e7eb"),color:u.permisos&&u.permisos[p.key]?"#1a1a1a":"#9ca3af",fontFamily:"system-ui"}}>
-                              <input type="checkbox" checked={!!(u.permisos&&u.permisos[p.key])} disabled={u.email===session.email} onChange={e=>saveUsers((users||[]).map((uu,j)=>j===i?{...uu,permisos:{...(uu.permisos||{}),[p.key]:e.target.checked}}:uu))} style={{margin:0}}/>
-                              {p.label}
-                            </label>
-                          ))}
-                        </div>
+                        {["Coordinación","Académico","Finanzas","Administración"].map(grupo=>{
+                          const permsGrupo=ALL_PERMISOS.filter(p=>p.grupo===grupo);
+                          return(
+                            <div key={grupo} style={{marginBottom:10}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:5,fontFamily:"system-ui"}}>{grupo}</div>
+                              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                                {permsGrupo.map(p=>{
+                                  const activo=!!(u.permisos&&u.permisos[p.key]);
+                                  return(
+                                    <label key={p.key} style={{display:"flex",alignItems:"flex-start",gap:8,cursor:u.email===session.email?"default":"pointer",background:activo?"#fef2f2":"#f9fafb",padding:"6px 10px",borderRadius:6,border:"1px solid "+(activo?"#fca5a5":"#e5e7eb")}}>
+                                      <input type="checkbox" checked={activo} disabled={u.email===session.email} onChange={e=>saveUsers((users||[]).map((uu,j)=>j===i?{...uu,permisos:{...(uu.permisos||{}),[p.key]:e.target.checked}}:uu))} style={{margin:"2px 0 0 0",flexShrink:0}}/>
+                                      <div>
+                                        <div style={{fontSize:12,fontWeight:600,color:activo?"#1a1a1a":"#374151",fontFamily:"system-ui"}}>{p.label}</div>
+                                        <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:1}}>{p.desc}</div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </>
                     )}
                   </div>
@@ -9254,13 +9268,28 @@ export default function App() {
                       <button onClick={()=>setNewUser({...newUser,permisos:{...FINANZAS_P}})} style={S.btn("#eff6ff","#2563eb",{padding:"5px 12px",fontSize:12,border:"1px solid #bfdbfe"})}>Finanzas</button>
                       <button onClick={()=>setNewUser({...newUser,permisos:{...VIEWER_P}})} style={S.btn("#f3f4f6","#374151",{padding:"5px 12px",fontSize:12})}>Solo lectura</button>
                     </div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                      {ALL_PERMISOS.map(p=>(
-                        <label key={p.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,cursor:"pointer",background:newUser.permisos&&newUser.permisos[p.key]?"#fef2f2":"#f3f4f6",padding:"3px 10px",borderRadius:4,border:"1px solid "+(newUser.permisos&&newUser.permisos[p.key]?"#fca5a5":"#e5e7eb"),color:newUser.permisos&&newUser.permisos[p.key]?"#1a1a1a":"#9ca3af",fontFamily:"system-ui"}}>
-                          <input type="checkbox" checked={!!(newUser.permisos&&newUser.permisos[p.key])} onChange={e=>setNewUser({...newUser,permisos:{...(newUser.permisos||{}),[p.key]:e.target.checked}})} style={{margin:0}}/>{p.label}
-                        </label>
-                      ))}
-                    </div>
+                    {["Coordinación","Académico","Finanzas","Administración"].map(grupo=>{
+                      const permsGrupo=ALL_PERMISOS.filter(p=>p.grupo===grupo);
+                      return(
+                        <div key={grupo} style={{marginBottom:10}}>
+                          <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:5,fontFamily:"system-ui"}}>{grupo}</div>
+                          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                            {permsGrupo.map(p=>{
+                              const activo=!!(newUser.permisos&&newUser.permisos[p.key]);
+                              return(
+                                <label key={p.key} style={{display:"flex",alignItems:"flex-start",gap:8,cursor:"pointer",background:activo?"#fef2f2":"#f9fafb",padding:"6px 10px",borderRadius:6,border:"1px solid "+(activo?"#fca5a5":"#e5e7eb")}}>
+                                  <input type="checkbox" checked={activo} onChange={e=>setNewUser({...newUser,permisos:{...(newUser.permisos||{}),[p.key]:e.target.checked}})} style={{margin:"2px 0 0 0",flexShrink:0}}/>
+                                  <div>
+                                    <div style={{fontSize:12,fontWeight:600,color:activo?"#1a1a1a":"#374151",fontFamily:"system-ui"}}>{p.label}</div>
+                                    <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui",marginTop:1}}>{p.desc}</div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   <button onClick={async()=>{
                     if(!newUser.nombre||!newUser.email||!newUser.password){notify("Completa nombre, correo y contraseña","error");return;}
