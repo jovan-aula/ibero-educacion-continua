@@ -8416,23 +8416,30 @@ export default function App() {
                   {repVista==="mes"&&(()=>{
                     const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
                     const margen=d.esperado-d.honorarios;
-                    // "Por cobrar" correcto: parcialidades con vencimiento en este mes que NO están pagadas
-                    const porCobrarMes=(programas||[]).flatMap(p=>ests(p)).reduce((tot,e)=>{
-                      const pg=e.pago; if(!pg||!pg.monto_acordado) return tot;
+                    // Calcular cobrado y por cobrar por fecha_vencimiento del mes → cobrado+porcobrar = esperado siempre
+                    const {cobradoMesVenc,porCobrarMes}=(programas||[]).flatMap(p=>ests(p)).reduce((acc,e)=>{
+                      const pg=e.pago; if(!pg||!pg.monto_acordado) return acc;
                       const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
                       const total=(pg.parcialidades||[]).length||1;
-                      return tot+(pg.parcialidades||[]).filter(pa=>!pa.pagado&&(pa.fecha_vencimiento||"").startsWith(repMes)).reduce((s,pa)=>s+getMontoParc(pa,mf,total),0);
-                    },0);
-                    // Programas activos ese mes — módulo ese mes O cobro registrado ese mes
+                      (pg.parcialidades||[]).filter(pa=>(pa.fecha_vencimiento||"").startsWith(repMes)).forEach(pa=>{
+                        const m=getMontoParc(pa,mf,total);
+                        if(pa.pagado) acc.cobradoMesVenc+=m; else acc.porCobrarMes+=m;
+                      });
+                      return acc;
+                    },{cobradoMesVenc:0,porCobrarMes:0});
+                    // Programas activos ese mes — módulo ese mes O vencimiento ese mes
                     const progsDelMes=(programas||[]).filter(p=>
                       mods(p).some(m=>m.fechaInicio&&m.fechaInicio.substring(0,7)===repMes)||
-                      ests(p).some(e=>(e.pago?.parcialidades||[]).some(pa=>pa.pagado&&pa.fecha_pago?.substring(0,7)===repMes))
+                      ests(p).some(e=>(e.pago?.parcialidades||[]).some(pa=>(pa.fecha_vencimiento||"").startsWith(repMes)))
                     );
                     return(
                       <div style={{...S.card}}>
-                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
+                        <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                          <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
+                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Cobrado + Por cobrar = Esperado ✓</div>
+                        </div>
                         <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
-                          {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",d.cobrado,"#16a34a","Pagos confirmados con fecha en este mes"],["Por cobrar este mes",porCobrarMes,"#d97706","Parcialidades del mes aún sin pagar"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
+                          {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",cobradoMesVenc,"#16a34a","Pagados (con vencimiento este mes)"],["Por cobrar",porCobrarMes,"#d97706","Sin pagar (con vencimiento este mes)"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
                             <div key={l} style={{textAlign:"center"}}>
                               <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
                               <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
@@ -8450,7 +8457,7 @@ export default function App() {
                                 const pg=e.pago;if(!pg||!pg.monto_acordado)return a;
                                 const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
                                 const total=(pg.parcialidades||[]).length||1;
-                                return a+(pg.parcialidades||[]).filter(pa=>pa.pagado&&pa.fecha_pago?.substring(0,7)===repMes)
+                                return a+(pg.parcialidades||[]).filter(pa=>pa.pagado&&(pa.fecha_vencimiento||"").startsWith(repMes))
                                   .reduce((s,pa)=>s+getMontoParc(pa,mf,total),0);
                               },0);
                               return(
