@@ -407,6 +407,7 @@ const proyeccionMensual = (programas, docentes) => {
 
   (programas||[]).forEach(prog=>{
     ests(prog).forEach(est=>{
+      if(est.estatus==="baja"||est.estatus==="inactivo") return;
       const p=est.pago;
       if(!p||!p.monto_acordado) return;
       const mf=p.monto_acordado*(1-(p.descuento_pct||0)/100);
@@ -8426,6 +8427,7 @@ export default function App() {
                     // → cobrado + porCobrar = esperado siempre
                     const {cobradoMesVenc,porCobrarMes}=(programas||[]).reduce((acc,prog)=>{
                       ests(prog).forEach(e=>{
+                        if(e.estatus==="baja"||e.estatus==="inactivo") return;
                         const pg=e.pago; if(!pg||!pg.monto_acordado) return;
                         const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
                         const total=(pg.parcialidades||[]).length||1;
@@ -8453,7 +8455,7 @@ export default function App() {
                       <div style={{...S.card}}>
                         <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                           <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
-                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Cobrado + Por cobrar = Esperado ✓</div>
+                          {(()=>{const ok=Math.round(cobradoMesVenc+porCobrarMes)===Math.round(d.esperado);return(<div style={{fontSize:11,color:ok?"#9ca3af":"#dc2626",fontFamily:"system-ui"}}>{ok?"Cobrado + Por cobrar = Esperado ✓":"⚠ Revisa: cobrado + por cobrar ≠ esperado"}</div>);})()}
                         </div>
                         <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
                           {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",cobradoMesVenc,"#16a34a","Pagados (con vencimiento este mes)"],["Por cobrar",porCobrarMes,"#d97706","Sin pagar (con vencimiento este mes)"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
