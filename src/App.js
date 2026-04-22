@@ -8416,6 +8416,13 @@ export default function App() {
                   {repVista==="mes"&&(()=>{
                     const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
                     const margen=d.esperado-d.honorarios;
+                    // "Por cobrar" correcto: parcialidades con vencimiento en este mes que NO están pagadas
+                    const porCobrarMes=(programas||[]).flatMap(p=>ests(p)).reduce((tot,e)=>{
+                      const pg=e.pago; if(!pg||!pg.monto_acordado) return tot;
+                      const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
+                      const total=(pg.parcialidades||[]).length||1;
+                      return tot+(pg.parcialidades||[]).filter(pa=>!pa.pagado&&(pa.fecha_vencimiento||"").startsWith(repMes)).reduce((s,pa)=>s+getMontoParc(pa,mf,total),0);
+                    },0);
                     // Programas activos ese mes — módulo ese mes O cobro registrado ese mes
                     const progsDelMes=(programas||[]).filter(p=>
                       mods(p).some(m=>m.fechaInicio&&m.fechaInicio.substring(0,7)===repMes)||
@@ -8425,7 +8432,7 @@ export default function App() {
                       <div style={{...S.card}}>
                         <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
                         <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
-                          {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",d.cobrado,"#16a34a","Pagos confirmados con fecha en este mes"],["Por cobrar este mes",d.esperado-d.cobrado,"#d97706","Vencimientos del mes aún sin confirmar"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
+                          {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",d.cobrado,"#16a34a","Pagos confirmados con fecha en este mes"],["Por cobrar este mes",porCobrarMes,"#d97706","Parcialidades del mes aún sin pagar"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
                             <div key={l} style={{textAlign:"center"}}>
                               <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
                               <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
@@ -8725,7 +8732,7 @@ export default function App() {
 
           const TABS=[{k:"flujo",l:"Flujo mensual"},{k:"gastos",l:"Gastos fijos"},{k:"simulador",l:"Simulador"}];
           return(
-            <div style={{padding:"28px 32px",maxWidth:1200}}>
+            <div style={{padding:"28px 32px"}}>
               {/* Header */}
               <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:24,flexWrap:"wrap"}}>
                 <h1 style={{fontSize:24,fontWeight:700,margin:0,letterSpacing:"-0.5px",flex:1}}>Proyecciones Financieras</h1>
@@ -8752,6 +8759,105 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {/* Gráficas */}
+              {(()=>{
+                const maxIng=Math.max(...flujo.map(m=>m.totalIng),1);
+                const maxGasto=Math.max(...flujo.map(m=>m.totalGastos),1);
+                const maxBar=Math.max(maxIng,maxGasto,1);
+                const totalCobrado=flujo.reduce((s,m)=>s+m.ingCobrado,0);
+                const totalEsperado=flujo.reduce((s,m)=>s+m.ingEsperado,0);
+                const totalSim=flujo.reduce((s,m)=>s+m.ingSim,0);
+                const totalHon=flujo.reduce((s,m)=>s+m.honorarios,0);
+                const totalSueldos=flujo.reduce((s,m)=>s+m.sueldos,0);
+                const totalPauta=flujo.reduce((s,m)=>s+m.pauta,0);
+                const totalOtros=flujo.reduce((s,m)=>s+m.otrosFijos+m.extras,0);
+                // Donut SVG helper
+                const Donut=({segmentos,size=120,stroke=18})=>{
+                  const total=segmentos.reduce((s,x)=>s+x.v,0)||1;
+                  let offset=0;
+                  const r=(size-stroke)/2; const circ=2*Math.PI*r;
+                  return(
+                    <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
+                      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f3f4f6" strokeWidth={stroke}/>
+                      {segmentos.filter(s=>s.v>0).map((seg,i)=>{
+                        const pct=seg.v/total; const dash=pct*circ; const gap=circ-dash;
+                        const el=<circle key={i} cx={size/2} cy={size/2} r={r} fill="none" stroke={seg.c} strokeWidth={stroke} strokeDasharray={`${dash} ${gap}`} strokeDashoffset={-offset*circ} strokeLinecap="butt"/>;
+                        offset+=pct; return el;
+                      })}
+                    </svg>
+                  );
+                };
+                return(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 320px",gap:16,marginBottom:24}}>
+                    {/* Barras mensuales */}
+                    <div style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",padding:"18px 20px",gridColumn:"1/3"}}>
+                      <div style={{fontWeight:700,fontSize:13,color:"#111",fontFamily:FONT_BODY,marginBottom:16}}>Ingresos vs Gastos — {proyAño}</div>
+                      <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120}}>
+                        {flujo.map((m,i)=>{
+                          const hIng=Math.round((m.totalIng/maxBar)*110);
+                          const hGasto=Math.round((m.totalGastos/maxBar)*110);
+                          const esHoy=m.mesStr===new Date().toISOString().substring(0,7);
+                          return(
+                            <div key={m.mesStr} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                              <div style={{display:"flex",alignItems:"flex-end",gap:2,height:110}}>
+                                <div title={`Ing: ${fmx(m.totalIng)}`} style={{width:"44%",height:hIng||2,background:esHoy?"#eb1d33":"#3b82f6",borderRadius:"3px 3px 0 0",transition:"height .3s",minHeight:m.totalIng>0?4:0}}/>
+                                <div title={`Gasto: ${fmx(m.totalGastos)}`} style={{width:"44%",height:hGasto||2,background:esHoy?"#f87171":"#fca5a5",borderRadius:"3px 3px 0 0",transition:"height .3s",minHeight:m.totalGastos>0?4:0}}/>
+                              </div>
+                              <div style={{fontSize:9,color:esHoy?"#eb1d33":"#9ca3af",fontFamily:FONT_BODY,fontWeight:esHoy?700:400,textAlign:"center"}}>{m.label}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{display:"flex",gap:16,marginTop:10,fontSize:11,fontFamily:FONT_BODY,color:"#6b7280"}}>
+                        <span><span style={{display:"inline-block",width:10,height:10,background:"#3b82f6",borderRadius:2,marginRight:4}}/>Ingresos</span>
+                        <span><span style={{display:"inline-block",width:10,height:10,background:"#fca5a5",borderRadius:2,marginRight:4}}/>Gastos</span>
+                      </div>
+                    </div>
+                    {/* Donut composición */}
+                    <div style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",padding:"18px 20px"}}>
+                      <div style={{fontWeight:700,fontSize:13,color:"#111",fontFamily:FONT_BODY,marginBottom:12}}>Composición anual</div>
+                      <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                        <div style={{position:"relative",flexShrink:0}}>
+                          <Donut segmentos={[
+                            {v:totalCobrado,c:"#16a34a"},{v:totalEsperado-totalCobrado,c:"#93c5fd"},
+                            {v:totalSim,c:"#a78bfa"},
+                          ]} size={110} stroke={20}/>
+                          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontSize:10,fontFamily:FONT_BODY,color:"#6b7280",textAlign:"center",lineHeight:1.3}}>
+                            <div style={{fontWeight:800,fontSize:14,color:"#111"}}>{Math.round(totalCobrado/(totIng||1)*100)}%</div>
+                            <div>cobrado</div>
+                          </div>
+                        </div>
+                        <div style={{fontSize:11,fontFamily:FONT_BODY,display:"flex",flexDirection:"column",gap:7}}>
+                          {[{c:"#16a34a",l:"Cobrado",v:totalCobrado},{c:"#93c5fd",l:"Por cobrar",v:totalEsperado-totalCobrado},{c:"#a78bfa",l:"Simulado",v:totalSim}].map(x=>(
+                            <div key={x.l} style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{width:10,height:10,borderRadius:"50%",background:x.c,flexShrink:0}}/>
+                              <div><div style={{fontWeight:600,color:"#374151"}}>{x.l}</div><div style={{color:"#6b7280",fontSize:10}}>{fmx(x.v)}</div></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{borderTop:"1px solid #f3f4f6",marginTop:14,paddingTop:12}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:FONT_BODY,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>Distribución de gastos</div>
+                        {[{l:"Docentes",v:totalHon,c:"#dc2626"},{l:"Sueldos",v:totalSueldos,c:"#f97316"},{l:"Pauta",v:totalPauta,c:"#f59e0b"},{l:"Otros",v:totalOtros,c:"#9ca3af"}].map(x=>{
+                          const pct=totGastos>0?Math.round(x.v/totGastos*100):0;
+                          return(
+                            <div key={x.l} style={{marginBottom:6}}>
+                              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,fontFamily:FONT_BODY,marginBottom:2}}>
+                                <span style={{color:"#374151",fontWeight:500}}>{x.l}</span>
+                                <span style={{color:x.c,fontWeight:700}}>{fmx(x.v)} <span style={{color:"#9ca3af",fontWeight:400}}>({pct}%)</span></span>
+                              </div>
+                              <div style={{height:5,background:"#f3f4f6",borderRadius:3,overflow:"hidden"}}>
+                                <div style={{height:"100%",width:pct+"%",background:x.c,borderRadius:3,transition:"width .4s"}}/>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Tabs */}
               <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid #e5e7eb",paddingBottom:0}}>
