@@ -305,10 +305,11 @@ const ALL_PERMISOS = [
   {key:"gestionarDocentes",   label:"Gestionar catálogo de docentes"},
   {key:"gestionarUsuarios",   label:"Gestionar usuarios"},
   {key:"configurarNotif",     label:"Configurar notificaciones"},
+  {key:"verProyecciones",     label:"Ver proyecciones financieras"},
 ];
 const ADMIN_P    = Object.fromEntries(ALL_PERMISOS.map(p=>[p.key,true]));
-const VIEWER_P   = {verProgramas:true,verPagos:false,verFacturacion:false,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false};
-const FINANZAS_P = {verProgramas:false,verPagos:true,verFacturacion:true,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false};
+const VIEWER_P   = {verProgramas:true,verPagos:false,verFacturacion:false,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false,verProyecciones:false};
+const FINANZAS_P = {verProgramas:false,verPagos:true,verFacturacion:true,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false,verProyecciones:false};
 const DEFAULT_USERS = [{nombre:"Administrador",email:"admin@ibero.mx",password:"ibero2026",permisos:ADMIN_P}];
 const ST_STYLE = {
   activo:    {label:"Activo",    bg:"#f0fdf4",color:"#16a34a",border:"#bbf7d0"},
@@ -3782,6 +3783,11 @@ export default function App() {
   const [diasVentana,setDiasVentana] = useState(15);
   const [busqEst,setBusqEst]     = useState("");
   const [filtroEst,setFiltroEst] = useState("");
+  const [proyConfig,setProyConfig] = useState({sueldos_equipo:0,otros_fijos:[],gastos_extra:[],simulados:[],pauta_por_prog:{}});
+  const [proyAño,setProyAño]     = useState(new Date().getFullYear());
+  const [proyTab,setProyTab]     = useState("flujo");
+  const [proySimForm,setProySimForm] = useState(null);
+  const [proyGastoForm,setProyGastoForm] = useState(null);
   const alertRef = useRef(null);
   const programasRef = useRef(programas);
   const notifCfgRef = useRef(null);
@@ -3849,6 +3855,8 @@ export default function App() {
         if(fm?.valor) setFieldMap(fm.valor);
         if(nf?.valor) setNotifCfg(nf.valor);
         if(ad?.alertas_descartadas) setAlertasDesc(ad.alertas_descartadas);
+        const pry = cfgs.find(c=>c.clave==="proyecciones");
+        if(pry?.valor) setProyConfig(v=>({sueldos_equipo:0,otros_fijos:[],gastos_extra:[],simulados:[],pauta_por_prog:{},...v,...pry.valor}));
       }
     } catch(e){}
     // Cargar evaluaciones NPS desde Supabase
@@ -4201,6 +4209,12 @@ export default function App() {
     if (ok === false) notify("Error al guardar notificaciones.", "error");
   };
   const notify    = (msg,type="success")=>{setNotif({msg,type});setTimeout(()=>setNotif(null),type==="error"?8000:4500);};
+  const saveProyConfig = async cfg => {
+    setProyConfig(cfg);
+    const ok = await supa.upsert("configuracion",[{id:"proyecciones",clave:"proyecciones",valor:cfg}]).catch(()=>false);
+    if(ok===false) notify("Error al guardar proyecciones.","error");
+    else notify("Proyecciones guardadas.");
+  };
   const getProg   = ()=>(programas||[]).find(p=>p.id===selProg);
   const logout    = ()=>{localStorage.removeItem(SK2);setSession(null);setView("lista");};
 
@@ -4927,7 +4941,7 @@ export default function App() {
           {([
             {group:"Coordinación",items:[
               {v:"dashboard",l:"Dashboard",  perm:"verProgramas"},
-              {v:"tablero",  l:"Tablero ✨",  perm:"verProgramas"},
+              {v:"tablero",  l:"Tablero",    perm:"verProgramas"},
               {v:"lista",   l:"Programas",  perm:"verProgramas"},
               {v:"hoy",     l:"Hoy",        perm:"verProgramas"},
               {v:"calendario",l:"Calendario",perm:"verProgramas"},
@@ -4937,10 +4951,11 @@ export default function App() {
               {v:"evaluaciones",l:"Evaluaciones", perm:"verEvaluaciones"},
             ]},
             {group:"Finanzas",items:[
-              {v:"pagos_global",l:"Pagos",       perm:"verPagos"},
-              {v:"cobranza",    l:"Cobranza",    perm:"verPagos"},
-              {v:"facturacion", l:"Facturación", perm:"verFacturacion"},
-              {v:"honorarios",  l:"Honorarios",  perm:"verFacturacion"},
+              {v:"pagos_global",   l:"Pagos",         perm:"verPagos"},
+              {v:"cobranza",       l:"Cobranza",       perm:"verPagos"},
+              {v:"facturacion",    l:"Facturación",    perm:"verFacturacion"},
+              {v:"honorarios",     l:"Honorarios",     perm:"verFacturacion"},
+              {v:"proyecciones",   l:"Proyecciones",   perm:"verProyecciones"},
             ]},
             {group:"Administración",items:[
               {v:"docentes", l:"Docentes", perm:"gestionarDocentes"},
@@ -4998,7 +5013,7 @@ export default function App() {
         {/* TOP BAR */}
         <div style={{height:54,background:"#fff",borderBottom:"1px solid #EBEBEB",padding:"0 32px",display:"flex",alignItems:"center",gap:14,position:"sticky",top:0,zIndex:90,flexShrink:0}}>
           <div style={{flex:1,fontWeight:700,fontSize:15,fontFamily:FONT_TITLE,letterSpacing:"-0.3px",color:"#111"}}>
-            {view==="dashboard"?"Dashboard":view==="tablero"?"Tablero":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="cobranza"?"Cobranza":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":""}
+            {view==="dashboard"?"Dashboard":view==="tablero"?"Tablero":view==="lista"||view==="programa"?"Programas":view==="hoy"?"Hoy":view==="calendario"?"Calendario":view==="asistencia"?"Asistencia":view==="pagos_global"?"Control de Pagos":view==="cobranza"?"Cobranza":view==="facturacion"?"Facturación":view==="honorarios"?"Honorarios Docentes":view==="docentes"?"Docentes":view==="evaluaciones"?"Evaluaciones":view==="reportes"?"Reportes":view==="busqueda"?"Búsqueda":view==="config"?"Configuración":view==="proyecciones"?"Proyecciones Financieras":""}
           </div>
           {/* Presencia — quién está conectado (incluye usuario actual) */}
           {(()=>{
@@ -5515,7 +5530,7 @@ export default function App() {
               {/* KPIs fila 1 */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
                 <KPICard label="Cobrado este mes" value={fmtMXN(cobradoMes)} color="#16a34a"/>
-                <KPICard label="Pendiente total" value={fmtMXN(pendienteTotal)} color="#d97706" onClick={()=>setView("pagos_global")}/>
+                <KPICard label="Saldo por cobrar" value={fmtMXN(pendienteTotal)} sub="todos los meses" color="#d97706" onClick={()=>setView("pagos_global")}/>
                 <KPICard label="Vencidos" value={cntVencidos+cntCriticos} sub={cntCriticos>0?cntCriticos+" críticos":""} color="#dc2626" onClick={()=>{setView("pagos_global");setFiltroPagos("vencido");}}/>
                 <KPICard label="Estudiantes activos" value={activos.length} color={RED}/>
                 <KPICard label="Por iniciar" value={porIniciar.length} sub={progsProximos.length+" programa"+(progsProximos.length!==1?"s":"")} color="#0891b2" onClick={()=>setView("lista")}/>
@@ -5614,7 +5629,7 @@ export default function App() {
                         <span style={{fontSize:18}}>🔴</span>
                         <div>
                           <div style={{fontWeight:700,fontSize:13,color:"#dc2626",fontFamily:"system-ui"}}>{cntVencidos+cntCriticos} pago{cntVencidos+cntCriticos!==1?"s":""} vencido{cntVencidos+cntCriticos!==1?"s":""}</div>
-                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{fmtMXN(montoVencido)} vencido · {fmtMXN(pendienteTotal)} pendiente total</div>
+                          <div style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui"}}>{fmtMXN(montoVencido)} vencido · {fmtMXN(pendienteTotal)} saldo por cobrar (todos los meses)</div>
                         </div>
                       </div>
                     )}
@@ -7497,7 +7512,7 @@ export default function App() {
                   {label:"Críticos",val:cCritico,color:"#dc2626",filtro:"critico"},
                   {label:"Vencidos",val:cVencido,color:"#d97706",filtro:"vencido"},
                   {label:"Vencen pronto",val:cProximo,color:"#2563eb",filtro:"proximo"},
-                  {label:"Total pendiente",val:fmtMXN(totalPendiente),color:"#111",filtro:""},
+                  {label:"Saldo total pendiente",val:fmtMXN(totalPendiente),color:"#111",filtro:""},
                 ].map(k=>(
                   <div key={k.label} onClick={()=>setCobranzaFiltroEst(cobranzaFiltroEst===k.filtro?"":k.filtro||"")} style={{...S.card,padding:"16px 18px",cursor:"pointer",borderLeft:"4px solid "+k.color,boxShadow:cobranzaFiltroEst===k.filtro?"0 0 0 3px "+k.color+"33":"none"}}>
                     <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",letterSpacing:"0.5px",marginBottom:5,fontFamily:"system-ui"}}>{k.label.toUpperCase()}</div>
@@ -8410,10 +8425,11 @@ export default function App() {
                       <div style={{...S.card}}>
                         <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
                         <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
-                          {[["Ingresos esperados",d.esperado,"#1a1a1a"],["Cobrado",d.cobrado,"#16a34a"],["Pendiente",d.esperado-d.cobrado,"#d97706"],["Honorarios",d.honorarios,RED],["Margen neto",margen,"#7c3aed"]].map(([l,v,c])=>(
+                          {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",d.cobrado,"#16a34a","Pagos confirmados con fecha en este mes"],["Por cobrar este mes",d.esperado-d.cobrado,"#d97706","Vencimientos del mes aún sin confirmar"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
                             <div key={l} style={{textAlign:"center"}}>
                               <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
                               <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                              {sub&&<div style={{fontSize:10,color:"#9ca3af",marginTop:3,fontFamily:"system-ui"}}>{sub}</div>}
                             </div>
                           ))}
                         </div>
@@ -8456,7 +8472,7 @@ export default function App() {
                         <div style={{overflowX:"auto"}}>
                           <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"system-ui",fontSize:13,minWidth:700}}>
                             <thead><tr style={{borderBottom:"2px solid #e5e7eb",background:"#f9f9f9"}}>
-                              {["Mes","Esperado","Cobrado","Pendiente","Honorarios","Margen"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}
+                              {["Mes","Esperado","Cobrado","Por cobrar","Honorarios","Margen"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 12px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>)}
                             </tr></thead>
                             <tbody>
                               {mesesAnio.map(m=>{
@@ -8626,6 +8642,481 @@ export default function App() {
             })()}
           </div>
         )}
+
+        {/* PROYECCIONES */}
+        {view==="proyecciones"&&can(session,"verProyecciones")&&(()=>{
+          const newId7=()=>Math.random().toString(36).slice(2,9);
+          const fmx=n=>new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:0}).format(n||0);
+          const HON_CAT={A:650,B:500};
+          // Calcular flujo mensual
+          const calcFlujo=()=>{
+            const byMes=proyeccionMensual(programas,docentes);
+            return Array.from({length:12},(_,i)=>{
+              const mesStr=`${proyAño}-${String(i+1).padStart(2,"0")}`;
+              const base=byMes[mesStr]||{esperado:0,cobrado:0,honorarios:0};
+              // Ingresos simulados: distribuidos en los meses de duración
+              let ingSim=0;
+              (proyConfig.simulados||[]).forEach(sim=>{
+                if(!sim.mes_inicio||!sim.duracion_meses) return;
+                const ini=new Date(sim.mes_inicio+"-01");
+                const fin=new Date(ini); fin.setMonth(fin.getMonth()+(sim.duracion_meses||1));
+                const cur=new Date(mesStr+"-01");
+                if(cur>=ini&&cur<fin){
+                  const precioFinal=(sim.precio||0)*(1-(sim.descuento_pct||0)/100);
+                  ingSim+=precioFinal*(sim.estudiantes||0)/(sim.duracion_meses||1);
+                }
+              });
+              // Docentes simulados: en el mes de inicio
+              let honSim=0;
+              (proyConfig.simulados||[]).forEach(sim=>{
+                if(sim.mes_inicio===mesStr){
+                  (sim.modulos||[]).forEach(mod=>{
+                    honSim+=(mod.horas||0)*(HON_CAT[mod.cat]||mod.honorarios||0);
+                  });
+                }
+              });
+              // Sueldos equipo (mensual fijo)
+              const sueldos=proyConfig.sueldos_equipo||0;
+              // Otros gastos fijos
+              const otrosFijos=(proyConfig.otros_fijos||[]).filter(g=>g.tipo==="mensual").reduce((s,g)=>s+(g.monto||0),0);
+              const otrosAnual=(proyConfig.otros_fijos||[]).filter(g=>g.tipo==="anual"&&g.mes===mesStr.substring(5,7)).reduce((s,g)=>s+(g.monto||0),0);
+              // Gastos extra únicos
+              const extras=(proyConfig.gastos_extra||[]).filter(g=>g.mes===mesStr).reduce((s,g)=>s+(g.monto||0),0);
+              // Pauta programas reales que inician este mes
+              let pauta=0;
+              (programas||[]).forEach(p=>{
+                const mesesPauta=proyConfig.pauta_por_prog?.[p.id];
+                if(mesesPauta?.mes===mesStr){
+                  pauta+=mesesPauta.monto||0;
+                }
+              });
+              // Pauta simulados
+              (proyConfig.simulados||[]).forEach(sim=>{
+                if(sim.mes_pauta===mesStr) pauta+=sim.pauta||0;
+              });
+              const totalIng=base.esperado+ingSim;
+              const totalIngReal=base.cobrado+ingSim;
+              const totalGastos=base.honorarios+honSim+sueldos+otrosFijos+otrosAnual+extras+pauta;
+              return{mesStr,label:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i],
+                ingEsperado:base.esperado,ingCobrado:base.cobrado,ingSim,totalIng,totalIngReal,
+                honorarios:base.honorarios+honSim,sueldos,otrosFijos:otrosFijos+otrosAnual,extras,pauta,
+                totalGastos,utilidadProy:totalIng-totalGastos,utilidadReal:totalIngReal-totalGastos};
+            });
+          };
+          const flujo=calcFlujo();
+          const totIng=flujo.reduce((s,m)=>s+m.totalIng,0);
+          const totIngReal=flujo.reduce((s,m)=>s+m.totalIngReal,0);
+          const totGastos=flujo.reduce((s,m)=>s+m.totalGastos,0);
+          const totUtil=totIng-totGastos;
+          const margen=totIng>0?Math.round(totUtil/totIng*100):0;
+
+          // Exportar Excel
+          const exportarExcel=()=>{
+            const bom="\uFEFF";
+            const filas=[
+              ["Mes","Ing. Esperado","Ing. Cobrado","Ing. Simulado","Total Ingresos","Docentes","Sueldos Equipo","Pauta","Otros Gastos","Extras","Total Gastos","Utilidad Proyectada","Utilidad Real"],
+              ...flujo.map(m=>[m.label,m.ingEsperado,m.ingCobrado,m.ingSim,m.totalIng,m.honorarios,m.sueldos,m.pauta,m.otrosFijos,m.extras,m.totalGastos,m.utilidadProy,m.utilidadReal]),
+              ["TOTAL",flujo.reduce((s,m)=>s+m.ingEsperado,0),flujo.reduce((s,m)=>s+m.ingCobrado,0),flujo.reduce((s,m)=>s+m.ingSim,0),totIng,flujo.reduce((s,m)=>s+m.honorarios,0),flujo.reduce((s,m)=>s+m.sueldos,0),flujo.reduce((s,m)=>s+m.pauta,0),flujo.reduce((s,m)=>s+m.otrosFijos,0),flujo.reduce((s,m)=>s+m.extras,0),totGastos,totUtil,totIngReal-totGastos],
+            ];
+            const csv=bom+filas.map(r=>r.map(c=>typeof c==="number"?c:'"'+(c||"").replace(/"/g,'""')+'"').join(",")).join("\n");
+            const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
+            a.download=`proyeccion-${proyAño}.csv`; a.click();
+          };
+
+          const TABS=[{k:"flujo",l:"Flujo mensual"},{k:"gastos",l:"Gastos fijos"},{k:"simulador",l:"Simulador"}];
+          return(
+            <div style={{padding:"28px 32px",maxWidth:1200}}>
+              {/* Header */}
+              <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:24,flexWrap:"wrap"}}>
+                <h1 style={{fontSize:24,fontWeight:700,margin:0,letterSpacing:"-0.5px",flex:1}}>Proyecciones Financieras</h1>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  {[proyAño-1,proyAño,proyAño+1].map(a=>(
+                    <button key={a} onClick={()=>setProyAño(a)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid "+(a===proyAño?"#eb1d33":"#e5e7eb"),background:a===proyAño?"#eb1d33":"#fff",color:a===proyAño?"#fff":"#374151",fontWeight:a===proyAño?700:400,fontSize:13,cursor:"pointer",fontFamily:FONT_BODY}}>{a}</button>
+                  ))}
+                </div>
+                <button onClick={exportarExcel} style={{padding:"7px 16px",borderRadius:8,border:"1px solid #d1fae5",background:"#f0fdf4",color:"#16a34a",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:FONT_BODY}}>↓ Excel</button>
+              </div>
+
+              {/* KPIs */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
+                {[
+                  {l:"Ingreso proyectado",v:fmx(totIng),c:"#2563eb",bg:"#eff6ff"},
+                  {l:"Ingreso cobrado",v:fmx(totIngReal),c:"#16a34a",bg:"#f0fdf4"},
+                  {l:"Gastos totales",v:fmx(totGastos),c:"#dc2626",bg:"#fef2f2"},
+                  {l:"Utilidad neta",v:fmx(totUtil),sub:`Margen ${margen}%`,c:totUtil>=0?"#16a34a":"#dc2626",bg:totUtil>=0?"#f0fdf4":"#fef2f2"},
+                ].map(k=>(
+                  <div key={k.l} style={{background:k.bg,border:`1px solid ${k.c}22`,borderRadius:12,padding:"16px 20px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:k.c,letterSpacing:"0.08em",textTransform:"uppercase",fontFamily:FONT_BODY,marginBottom:4}}>{k.l}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:k.c,fontFamily:FONT_TITLE}}>{k.v}</div>
+                    {k.sub&&<div style={{fontSize:11,color:k.c,marginTop:2,fontFamily:FONT_BODY,opacity:0.8}}>{k.sub}</div>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Tabs */}
+              <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid #e5e7eb",paddingBottom:0}}>
+                {TABS.map(t=>(
+                  <button key={t.k} onClick={()=>setProyTab(t.k)} style={{padding:"8px 18px",borderRadius:"8px 8px 0 0",border:"1px solid "+(proyTab===t.k?"#e5e7eb":"transparent"),borderBottom:proyTab===t.k?"1px solid #fff":"none",background:proyTab===t.k?"#fff":"transparent",color:proyTab===t.k?"#111":"#6b7280",fontWeight:proyTab===t.k?600:400,fontSize:13,cursor:"pointer",fontFamily:FONT_BODY,marginBottom:-1}}>{t.l}</button>
+                ))}
+              </div>
+
+              {/* Tab: Flujo mensual */}
+              {proyTab==="flujo"&&(
+                <div style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",overflow:"hidden"}}>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,fontFamily:FONT_BODY}}>
+                      <thead>
+                        <tr style={{background:"#f9fafb"}}>
+                          {["Mes","Ing. Esperado","Ing. Cobrado","Ing. Simulado","Docentes","Sueldos","Pauta","Otros","Utilidad Proy.","Utilidad Real"].map(h=>(
+                            <th key={h} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,fontSize:11,color:"#6b7280",letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid #e5e7eb",...(h==="Mes"?{textAlign:"left"}:{})}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flujo.map((m,i)=>{
+                          const esHoy=m.mesStr===new Date().toISOString().substring(0,7);
+                          return(
+                            <tr key={m.mesStr} style={{background:esHoy?"#fffbeb":i%2===0?"#fff":"#fafafa",borderBottom:"1px solid #f3f4f6"}}>
+                              <td style={{padding:"10px 12px",fontWeight:esHoy?700:500,color:esHoy?"#d97706":"#111"}}>{m.label}{esHoy&&<span style={{marginLeft:6,fontSize:10,background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 5px",fontWeight:700}}>HOY</span>}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#2563eb"}}>{m.ingEsperado>0?fmx(m.ingEsperado):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#16a34a"}}>{m.ingCobrado>0?fmx(m.ingCobrado):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#7c3aed"}}>{m.ingSim>0?fmx(m.ingSim):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#dc2626"}}>{m.honorarios>0?fmx(m.honorarios):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#dc2626"}}>{m.sueldos>0?fmx(m.sueldos):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#ea580c"}}>{m.pauta>0?fmx(m.pauta):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#9ca3af"}}>{(m.otrosFijos+m.extras)>0?fmx(m.otrosFijos+m.extras):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:m.utilidadProy>=0?"#16a34a":"#dc2626"}}>{fmx(m.utilidadProy)}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:m.utilidadReal>=0?"#059669":"#dc2626"}}>{fmx(m.utilidadReal)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{background:"#f1f5f9",borderTop:"2px solid #e2e8f0"}}>
+                          <td style={{padding:"10px 12px",fontWeight:800,fontSize:12}}>TOTAL {proyAño}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#2563eb"}}>{fmx(flujo.reduce((s,m)=>s+m.ingEsperado,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#16a34a"}}>{fmx(flujo.reduce((s,m)=>s+m.ingCobrado,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#7c3aed"}}>{fmx(flujo.reduce((s,m)=>s+m.ingSim,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{fmx(flujo.reduce((s,m)=>s+m.honorarios,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{fmx(flujo.reduce((s,m)=>s+m.sueldos,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#ea580c"}}>{fmx(flujo.reduce((s,m)=>s+m.pauta,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#9ca3af"}}>{fmx(flujo.reduce((s,m)=>s+m.otrosFijos+m.extras,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:totUtil>=0?"#16a34a":"#dc2626"}}>{fmx(totUtil)}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:(totIngReal-totGastos)>=0?"#059669":"#dc2626"}}>{fmx(totIngReal-totGastos)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <div style={{padding:"10px 16px",fontSize:11,color:"#9ca3af",borderTop:"1px solid #f3f4f6",fontFamily:FONT_BODY}}>
+                    <span style={{color:"#2563eb",fontWeight:600}}>Ing. Esperado</span> = parcialidades programadas · <span style={{color:"#16a34a",fontWeight:600}}>Ing. Cobrado</span> = pagos confirmados · <span style={{color:"#7c3aed",fontWeight:600}}>Ing. Simulado</span> = programas hipotéticos
+                  </div>
+                </div>
+              )}
+
+              {/* Tab: Gastos fijos */}
+              {proyTab==="gastos"&&(()=>{
+                const cfg=proyConfig;
+                const MESES_OPT=Array.from({length:12},(_,i)=>({v:String(i+1).padStart(2,"0"),l:["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][i]}));
+                return(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
+                    {/* Sueldos equipo */}
+                    <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:24}}>
+                      <div style={{fontWeight:700,fontSize:13,marginBottom:4,color:"#111",fontFamily:FONT_BODY}}>Sueldos del equipo</div>
+                      <p style={{fontSize:12,color:"#6b7280",margin:"0 0 14px",fontFamily:FONT_BODY}}>Gasto mensual total del equipo (nómina). Solo visible para administradores.</p>
+                      <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+                        <div style={{flex:1}}>
+                          <label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Monto mensual</label>
+                          <input type="number" value={cfg.sueldos_equipo||""} placeholder="0"
+                            onChange={e=>saveProyConfig({...cfg,sueldos_equipo:parseFloat(e.target.value)||0})}
+                            style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:14,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div style={{fontSize:16,fontWeight:700,color:"#dc2626",paddingBottom:8,fontFamily:FONT_TITLE}}>{fmx(cfg.sueldos_equipo||0)}/mes</div>
+                      </div>
+                      <div style={{marginTop:10,fontSize:12,color:"#6b7280",fontFamily:FONT_BODY}}>Anual: <strong style={{color:"#dc2626"}}>{fmx((cfg.sueldos_equipo||0)*12)}</strong></div>
+                    </div>
+
+                    {/* Pauta por programa */}
+                    <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:24}}>
+                      <div style={{fontWeight:700,fontSize:13,marginBottom:4,color:"#111",fontFamily:FONT_BODY}}>Pauta publicitaria por programa</div>
+                      <p style={{fontSize:12,color:"#6b7280",margin:"0 0 14px",fontFamily:FONT_BODY}}>Gasto en ads previo al arranque de cada programa. Asigna el mes en que se gastó.</p>
+                      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                        {(programas||[]).filter(p=>p.estatus==="activo"||p.estatus==="proximo").map(p=>{
+                          const pp=cfg.pauta_por_prog?.[p.id]||{monto:0,mes:""};
+                          return(
+                            <div key={p.id} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",padding:"8px 10px",background:"#f9fafb",borderRadius:8}}>
+                              <div style={{fontSize:12,fontWeight:600,color:"#374151",fontFamily:FONT_BODY,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                              <input type="number" placeholder="$0" value={pp.monto||""} onChange={e=>{
+                                const nuevo={...cfg,pauta_por_prog:{...(cfg.pauta_por_prog||{}),(p.id):{...pp,monto:parseFloat(e.target.value)||0}}};
+                                saveProyConfig(nuevo);
+                              }} style={{width:100,padding:"5px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}/>
+                              <select value={pp.mes||""} onChange={e=>{
+                                const nuevo={...cfg,pauta_por_prog:{...(cfg.pauta_por_prog||{}),(p.id):{...pp,mes:e.target.value}}};
+                                saveProyConfig(nuevo);
+                              }} style={{padding:"5px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}>
+                                <option value="">Mes</option>
+                                {MESES_OPT.map(m=><option key={m.v} value={`${proyAño}-${m.v}`}>{m.l}</option>)}
+                              </select>
+                            </div>
+                          );
+                        })}
+                        {(programas||[]).filter(p=>p.estatus==="activo"||p.estatus==="proximo").length===0&&(
+                          <p style={{fontSize:12,color:"#9ca3af",fontFamily:FONT_BODY}}>No hay programas activos o próximos.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Otros gastos fijos */}
+                    <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:24}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"#111",fontFamily:FONT_BODY}}>Otros gastos fijos</div>
+                          <div style={{fontSize:12,color:"#6b7280",fontFamily:FONT_BODY,marginTop:2}}>Renta, software, servicios, etc.</div>
+                        </div>
+                        <button onClick={()=>setProyGastoForm({tipo:"fijo",nombre:"",monto:0,tipo_gasto:"mensual",mes:""})} style={{padding:"6px 14px",borderRadius:8,background:"#f0fdf4",border:"1px solid #bbf7d0",color:"#16a34a",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:FONT_BODY}}>+ Agregar</button>
+                      </div>
+                      {(cfg.otros_fijos||[]).length===0&&<p style={{fontSize:12,color:"#9ca3af",fontFamily:FONT_BODY}}>Sin gastos fijos configurados.</p>}
+                      {(cfg.otros_fijos||[]).map(g=>(
+                        <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#f9fafb",borderRadius:8,marginBottom:6}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:12,fontWeight:600,color:"#374151",fontFamily:FONT_BODY}}>{g.nombre}</div>
+                            <div style={{fontSize:11,color:"#6b7280",fontFamily:FONT_BODY}}>{g.tipo==="mensual"?"Mensual":"Anual ("+MESES_OPT.find(m=>m.v===g.mes)?.l+")"} · {fmx(g.monto)}</div>
+                          </div>
+                          <button onClick={()=>saveProyConfig({...cfg,otros_fijos:(cfg.otros_fijos||[]).filter(x=>x.id!==g.id)})} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Gastos extraordinarios */}
+                    <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:24}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:13,color:"#111",fontFamily:FONT_BODY}}>Gastos extraordinarios</div>
+                          <div style={{fontSize:12,color:"#6b7280",fontFamily:FONT_BODY,marginTop:2}}>Gastos únicos asignados a un mes específico.</div>
+                        </div>
+                        <button onClick={()=>setProyGastoForm({tipo:"extra",nombre:"",monto:0,mes:""})} style={{padding:"6px 14px",borderRadius:8,background:"#fff7ed",border:"1px solid #fed7aa",color:"#ea580c",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:FONT_BODY}}>+ Agregar</button>
+                      </div>
+                      {(cfg.gastos_extra||[]).length===0&&<p style={{fontSize:12,color:"#9ca3af",fontFamily:FONT_BODY}}>Sin gastos extraordinarios.</p>}
+                      {(cfg.gastos_extra||[]).map(g=>(
+                        <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#f9fafb",borderRadius:8,marginBottom:6}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:12,fontWeight:600,color:"#374151",fontFamily:FONT_BODY}}>{g.nombre}</div>
+                            <div style={{fontSize:11,color:"#6b7280",fontFamily:FONT_BODY}}>{MESES_OPT.find(m=>m.v===(g.mes||"").substring(5,7))?.l||g.mes} · {fmx(g.monto)}</div>
+                          </div>
+                          <button onClick={()=>saveProyConfig({...cfg,gastos_extra:(cfg.gastos_extra||[]).filter(x=>x.id!==g.id)})} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Tab: Simulador */}
+              {proyTab==="simulador"&&(()=>{
+                const MESES_OPT=Array.from({length:12},(_,i)=>({v:`${proyAño}-${String(i+1).padStart(2,"0")}`,l:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]}));
+                return(
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                      <p style={{margin:0,fontSize:13,color:"#6b7280",fontFamily:FONT_BODY}}>Agrega programas hipotéticos para ver su impacto en el flujo de caja.</p>
+                      <button onClick={()=>setProySimForm({id:newId7(),nombre:"",precio:0,descuento_pct:0,estudiantes:0,mes_inicio:"",duracion_meses:5,pauta:0,mes_pauta:"",modulos:[{id:newId7(),nombre:"",horas:0,cat:"A"}]})} style={{padding:"8px 18px",borderRadius:8,background:"#eb1d33",color:"#fff",border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:FONT_BODY}}>+ Nuevo programa</button>
+                    </div>
+                    {(proyConfig.simulados||[]).length===0&&(
+                      <div style={{textAlign:"center",padding:"48px 24px",background:"#fff",borderRadius:12,border:"1px dashed #e5e7eb",color:"#9ca3af",fontSize:13,fontFamily:FONT_BODY}}>
+                        Sin programas simulados. Agrega uno para verlo en el flujo mensual.
+                      </div>
+                    )}
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14}}>
+                      {(proyConfig.simulados||[]).map(sim=>{
+                        const ingTotal=(sim.precio||0)*(1-(sim.descuento_pct||0)/100)*(sim.estudiantes||0);
+                        const costoDoc=(sim.modulos||[]).reduce((s,m)=>s+(m.horas||0)*(HON_CAT[m.cat]||0),0);
+                        const utilidad=ingTotal-costoDoc-(sim.pauta||0);
+                        return(
+                          <div key={sim.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:20}}>
+                            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12}}>
+                              <div>
+                                <div style={{fontWeight:700,fontSize:14,color:"#111",fontFamily:FONT_BODY}}>{sim.nombre||"Sin nombre"}</div>
+                                <div style={{fontSize:12,color:"#6b7280",fontFamily:FONT_BODY,marginTop:2}}>{MESES_OPT.find(m=>m.v===sim.mes_inicio)?.l||sim.mes_inicio} · {sim.duracion_meses} meses · {sim.estudiantes} estudiantes</div>
+                              </div>
+                              <div style={{display:"flex",gap:6}}>
+                                <button onClick={()=>setProySimForm({...sim})} style={{background:"none",border:"1px solid #e5e7eb",borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",color:"#374151",fontFamily:FONT_BODY}}>Editar</button>
+                                <button onClick={()=>saveProyConfig({...proyConfig,simulados:(proyConfig.simulados||[]).filter(s=>s.id!==sim.id)})} style={{background:"none",border:"1px solid #fecaca",borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer",color:"#dc2626",fontFamily:FONT_BODY}}>Quitar</button>
+                              </div>
+                            </div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                              {[
+                                {l:"Ingreso total",v:fmx(ingTotal),c:"#2563eb"},
+                                {l:"Costo docentes",v:fmx(costoDoc),c:"#dc2626"},
+                                {l:"Utilidad estimada",v:fmx(utilidad),c:utilidad>=0?"#16a34a":"#dc2626"},
+                              ].map(k=>(
+                                <div key={k.l} style={{background:"#f9fafb",borderRadius:8,padding:"10px 12px"}}>
+                                  <div style={{fontSize:10,color:"#9ca3af",fontFamily:FONT_BODY,marginBottom:2,textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.l}</div>
+                                  <div style={{fontSize:14,fontWeight:700,color:k.c,fontFamily:FONT_TITLE}}>{k.v}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Modal: Gasto fijo / extraordinario */}
+              {proyGastoForm&&(()=>{
+                const esFijo=proyGastoForm.tipo==="fijo";
+                const MESES_OPT=Array.from({length:12},(_,i)=>({v:String(i+1).padStart(2,"0"),l:["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][i]}));
+                const guardarGasto=()=>{
+                  if(!proyGastoForm.nombre||!proyGastoForm.monto){notify("Completa nombre y monto","error");return;}
+                  const entry={...proyGastoForm,id:newId7(),tipo:esFijo?proyGastoForm.tipo_gasto:"unico"};
+                  if(esFijo){
+                    saveProyConfig({...proyConfig,otros_fijos:[...(proyConfig.otros_fijos||[]),entry]});
+                  } else {
+                    saveProyConfig({...proyConfig,gastos_extra:[...(proyConfig.gastos_extra||[]),entry]});
+                  }
+                  setProyGastoForm(null);
+                };
+                return(
+                  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16}}>
+                    <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:400,padding:28,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+                      <div style={{fontWeight:700,fontSize:17,marginBottom:20,fontFamily:FONT_TITLE}}>{esFijo?"Agregar gasto fijo":"Agregar gasto extraordinario"}</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Nombre</label>
+                          <input value={proyGastoForm.nombre} onChange={e=>setProyGastoForm({...proyGastoForm,nombre:e.target.value})} placeholder={esFijo?"Ej. Renta oficina":"Ej. Diseño de materiales"} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Monto</label>
+                          <input type="number" value={proyGastoForm.monto||""} onChange={e=>setProyGastoForm({...proyGastoForm,monto:parseFloat(e.target.value)||0})} placeholder="0" style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        {esFijo?(
+                          <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Frecuencia</label>
+                            <select value={proyGastoForm.tipo_gasto||"mensual"} onChange={e=>setProyGastoForm({...proyGastoForm,tipo_gasto:e.target.value})} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY}}>
+                              <option value="mensual">Mensual</option>
+                              <option value="anual">Anual (una vez al año)</option>
+                            </select>
+                          </div>
+                        ):(
+                          <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Mes</label>
+                            <select value={proyGastoForm.mes||""} onChange={e=>setProyGastoForm({...proyGastoForm,mes:`${proyAño}-${e.target.value}`})} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY}}>
+                              <option value="">Selecciona mes</option>
+                              {MESES_OPT.map(m=><option key={m.v} value={m.v}>{m.l}</option>)}
+                            </select>
+                          </div>
+                        )}
+                        {esFijo&&proyGastoForm.tipo_gasto==="anual"&&(
+                          <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>¿En qué mes ocurre?</label>
+                            <select value={proyGastoForm.mes||""} onChange={e=>setProyGastoForm({...proyGastoForm,mes:e.target.value})} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY}}>
+                              <option value="">Selecciona mes</option>
+                              {MESES_OPT.map(m=><option key={m.v} value={m.v}>{m.l}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+                        <button onClick={()=>setProyGastoForm(null)} style={{padding:"8px 18px",borderRadius:8,background:"#f3f4f6",border:"none",color:"#374151",fontSize:13,cursor:"pointer",fontFamily:FONT_BODY}}>Cancelar</button>
+                        <button onClick={guardarGasto} style={{padding:"8px 18px",borderRadius:8,background:"#eb1d33",border:"none",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:FONT_BODY}}>Guardar</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Modal: Simulador de programa */}
+              {proySimForm&&(()=>{
+                const f=proySimForm;
+                const MESES_OPT=Array.from({length:12},(_,i)=>({v:`${proyAño}-${String(i+1).padStart(2,"0")}`,l:["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][i]}));
+                const ingTotal=(f.precio||0)*(1-(f.descuento_pct||0)/100)*(f.estudiantes||0);
+                const costoDoc=(f.modulos||[]).reduce((s,m)=>s+(m.horas||0)*(HON_CAT[m.cat]||0),0);
+                const utilidad=ingTotal-costoDoc-(f.pauta||0);
+                const guardarSim=()=>{
+                  if(!f.nombre){notify("Escribe un nombre para el programa","error");return;}
+                  const existe=(proyConfig.simulados||[]).find(s=>s.id===f.id);
+                  const nuevos=existe?(proyConfig.simulados||[]).map(s=>s.id===f.id?f:s):[...(proyConfig.simulados||[]),f];
+                  saveProyConfig({...proyConfig,simulados:nuevos});
+                  setProySimForm(null);
+                };
+                return(
+                  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:16,overflowY:"auto"}}>
+                    <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:560,padding:28,boxShadow:"0 20px 60px rgba(0,0,0,0.2)",maxHeight:"90vh",overflowY:"auto"}}>
+                      <div style={{fontWeight:700,fontSize:17,marginBottom:6,fontFamily:FONT_TITLE}}>Programa hipotético</div>
+                      <p style={{fontSize:12,color:"#6b7280",margin:"0 0 20px",fontFamily:FONT_BODY}}>Simula el impacto financiero de un programa que aún no existe en el sistema.</p>
+
+                      {/* Resumen rápido */}
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20,background:"#f9fafb",borderRadius:10,padding:14}}>
+                        {[{l:"Ingreso total",v:fmx(ingTotal),c:"#2563eb"},{l:"Costo docentes",v:fmx(costoDoc),c:"#dc2626"},{l:"Utilidad est.",v:fmx(utilidad),c:utilidad>=0?"#16a34a":"#dc2626"}].map(k=>(
+                          <div key={k.l} style={{textAlign:"center"}}>
+                            <div style={{fontSize:10,color:"#9ca3af",fontFamily:FONT_BODY,textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.l}</div>
+                            <div style={{fontSize:16,fontWeight:800,color:k.c,fontFamily:FONT_TITLE}}>{k.v}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                        <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Nombre del programa</label>
+                          <input value={f.nombre} onChange={e=>setProySimForm({...f,nombre:e.target.value})} placeholder="Ej. Diplomado en Marketing Digital" style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Precio por estudiante ($)</label>
+                          <input type="number" value={f.precio||""} onChange={e=>setProySimForm({...f,precio:parseFloat(e.target.value)||0})} placeholder="0" style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Descuento promedio (%)</label>
+                          <input type="number" value={f.descuento_pct||""} onChange={e=>setProySimForm({...f,descuento_pct:parseFloat(e.target.value)||0})} placeholder="0" style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Estudiantes esperados</label>
+                          <input type="number" value={f.estudiantes||""} onChange={e=>setProySimForm({...f,estudiantes:parseInt(e.target.value)||0})} placeholder="0" style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Mes de inicio</label>
+                          <select value={f.mes_inicio||""} onChange={e=>setProySimForm({...f,mes_inicio:e.target.value})} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY}}>
+                            <option value="">Selecciona</option>
+                            {MESES_OPT.map(m=><option key={m.v} value={m.v}>{m.l}</option>)}
+                          </select>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Duración (meses)</label>
+                          <input type="number" value={f.duracion_meses||""} onChange={e=>setProySimForm({...f,duracion_meses:parseInt(e.target.value)||1})} min={1} max={24} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Pauta publicitaria ($)</label>
+                          <input type="number" value={f.pauta||""} onChange={e=>setProySimForm({...f,pauta:parseFloat(e.target.value)||0})} placeholder="0" style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY,boxSizing:"border-box"}}/>
+                        </div>
+                        <div><label style={{fontSize:11,fontWeight:600,color:"#374151",display:"block",marginBottom:4,fontFamily:FONT_BODY}}>Mes de la pauta</label>
+                          <select value={f.mes_pauta||""} onChange={e=>setProySimForm({...f,mes_pauta:e.target.value})} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,fontFamily:FONT_BODY}}>
+                            <option value="">Selecciona</option>
+                            {MESES_OPT.map(m=><option key={m.v} value={m.v}>{m.l}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Módulos / docentes */}
+                      <div style={{marginBottom:16}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                          <label style={{fontSize:11,fontWeight:700,color:"#374151",fontFamily:FONT_BODY,textTransform:"uppercase",letterSpacing:"0.08em"}}>Módulos y honorarios</label>
+                          <button onClick={()=>setProySimForm({...f,modulos:[...(f.modulos||[]),{id:newId7(),nombre:"",horas:0,cat:"A"}]})} style={{fontSize:11,padding:"4px 10px",borderRadius:6,background:"#f0fdf4",border:"1px solid #bbf7d0",color:"#16a34a",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600}}>+ Módulo</button>
+                        </div>
+                        {(f.modulos||[]).map((mod,mi)=>(
+                          <div key={mod.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px auto",gap:8,alignItems:"center",marginBottom:6}}>
+                            <input value={mod.nombre} onChange={e=>{const ms=[...f.modulos];ms[mi]={...ms[mi],nombre:e.target.value};setProySimForm({...f,modulos:ms});}} placeholder={`Módulo ${mi+1}`} style={{padding:"6px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}/>
+                            <input type="number" value={mod.horas||""} onChange={e=>{const ms=[...f.modulos];ms[mi]={...ms[mi],horas:parseInt(e.target.value)||0};setProySimForm({...f,modulos:ms});}} placeholder="Horas" style={{padding:"6px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}/>
+                            <select value={mod.cat||"A"} onChange={e=>{const ms=[...f.modulos];ms[mi]={...ms[mi],cat:e.target.value};setProySimForm({...f,modulos:ms});}} style={{padding:"6px 8px",border:"1px solid #e5e7eb",borderRadius:6,fontSize:12,fontFamily:FONT_BODY}}>
+                              <option value="A">Cat. A ({fmx(HON_CAT.A)}/h)</option>
+                              <option value="B">Cat. B ({fmx(HON_CAT.B)}/h)</option>
+                            </select>
+                            <button onClick={()=>{const ms=f.modulos.filter((_,j)=>j!==mi);setProySimForm({...f,modulos:ms});}} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
+                          </div>
+                        ))}
+                        {(f.modulos||[]).length>0&&(
+                          <div style={{fontSize:12,color:"#6b7280",fontFamily:FONT_BODY,marginTop:6}}>
+                            Total docentes: <strong style={{color:"#dc2626"}}>{fmx((f.modulos||[]).reduce((s,m)=>s+(m.horas||0)*(HON_CAT[m.cat]||0),0))}</strong>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                        <button onClick={()=>setProySimForm(null)} style={{padding:"8px 18px",borderRadius:8,background:"#f3f4f6",border:"none",color:"#374151",fontSize:13,cursor:"pointer",fontFamily:FONT_BODY}}>Cancelar</button>
+                        <button onClick={guardarSim} style={{padding:"8px 18px",borderRadius:8,background:"#eb1d33",border:"none",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:FONT_BODY}}>Guardar programa</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })()}
 
         {/* CONFIG */}
         {view==="config"&&(
