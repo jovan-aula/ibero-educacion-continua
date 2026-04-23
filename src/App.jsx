@@ -147,7 +147,7 @@ const syncToSupabase = async (programas) => {
     id: m.id, programa_id: p.id, numero: m.numero||"", nombre: m.nombre||"",
     docente_id: m.docenteId||null, docente: m.docente||"", email_docente: m.emailDocente||"",
     clases: m.clases||4, horas_por_clase: m.horasPorClase||4, horario: m.horario||"",
-    fecha_inicio: m.fechaInicio||"", fecha_fin: m.fechaFin||"",
+    fecha_inicio: m.fechaInicio||null, fecha_fin: m.fechaFin||null,
     dias: m.dias||[], fechas_clase: m.fechasClase||[], estatus: m.estatus||"propuesta",
     factura_solicitada: m.factura_solicitada||false, pago_emitido: m.pago_emitido||false,
     eval_cerrada: m.eval_cerrada||false,
@@ -4895,8 +4895,9 @@ export default function App() {
     const modulosDuplicados=(p.modulos||[]).map(m=>({
       ...m,
       id:newId(),
-      fechaInicio:"",
-      fechaFin:"",
+      fechaInicio:null,
+      fechaFin:null,
+      fechasClase:[],
       estatus:"pendiente",
     }));
     const copia={
