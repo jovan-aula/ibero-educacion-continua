@@ -205,6 +205,7 @@ const syncDocentesToSupabase = async (docentes) => {
       grados: d.grados||[], programas_egreso: d.programas_egreso||{},
       categoria: d.categoria||"A", semblanza: d.semblanza||"",
       perfil_incompleto: d.perfil_incompleto||false,
+      genero: d.genero||"",
       programas_ids: d.programasIds||[],
     }));
     await supa.upsert("docentes", rows);
@@ -2018,7 +2019,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const [showM,setShowM]   = useState(false);
   const gradosOrden=["Licenciatura","Maestría","Doctorado"];
   const gradoMax=grados=>{for(const g of["Doctorado","Maestría","Licenciatura"])if((grados||[]).includes(g))return g;return"Licenciatura";};
-  const [form,setForm]     = useState({id:"",prefijo:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16});
+  const [form,setForm]     = useState({id:"",prefijo:"",nombre:"",telefono:"",email:"",grados:[],programas_egreso:{},categoria:"A",programasIds:[],semblanza:"",iva:16,genero:""});
   const [editId,setEditId] = useState(null);
   const [busq,setBusq]     = useState("");
   const [expandido,setExpandido] = useState(null);
@@ -2027,9 +2028,9 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
   const openEdit= d => { setForm({...d,programasIds:d.programasIds||[]}); setEditId(d.id); setShowM(true); };
   const saveDoc = () => {
     if(!form.nombre)return;
-    // Si ya tiene campos clave, limpiar la bandera de incompleto
-    const completo=!!(form.banco&&form.clabe&&form.rfc&&(form.honorariosPorHora||form.honorarios_por_hora));
-    const formFinal={...form,perfil_incompleto:completo?false:(form.perfil_incompleto||false)};
+    // Completo = nombre + teléfono + correo + al menos un grado + semblanza
+    const completo=!!(form.nombre&&form.telefono&&form.email&&(form.grados||[]).length>0&&form.semblanza);
+    const formFinal={...form,perfil_incompleto:!completo};
     editId?saveDocentes((docentes||[]).map(d=>d.id===editId?formFinal:d)):saveDocentes([...(docentes||[]),formFinal]);
     setShowM(false);
   };
@@ -2090,7 +2091,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
           const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
           const promEval=evals.length?Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10:null;
           const cpEval=promEval>=4?"#16a34a":promEval>=3?"#d97706":"#dc2626";
-          const incompleto=doc.perfil_incompleto||!doc.banco||!doc.clabe||!doc.rfc||!(doc.honorariosPorHora||doc.honorarios_por_hora);
+          const incompleto=doc.perfil_incompleto||!doc.nombre||!doc.telefono||!doc.email||!(doc.grados&&doc.grados.length>0)||!doc.semblanza;
           const abierto=expandido===doc.id;
           // Iniciales para avatar
           const iniciales=(doc.nombre||"").split(" ").filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
@@ -2220,6 +2221,17 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
               {[["Nombre completo","nombre","text"],["Correo electrónico","email","email"],["Teléfono","telefono","tel"]].map(([l,k,t])=>(
                 <div key={k} style={{marginBottom:13}}><label style={S.lbl}>{l}</label><input type={t} value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})} style={S.inp}/></div>
               ))}
+              <div style={{marginBottom:16}}>
+                <label style={S.lbl}>Género</label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {[{v:"Mujer",c:"#db2777",bg:"#fdf2f8"},{v:"Hombre",c:"#2563eb",bg:"#eff6ff"}].map(g=>(
+                    <button key={g.v} onClick={()=>setForm({...form,genero:form.genero===g.v?"":g.v})}
+                      style={{border:"2px solid "+(form.genero===g.v?g.c:"#e5e7eb"),borderRadius:8,padding:"7px 16px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"system-ui",background:form.genero===g.v?g.bg:"#fff",color:form.genero===g.v?g.c:"#6b7280"}}>
+                      {g.v}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div style={{marginBottom:16}}>
                 <label style={S.lbl}>Grado académico <span style={{color:"#9ca3af",fontWeight:400}}>(selecciona uno o más)</span></label>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
@@ -3890,6 +3902,7 @@ export default function App() {
         programas_egreso:d.programas_egreso||{},
         categoria:d.categoria||"A", semblanza:d.semblanza||"",
         perfil_incompleto:d.perfil_incompleto||false,
+        genero:d.genero||"",
         programasIds:Array.isArray(d.programas_ids)?d.programas_ids:[],
       })));
     } else {
@@ -6208,6 +6221,34 @@ export default function App() {
             {progTab==="modulos"&&(
               <div>
                 {can(session,"editarModulos")&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><button onClick={openNewMod} style={S.btn(RED,"#fff")}>Agregar módulo</button></div>}
+                {(()=>{
+                  const docsAsig=mods(prog).map(m=>(docentes||[]).find(d=>d.id===m.docenteId||d.nombre===m.docente)).filter(Boolean);
+                  if(!docsAsig.length) return null;
+                  const mujeres=docsAsig.filter(d=>d.genero==="Mujer").length;
+                  const hombres=docsAsig.filter(d=>d.genero==="Hombre").length;
+                  const otros=docsAsig.filter(d=>d.genero==="No binario").length;
+                  const sinGener=docsAsig.filter(d=>!d.genero).length;
+                  const total=docsAsig.length;
+                  const pctH=Math.round(hombres/total*100);
+                  const pctM=Math.round(mujeres/total*100);
+                  const alerta=total>=2&&(hombres===total||mujeres===total);
+                  const aviso=total>=3&&(pctH>=80||pctM>=80);
+                  if(!alerta&&!aviso&&sinGener===total) return null;
+                  return(
+                    <div style={{marginBottom:16,background:alerta?"#fff5f5":aviso?"#fffbeb":"#f0fdf4",border:"1px solid "+(alerta?"#fecaca":aviso?"#fde68a":"#bbf7d0"),borderRadius:10,padding:"12px 16px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{fontSize:13,fontWeight:700,color:alerta?"#dc2626":aviso?"#d97706":"#16a34a",fontFamily:"system-ui",flexShrink:0}}>
+                        {alerta?"⚠ Sin diversidad de género":aviso?"Distribución de género desigual":"Distribución de género"}
+                      </div>
+                      <div style={{display:"flex",gap:10,alignItems:"center",flex:1,flexWrap:"wrap"}}>
+                        {[{l:"Mujeres",v:mujeres,c:"#db2777"},{l:"Hombres",v:hombres,c:"#2563eb"}].filter(x=>x.v>0).map(x=>(
+                          <span key={x.l} style={{fontSize:12,fontFamily:"system-ui",color:x.c,fontWeight:600}}>{x.l}: {x.v} ({Math.round(x.v/total*100)}%)</span>
+                        ))}
+                        {sinGener>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#9ca3af"}}>Sin dato: {sinGener}</span>}
+                      </div>
+                      {(alerta||aviso)&&<div style={{fontSize:11,color:alerta?"#dc2626":"#d97706",fontFamily:"system-ui"}}>Considera agregar docentes de otros géneros para equilibrar el programa.</div>}
+                    </div>
+                  );
+                })()}
                 <div style={{display:"grid",gap:12}}>
                   {mods(prog).map((m,i)=>{
                     const totalH=(m.clases||0)*(m.horasPorClase||0), conf=m.estatus==="confirmado";
