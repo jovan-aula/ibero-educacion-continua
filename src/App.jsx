@@ -3800,6 +3800,7 @@ export default function App() {
   const [busqProg,setBusqProg]   = useState("");
   const [filtroProg,setFiltroPr] = useState("");
   const [filtroSt,setFiltroSt]   = useState("");
+  const [filtroMod,setFiltroMod] = useState("");
   const [progListTab,setProgListTab] = useState("lista"); // "lista" | "proximos"
   const [diasVentana,setDiasVentana] = useState(15);
   const [busqEst,setBusqEst]     = useState("");
@@ -4558,9 +4559,17 @@ export default function App() {
   const alertas = alertasVisible;
 
   const PROG_ST_ORD = {activo:0,proximo:1,finalizado:2,sin_fechas:3};
+  const modCat = m => {
+    if(!m) return "";
+    const ml = m.toLowerCase();
+    if(ml.includes("online")) return "Online";
+    if(ml.includes("híbrido")||ml.includes("hibrido")) return "Híbrido";
+    if(ml.includes("presencial")) return "Presencial";
+    return "Otro";
+  };
   const progsF = (programas||[]).filter(p=>{
     const q=busqProg.toLowerCase();
-    return (!busqProg||p.nombre.toLowerCase().includes(q))&&(!filtroProg||p.tipo===filtroProg)&&(!filtroSt||progStatus(p)===filtroSt);
+    return (!busqProg||p.nombre.toLowerCase().includes(q))&&(!filtroProg||p.tipo===filtroProg)&&(!filtroSt||progStatus(p)===filtroSt)&&(!filtroMod||modCat(p.modalidad)===filtroMod);
   }).sort((a,b)=>(PROG_ST_ORD[progStatus(a)]??9)-(PROG_ST_ORD[progStatus(b)]??9)||(a.nombre||"").localeCompare(b.nombre||"","es"));
 
   const egresados = (programas||[]).flatMap(p=>ests(p).filter(e=>e.estatus==="egresado").map(e=>({...e,programa:p.nombre})));
@@ -6121,8 +6130,16 @@ export default function App() {
                 <option value="activo">Activo</option>
                 <option value="proximo">Próximo</option>
                 <option value="finalizado">Finalizado</option>
+                <option value="sin_fechas">Borradores</option>
               </select>
-              {(busqProg||filtroProg||filtroSt)&&<button onClick={()=>{setBusqProg("");setFiltroPr("");setFiltroSt("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
+              <select value={filtroMod} onChange={e=>setFiltroMod(e.target.value)} style={{border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 12px",fontSize:13,fontFamily:"system-ui",outline:"none",background:"#fff"}}>
+                <option value="">Todas las modalidades</option>
+                <option value="Presencial">Presencial</option>
+                <option value="Online">Online</option>
+                <option value="Híbrido">Híbrido</option>
+                <option value="Otro">Otra</option>
+              </select>
+              {(busqProg||filtroProg||filtroSt||filtroMod)&&<button onClick={()=>{setBusqProg("");setFiltroPr("");setFiltroSt("");setFiltroMod("");}} style={S.btn("#f3f4f6","#374151")}>Limpiar</button>}
             </div>
             {(()=>{
               const grupos=[
@@ -6146,6 +6163,18 @@ export default function App() {
                           <div style={{fontWeight:700,fontSize:15,lineHeight:1.3,marginBottom:5}}>{p.nombre}</div>
                           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                             <span style={{background:"#f3f4f6",borderRadius:4,padding:"2px 7px",fontSize:11,color:"#6b7280",fontFamily:"system-ui",fontWeight:600}}>{p.tipo.toUpperCase()}</span>
+                            {p.modalidad&&(()=>{
+                              const cat=modCat(p.modalidad);
+                              const estilos={
+                                Online:    {bg:"#eff6ff",color:"#2563eb",icon:"💻"},
+                                Híbrido:   {bg:"#f5f3ff",color:"#7c3aed",icon:"🔀"},
+                                Presencial:{bg:"#f0fdf4",color:"#16a34a",icon:"📍"},
+                                Otro:      {bg:"#fff7ed",color:"#d97706",icon:"📌"},
+                              };
+                              const st=estilos[cat]||estilos.Otro;
+                              const label=cat==="Presencial"?p.modalidad:cat;
+                              return <span style={{background:st.bg,borderRadius:4,padding:"2px 7px",fontSize:11,color:st.color,fontFamily:"system-ui",fontWeight:700}}>{st.icon} {label}</span>;
+                            })()}
                             {p.generacion&&<span style={{background:"#f0fdf4",borderRadius:4,padding:"2px 7px",fontSize:11,color:"#16a34a",fontFamily:"system-ui",fontWeight:700}}>{p.generacion} gen.</span>}
                             {p.colaboracion&&<span style={{background:"#f5f3ff",borderRadius:4,padding:"2px 7px",fontSize:11,color:"#7c3aed",fontFamily:"system-ui",fontWeight:700}}>{p.socio}</span>}
                           </div>
