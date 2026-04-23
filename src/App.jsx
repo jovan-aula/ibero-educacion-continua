@@ -2091,7 +2091,8 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
           const evals=(npsData||[]).filter(e=>e.docenteId===doc.id||e.docenteNombre===doc.nombre);
           const promEval=evals.length?Math.round(evals.reduce((a,e)=>a+(e.promedio||0),0)/evals.length*10)/10:null;
           const cpEval=promEval>=4?"#16a34a":promEval>=3?"#d97706":"#dc2626";
-          const incompleto=doc.perfil_incompleto||!doc.nombre||!doc.telefono||!doc.email||!(doc.grados&&doc.grados.length>0)||!doc.semblanza;
+          const camposFaltantes=[!doc.nombre&&"nombre",!doc.telefono&&"teléfono",!doc.email&&"correo",!(doc.grados&&doc.grados.length>0)&&"grado académico",!doc.semblanza&&"semblanza"].filter(Boolean);
+          const incompleto=camposFaltantes.length>0;
           const abierto=expandido===doc.id;
           // Iniciales para avatar
           const iniciales=(doc.nombre||"").split(" ").filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
@@ -2108,7 +2109,7 @@ function DocentesView({docentes,saveDocentes,programas,npsData,setCS}) {
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                     {docGrados.map(g=>{const c=GRADO_C[g]||GRADO_C.Licenciatura;return<span key={g} style={{background:c.bg,color:c.color,borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"system-ui",fontWeight:700}}>{g}</span>;})}
                     <span style={{background:cat.bg,color:cat.color,borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"system-ui",fontWeight:700}}>{cat.label}</span>
-                    {incompleto&&<span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"1px 7px",fontSize:10,fontFamily:"system-ui",fontWeight:700,border:"1px solid #fde68a"}}>Incompleto</span>}
+                    {incompleto&&<span style={{background:"#fffbeb",color:"#d97706",borderRadius:4,padding:"2px 8px",fontSize:10,fontFamily:"system-ui",fontWeight:600,border:"1px solid #fde68a"}}>Falta: {camposFaltantes.join(" · ")}</span>}
                   </div>
                 </div>
                 {/* Stats rápidos */}
@@ -6138,6 +6139,23 @@ export default function App() {
                         </div>
                         <span style={{fontSize:11,color:"#6b7280",fontFamily:"system-ui",whiteSpace:"nowrap"}}>{conf}/{tot} confirmados</span>
                       </div>
+                      {(()=>{
+                        const docsP=mods(p).map(m=>(docentes||[]).find(d=>d.id===m.docenteId||d.nombre===m.docente)).filter(d=>d&&d.genero);
+                        if(!docsP.length) return null;
+                        const total=docsP.length;
+                        const muj=docsP.filter(d=>d.genero==="Mujer").length;
+                        const hom=docsP.filter(d=>d.genero==="Hombre").length;
+                        const alerta=total>=2&&(muj===total||hom===total);
+                        const aviso=total>=3&&(muj/total>=0.8||hom/total>=0.8);
+                        return(
+                          <div style={{marginTop:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                            {(alerta||aviso)&&<span style={{fontSize:10,color:alerta?"#dc2626":"#d97706",fontWeight:700,fontFamily:"system-ui"}}>⚠</span>}
+                            {muj>0&&<span style={{fontSize:11,color:"#db2777",fontFamily:"system-ui",fontWeight:600}}>♀ {muj}</span>}
+                            {hom>0&&<span style={{fontSize:11,color:"#2563eb",fontFamily:"system-ui",fontWeight:600}}>♂ {hom}</span>}
+                            {(alerta||aviso)&&<span style={{fontSize:10,color:alerta?"#dc2626":"#d97706",fontFamily:"system-ui"}}>{alerta?"sin diversidad":"mayoría "+( hom>muj?"hombres":"mujeres")}</span>}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {/* Pie con acciones */}
                     <div style={{borderTop:"1px solid #f3f4f6",padding:"10px 14px",display:"flex",gap:6,flexWrap:"wrap",background:"#fafafa"}}>
@@ -6221,34 +6239,6 @@ export default function App() {
             {progTab==="modulos"&&(
               <div>
                 {can(session,"editarModulos")&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><button onClick={openNewMod} style={S.btn(RED,"#fff")}>Agregar módulo</button></div>}
-                {(()=>{
-                  const docsAsig=mods(prog).map(m=>(docentes||[]).find(d=>d.id===m.docenteId||d.nombre===m.docente)).filter(Boolean);
-                  if(!docsAsig.length) return null;
-                  const mujeres=docsAsig.filter(d=>d.genero==="Mujer").length;
-                  const hombres=docsAsig.filter(d=>d.genero==="Hombre").length;
-                  const otros=docsAsig.filter(d=>d.genero==="No binario").length;
-                  const sinGener=docsAsig.filter(d=>!d.genero).length;
-                  const total=docsAsig.length;
-                  const pctH=Math.round(hombres/total*100);
-                  const pctM=Math.round(mujeres/total*100);
-                  const alerta=total>=2&&(hombres===total||mujeres===total);
-                  const aviso=total>=3&&(pctH>=80||pctM>=80);
-                  if(!alerta&&!aviso&&sinGener===total) return null;
-                  return(
-                    <div style={{marginBottom:16,background:alerta?"#fff5f5":aviso?"#fffbeb":"#f0fdf4",border:"1px solid "+(alerta?"#fecaca":aviso?"#fde68a":"#bbf7d0"),borderRadius:10,padding:"12px 16px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                      <div style={{fontSize:13,fontWeight:700,color:alerta?"#dc2626":aviso?"#d97706":"#16a34a",fontFamily:"system-ui",flexShrink:0}}>
-                        {alerta?"⚠ Sin diversidad de género":aviso?"Distribución de género desigual":"Distribución de género"}
-                      </div>
-                      <div style={{display:"flex",gap:10,alignItems:"center",flex:1,flexWrap:"wrap"}}>
-                        {[{l:"Mujeres",v:mujeres,c:"#db2777"},{l:"Hombres",v:hombres,c:"#2563eb"}].filter(x=>x.v>0).map(x=>(
-                          <span key={x.l} style={{fontSize:12,fontFamily:"system-ui",color:x.c,fontWeight:600}}>{x.l}: {x.v} ({Math.round(x.v/total*100)}%)</span>
-                        ))}
-                        {sinGener>0&&<span style={{fontSize:12,fontFamily:"system-ui",color:"#9ca3af"}}>Sin dato: {sinGener}</span>}
-                      </div>
-                      {(alerta||aviso)&&<div style={{fontSize:11,color:alerta?"#dc2626":"#d97706",fontFamily:"system-ui"}}>Considera agregar docentes de otros géneros para equilibrar el programa.</div>}
-                    </div>
-                  );
-                })()}
                 <div style={{display:"grid",gap:12}}>
                   {mods(prog).map((m,i)=>{
                     const totalH=(m.clases||0)*(m.horasPorClase||0), conf=m.estatus==="confirmado";
