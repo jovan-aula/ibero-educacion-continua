@@ -4933,11 +4933,8 @@ export default function App() {
       estudiantes:[],
       modulos:modulosDuplicados,
     };
-    // No guardar aún — el modal actúa como confirmación
-    const modalFija=MODALIDADES.map(m=>m.valor).includes(copia.modalidad);
-    setProgForm({...copia,modalidad:modalFija?copia.modalidad:"Otro",modalidadCustom:modalFija?"":copia.modalidad});
-    setEditProgId(null); // null = nuevo programa, se guarda solo al hacer clic en Guardar
-    setShowProgM(true);
+    save([...(programas||[]),copia]);
+    notify("Programa duplicado — edítalo para ajustar nombre y generación");
   };
   const openEditProg=p=>{
     const modalFija=MODALIDADES.map(m=>m.valor).includes(p.modalidad);
