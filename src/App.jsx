@@ -5550,7 +5550,7 @@ export default function App() {
 
               {/* KPIs fila 1 */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
-                <KPICard label="Cobrado este mes" value={fmtMXN(cobradoMes)} color="#16a34a"/>
+                <KPICard label="Cobrado este mes" value={fmtMXN(cobradoMes)} sub="flujo de caja (fecha de pago)" color="#16a34a"/>
                 <KPICard label="Saldo por cobrar" value={fmtMXN(pendienteTotal)} sub="todos los meses" color="#d97706" onClick={()=>setView("pagos_global")}/>
                 <KPICard label="Vencidos" value={cntVencidos+cntCriticos} sub={cntCriticos>0?cntCriticos+" críticos":""} color="#dc2626" onClick={()=>{setView("pagos_global");setFiltroPagos("vencido");}}/>
                 <KPICard label="Estudiantes activos" value={activos.length} color={RED}/>
@@ -5608,8 +5608,8 @@ export default function App() {
                     return(
                       <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6",fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
                         <div style={{display:"flex",justifyContent:"space-between",marginBottom:faltaMes>0?6:0}}>
-                          <span>Total cobrado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
-                          <span>Esperado total: <strong>{fmtMXN(esperadoTotal)}</strong></span>
+                          <span>Cobrado acumulado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
+                          <span>Esperado total: <strong>{fmtMXN(esperadoTotal)}</strong> <span style={{color:"#d97706",fontWeight:600}}>({fmtMXN(pendienteTotal)} pendiente)</span></span>
                         </div>
                         {faltaMes>0&&(
                           <div style={{display:"flex",alignItems:"center",gap:6,background:"#fff5f5",borderRadius:6,padding:"6px 10px",border:"1px solid #fecaca"}}>
@@ -8355,9 +8355,9 @@ export default function App() {
               const [repMes,setRepMes]     = [repMesFin,setRepMesFin];
 
               const calcFinProg = p => {
-                const es=ests(p);
+                const es=ests(p).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo");
                 const esperado=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado)return a;return a+pg.monto_acordado*(1-(pg.descuento_pct||0)/100);},0);
-                const cobrado=es.reduce((a,e)=>{const pg=e.pago;if(!pg)return a;if(pg.tipo==="unico"){const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(pag>0?pg.monto_acordado*(1-(pg.descuento_pct||0)/100):0);}const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);const tot=(pg.parcialidades||[]).length;const pag=(pg.parcialidades||[]).filter(x=>x.pagado).length;return a+(tot?mf/tot*pag:0);},0);
+                const cobrado=es.reduce((a,e)=>{const pg=e.pago;if(!pg)return a;return a+getMontoCobrado(pg);},0);
                 const descuentos=es.reduce((a,e)=>{const pg=e.pago;if(!pg||!pg.monto_acordado||!pg.descuento_pct)return a;return a+pg.monto_acordado*(pg.descuento_pct/100);},0);
                 const honorarios=mods(p).reduce((a,m)=>a+calcHonorarios(m,docentes),0);
                 const utilidad=esperado-honorarios;
