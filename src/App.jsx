@@ -4888,7 +4888,18 @@ export default function App() {
     setSending(null);
   };
 
-  const openNewMod = ()=>{setModForm({...eMod,id:newId()});setEditMod(null);setShowModM(true);};
+  const openNewMod = ()=>{
+    const prog=(programas||[]).find(p=>p.id===selProg);
+    const ultimoFin=mods(prog).map(m=>m.fechaFin).filter(Boolean).sort().reverse()[0];
+    let fechaSugerida="";
+    if(ultimoFin){
+      const d=new Date(ultimoFin+"T12:00:00");
+      d.setDate(d.getDate()+1);
+      fechaSugerida=d.toISOString().split("T")[0];
+    }
+    setModForm({...eMod,id:newId(),fechaInicio:fechaSugerida});
+    setEditMod(null);setShowModM(true);
+  };
   const openEditMod= m=>{setModForm({...m});setEditMod(m.id);setShowModM(true);};
   const saveMod = ()=>{
     if(!modForm.nombre||!modForm.fechaInicio||!modForm.fechaFin){notify("Completa nombre y fechas","error");return;}
@@ -6294,7 +6305,12 @@ export default function App() {
               <div>
                 {can(session,"editarModulos")&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><button onClick={openNewMod} style={S.btn(RED,"#fff")}>Agregar módulo</button></div>}
                 <div style={{display:"grid",gap:12}}>
-                  {mods(prog).map((m,i)=>{
+                  {[...mods(prog)].sort((a,b)=>{
+                    if(a.fechaInicio&&b.fechaInicio) return a.fechaInicio.localeCompare(b.fechaInicio);
+                    if(a.fechaInicio) return -1;
+                    if(b.fechaInicio) return 1;
+                    return 0;
+                  }).map((m,i)=>{
                     const totalH=(m.clases||0)*(m.horasPorClase||0), conf=m.estatus==="confirmado";
                     return(
                       <div key={m.id} style={{...S.card,borderLeft:"3px solid "+(conf?"#16a34a":"#d97706"),padding:"18px 22px"}}>
@@ -9849,7 +9865,13 @@ export default function App() {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:13}}>
                 <div>
-                  <label style={S.lbl}>Fecha inicio</label>
+                  <label style={S.lbl}>Fecha inicio{(()=>{
+                    if(editMod) return null;
+                    const prog=(programas||[]).find(p=>p.id===selProg);
+                    const ultimoFin=mods(prog).map(m=>m.fechaFin).filter(Boolean).sort().reverse()[0];
+                    if(!ultimoFin) return null;
+                    return <span style={{fontWeight:400,color:"#16a34a",marginLeft:6,fontSize:10}}>↑ continuación sugerida</span>;
+                  })()}</label>
                   <input type="date" value={modForm.fechaInicio||""} onChange={e=>{
                     const val=e.target.value;
                     if(!val){setModForm({...modForm,fechaInicio:"",fechasClase:[]});return;}
