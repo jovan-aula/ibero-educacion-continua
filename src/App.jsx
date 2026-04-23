@@ -401,10 +401,11 @@ const calcHonorarios = (mod, docentes) => {
 
 // Proyección mensual: por cada parcialidad pendiente o pagada, asigna al mes de vencimiento
 const proyeccionMensual = (programas, docentes) => {
-  // esperado → por fecha_vencimiento (cuándo vence cada pago)
-  // cobrado  → por fecha_pago       (cuándo se marcó como recibido)
+  // esperado    → por fecha_vencimiento (cuándo vence cada pago)
+  // cobradoVenc → por fecha_vencimiento, solo si ya está pagado (cobrado + pendiente = esperado siempre)
+  // cobrado     → por fecha_pago (flujo de caja real — cuándo entró al banco)
   const byMes = {};
-  const ini = key => { if(!byMes[key])byMes[key]={esperado:0,cobrado:0,honorarios:0}; };
+  const ini = key => { if(!byMes[key])byMes[key]={esperado:0,cobradoVenc:0,cobrado:0,honorarios:0}; };
 
   (programas||[]).forEach(prog=>{
     ests(prog).forEach(est=>{
@@ -415,25 +416,25 @@ const proyeccionMensual = (programas, docentes) => {
       const total=p.parcialidades?.length||1;
 
       if(p.tipo==="unico"){
-        // Esperado: mes de inicio del programa
         const mesEsp=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
         if(mesEsp){ ini(mesEsp); byMes[mesEsp].esperado+=mf; }
-        // Cobrado: mes en que se registró el pago
         const parc=(p.parcialidades||[])[0];
-        if(parc?.pagado&&parc?.fecha_pago){
-          const mesCob=parc.fecha_pago.substring(0,7);
-          ini(mesCob); byMes[mesCob].cobrado+=mf;
+        if(parc?.pagado){
+          // cobradoVenc: asignado al mes de vencimiento (inicio programa)
+          if(mesEsp){ byMes[mesEsp].cobradoVenc+=mf; }
+          // cobrado (flujo de caja): asignado al mes en que se pagó
+          if(parc.fecha_pago){ const mesCob=parc.fecha_pago.substring(0,7); ini(mesCob); byMes[mesCob].cobrado+=mf; }
         }
       } else {
         (p.parcialidades||[]).forEach(parc=>{
           const montoParc=getMontoParc(parc,mf,total);
-          // Esperado: por fecha_vencimiento
           const mesEsp=(parc.fecha_vencimiento||"").substring(0,7);
           if(mesEsp){ ini(mesEsp); byMes[mesEsp].esperado+=montoParc; }
-          // Cobrado: por fecha_pago real
-          if(parc.pagado&&parc.fecha_pago){
-            const mesCob=parc.fecha_pago.substring(0,7);
-            ini(mesCob); byMes[mesCob].cobrado+=montoParc;
+          if(parc.pagado){
+            // cobradoVenc: asignado al mes de vencimiento
+            if(mesEsp){ byMes[mesEsp].cobradoVenc+=montoParc; }
+            // cobrado (flujo de caja): asignado al mes en que se pagó
+            if(parc.fecha_pago){ const mesCob=parc.fecha_pago.substring(0,7); ini(mesCob); byMes[mesCob].cobrado+=montoParc; }
           }
         });
       }
@@ -8760,9 +8761,11 @@ export default function App() {
               });
               const totalIng=base.esperado+ingSim;
               const totalIngReal=base.cobrado+ingSim;
+              const cobradoVenc=base.cobradoVenc||0;
+              const pendiente=base.esperado-cobradoVenc;
               const totalGastos=base.honorarios+honSim+sueldos+otrosFijos+otrosAnual+extras+pauta;
               return{mesStr,label:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i],
-                ingEsperado:base.esperado,ingCobrado:base.cobrado,ingSim,totalIng,totalIngReal,
+                ingEsperado:base.esperado,ingCobrado:base.cobrado,cobradoVenc,pendiente,ingSim,totalIng,totalIngReal,
                 honorarios:base.honorarios+honSim,sueldos,otrosFijos:otrosFijos+otrosAnual,extras,pauta,
                 totalGastos,utilidadProy:totalIng-totalGastos,utilidadReal:totalIngReal-totalGastos};
             });
@@ -8930,7 +8933,7 @@ export default function App() {
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,fontFamily:FONT_BODY}}>
                       <thead>
                         <tr style={{background:"#f9fafb"}}>
-                          {["Mes","Ing. Esperado","Ing. Cobrado","Ing. Simulado","Docentes","Sueldos","Pauta","Otros","Utilidad Proy.","Utilidad Real"].map(h=>(
+                          {["Mes","Esperado","Cobrado","Pendiente","Flujo caja","Ing. Simulado","Docentes","Sueldos","Pauta","Otros","Utilidad Proy.","Utilidad Real"].map(h=>(
                             <th key={h} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,fontSize:11,color:"#6b7280",letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid #e5e7eb",...(h==="Mes"?{textAlign:"left"}:{})}}>{h}</th>
                           ))}
                         </tr>
@@ -8942,7 +8945,9 @@ export default function App() {
                             <tr key={m.mesStr} style={{background:esHoy?"#fffbeb":i%2===0?"#fff":"#fafafa",borderBottom:"1px solid #f3f4f6"}}>
                               <td style={{padding:"10px 12px",fontWeight:esHoy?700:500,color:esHoy?"#d97706":"#111"}}>{m.label}{esHoy&&<span style={{marginLeft:6,fontSize:10,background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 5px",fontWeight:700}}>HOY</span>}</td>
                               <td style={{padding:"10px 12px",textAlign:"right",color:"#2563eb"}}>{m.ingEsperado>0?fmx(m.ingEsperado):"—"}</td>
-                              <td style={{padding:"10px 12px",textAlign:"right",color:"#16a34a"}}>{m.ingCobrado>0?fmx(m.ingCobrado):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#16a34a"}}>{m.cobradoVenc>0?fmx(m.cobradoVenc):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:m.pendiente>0?"#dc2626":"#9ca3af"}}>{m.pendiente>0?fmx(m.pendiente):"—"}</td>
+                              <td style={{padding:"10px 12px",textAlign:"right",color:"#059669"}}>{m.ingCobrado>0?fmx(m.ingCobrado):"—"}</td>
                               <td style={{padding:"10px 12px",textAlign:"right",color:"#7c3aed"}}>{m.ingSim>0?fmx(m.ingSim):"—"}</td>
                               <td style={{padding:"10px 12px",textAlign:"right",color:"#dc2626"}}>{m.honorarios>0?fmx(m.honorarios):"—"}</td>
                               <td style={{padding:"10px 12px",textAlign:"right",color:"#dc2626"}}>{m.sueldos>0?fmx(m.sueldos):"—"}</td>
@@ -8958,7 +8963,9 @@ export default function App() {
                         <tr style={{background:"#f1f5f9",borderTop:"2px solid #e2e8f0"}}>
                           <td style={{padding:"10px 12px",fontWeight:800,fontSize:12}}>TOTAL {proyAño}</td>
                           <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#2563eb"}}>{fmx(flujo.reduce((s,m)=>s+m.ingEsperado,0))}</td>
-                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#16a34a"}}>{fmx(flujo.reduce((s,m)=>s+m.ingCobrado,0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#16a34a"}}>{fmx(flujo.reduce((s,m)=>s+(m.cobradoVenc||0),0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{fmx(flujo.reduce((s,m)=>s+(m.pendiente||0),0))}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#059669"}}>{fmx(flujo.reduce((s,m)=>s+m.ingCobrado,0))}</td>
                           <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#7c3aed"}}>{fmx(flujo.reduce((s,m)=>s+m.ingSim,0))}</td>
                           <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{fmx(flujo.reduce((s,m)=>s+m.honorarios,0))}</td>
                           <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{fmx(flujo.reduce((s,m)=>s+m.sueldos,0))}</td>
@@ -8971,7 +8978,7 @@ export default function App() {
                     </table>
                   </div>
                   <div style={{padding:"10px 16px",fontSize:11,color:"#9ca3af",borderTop:"1px solid #f3f4f6",fontFamily:FONT_BODY}}>
-                    <span style={{color:"#2563eb",fontWeight:600}}>Ing. Esperado</span> = parcialidades programadas · <span style={{color:"#16a34a",fontWeight:600}}>Ing. Cobrado</span> = pagos confirmados · <span style={{color:"#7c3aed",fontWeight:600}}>Ing. Simulado</span> = programas hipotéticos
+                    <span style={{color:"#2563eb",fontWeight:600}}>Esperado</span> = monto total programado · <span style={{color:"#16a34a",fontWeight:600}}>Cobrado</span> = pagos recibidos (por fecha de vencimiento) · <span style={{color:"#dc2626",fontWeight:600}}>Pendiente</span> = Esperado − Cobrado · <span style={{color:"#059669",fontWeight:600}}>Flujo caja</span> = pagos por fecha real · <span style={{color:"#7c3aed",fontWeight:600}}>Ing. Simulado</span> = programas hipotéticos
                   </div>
                 </div>
               )}
