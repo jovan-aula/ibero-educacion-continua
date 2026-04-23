@@ -3725,8 +3725,14 @@ export default function App() {
   const [docentes,setDocentes]   = useState([]);
   const [ordenes,setOrdenes]     = useState([]);
   const [showApiKey,setShowAK]   = useState(false);
-  const [view,setView]           = useState("dashboard");
-  const [selProg,setSelProg]     = useState(null);
+  const [view,setView]           = useState(()=>{
+    const seg=(window.location.pathname.split("/").filter(Boolean)[0])||"";
+    return({dashboard:"dashboard",programas:"lista",pagos:"pagos_global",cobranza:"cobranza",facturacion:"facturacion",honorarios:"honorarios",proyecciones:"proyecciones",docentes:"docentes",reportes:"reportes",evaluaciones:"evaluaciones",asistencia:"asistencia",tablero:"tablero",hoy:"hoy",calendario:"calendario",busqueda:"busqueda",config:"config"}[seg])||"dashboard";
+  });
+  const [selProg,setSelProg]     = useState(()=>{
+    const parts=window.location.pathname.split("/").filter(Boolean);
+    return(parts[0]==="programas"&&parts[1])?parts[1]:null;
+  });
   const [progTab,setProgTab]     = useState("modulos");
   const [showModM,setShowModM]   = useState(false);
   const [editMod,setEditMod]     = useState(null);
@@ -4035,6 +4041,25 @@ export default function App() {
     const h=()=>{ if(document.visibilityState==="visible"&&recargarRef.current) recargarRef.current(); };
     document.addEventListener("visibilitychange",h);
     return()=>document.removeEventListener("visibilitychange",h);
+  },[]);
+
+  // Sync view → URL
+  useEffect(()=>{
+    if(!session) return;
+    const paths={dashboard:"/dashboard",lista:"/programas",programa:selProg?"/programas/"+selProg:"/programas",pagos_global:"/pagos",cobranza:"/cobranza",facturacion:"/facturacion",honorarios:"/honorarios",proyecciones:"/proyecciones",docentes:"/docentes",reportes:"/reportes",evaluaciones:"/evaluaciones",asistencia:"/asistencia",tablero:"/tablero",hoy:"/hoy",calendario:"/calendario",busqueda:"/busqueda",config:"/config"};
+    const path=paths[view]||"/dashboard";
+    if(window.location.pathname!==path) window.history.pushState({view,selProg},"",path);
+  },[view,selProg,session]);
+
+  // Browser back/forward
+  useEffect(()=>{
+    const h=e=>{
+      if(!e.state?.view) return;
+      setView(e.state.view);
+      setSelProg(e.state.selProg||null);
+    };
+    window.addEventListener("popstate",h);
+    return()=>window.removeEventListener("popstate",h);
   },[]);
 
   useEffect(()=>{
