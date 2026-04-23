@@ -6129,6 +6129,7 @@ export default function App() {
                 {key:"proximo", label:"Por iniciar", dot:"#0891b2"},
                 {key:"activo",  label:"Activos",     dot:"#16a34a"},
                 {key:"finalizado", label:"Finalizados", dot:"#9ca3af"},
+                {key:"sin_fechas", label:"Borradores", dot:"#d97706"},
               ];
               const progCard=(p)=>{
                 const conf=mods(p).filter(m=>m.estatus==="confirmado").length, tot=mods(p).length;
