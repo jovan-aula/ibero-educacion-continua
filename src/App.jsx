@@ -4672,7 +4672,11 @@ export default function App() {
   };
 
   const exportPDF = prog => {
-    const ms = mods(prog);
+    const ms = [...mods(prog)].sort((a,b)=>{
+      const ai=NUMEROS_MOD.indexOf(a.numero),bi=NUMEROS_MOD.indexOf(b.numero);
+      if(ai===-1&&bi===-1)return 0; if(ai===-1)return 1; if(bi===-1)return -1;
+      return ai-bi;
+    });
     const DIAS_S = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 
 
