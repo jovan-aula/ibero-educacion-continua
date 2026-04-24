@@ -5662,7 +5662,7 @@ export default function App() {
                           ):(
                             <div style={{fontSize:9,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>{cobrado>0?fmtMXN(cobrado):""}</div>
                           )}
-                          <div title={tooltip} style={{width:"100%",display:"flex",flexDirection:"column",borderRadius:"4px 4px 0 0",overflow:"hidden",cursor:cobrado>0?"help":"default"}}>
+                          <div title={tooltip} style={{width:"100%",display:"flex",flexDirection:"column",borderRadius:"4px 4px 0 0",overflow:"hidden"}}>
                             {esMesAct&&altoPend>0&&<div style={{width:"100%",background:"#fecaca",height:altoPend,transition:"height .3s"}}/>}
                             {altoAnticipado>0&&<div style={{width:"100%",background:"#bfdbfe",height:altoAnticipado,transition:"height .3s"}}/>}
                             <div style={{width:"100%",background:cobrado>0?"#16a34a":"#e5e7eb",height:Math.max(altoATiempo,cobrado>0?2:2),transition:"height .3s"}}/>
