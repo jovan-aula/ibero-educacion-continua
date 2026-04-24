@@ -3736,6 +3736,7 @@ export default function App() {
   const [progTab,setProgTab]     = useState("modulos");
   const [showModM,setShowModM]   = useState(false);
   const [editMod,setEditMod]     = useState(null);
+  const [dragModIdx,setDragModIdx] = useState(null);
   const [showProgM,setShowProgM] = useState(false);
   const [editProgId,setEditProgId] = useState(null);
   const [showImport,setShowImp]  = useState(false);
@@ -6305,41 +6306,63 @@ export default function App() {
               <div>
                 {can(session,"editarModulos")&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}><button onClick={openNewMod} style={S.btn(RED,"#fff")}>Agregar módulo</button></div>}
                 <div style={{display:"grid",gap:12}}>
-                  {[...mods(prog)].sort((a,b)=>{
-                    if(a.fechaInicio&&b.fechaInicio) return a.fechaInicio.localeCompare(b.fechaInicio);
-                    if(a.fechaInicio) return -1;
-                    if(b.fechaInicio) return 1;
-                    return 0;
-                  }).map((m,i)=>{
-                    const totalH=(m.clases||0)*(m.horasPorClase||0), conf=m.estatus==="confirmado";
-                    return(
-                      <div key={m.id} style={{...S.card,borderLeft:"3px solid "+(conf?"#16a34a":"#d97706"),padding:"18px 22px"}}>
-                        <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
-                          <div style={{background:prog.color,color:"#fff",borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:800,flexShrink:0,marginTop:2,fontFamily:"system-ui"}}>{m.numero||"M"+(i+1)}</div>
-                          <div style={{flex:1,minWidth:200}}>
-                            <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>{m.nombre}</div>
-                            <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
-                              <span>{m.docente||"Sin asignar"}</span>
-                              <span>{fmtFecha(m.fechaInicio)} — {fmtFecha(m.fechaFin)}</span>
-                              {m.dias&&m.dias.length>0&&<span>{m.dias.join(", ")}</span>}
-                              {m.horario&&<span>{m.horario}</span>}
-                              <span>{m.clases+" clases · "+m.horasPorClase+"h c/u · "}<strong style={{color:"#1a1a1a"}}>{totalH+"h"}</strong></span>
+                  {(()=>{
+                    const modsOrd=[...mods(prog)].sort((a,b)=>{
+                      const ai=NUMEROS_MOD.indexOf(a.numero),bi=NUMEROS_MOD.indexOf(b.numero);
+                      if(ai===-1&&bi===-1)return 0;
+                      if(ai===-1)return 1;
+                      if(bi===-1)return -1;
+                      return ai-bi;
+                    });
+                    const canEdit=can(session,"editarModulos");
+                    return modsOrd.map((m,i)=>{
+                      const totalH=(m.clases||0)*(m.horasPorClase||0), conf=m.estatus==="confirmado";
+                      const isDragging=dragModIdx===i;
+                      return(
+                        <div key={m.id}
+                          draggable={canEdit}
+                          onDragStart={()=>setDragModIdx(i)}
+                          onDragEnd={()=>setDragModIdx(null)}
+                          onDragOver={e=>e.preventDefault()}
+                          onDrop={()=>{
+                            if(dragModIdx===null||dragModIdx===i){setDragModIdx(null);return;}
+                            const arr=[...modsOrd];
+                            const [moved]=arr.splice(dragModIdx,1);
+                            arr.splice(i,0,moved);
+                            const updated=arr.map((mod,idx)=>({...mod,numero:NUMEROS_MOD[idx]||mod.numero}));
+                            save((programas||[]).map(p=>p.id===selProg?{...p,modulos:updated}:p));
+                            setDragModIdx(null);
+                          }}
+                          style={{...S.card,borderLeft:"3px solid "+(conf?"#16a34a":"#d97706"),padding:"18px 22px",opacity:isDragging?0.4:1,transition:"opacity 0.15s"}}
+                        >
+                          <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
+                            {canEdit&&<div title="Arrastrar para reordenar" style={{color:"#d1d5db",fontSize:16,cursor:"grab",flexShrink:0,paddingTop:4,userSelect:"none",lineHeight:1}}>⠿</div>}
+                            <div style={{background:prog.color,color:"#fff",borderRadius:5,padding:"3px 10px",fontSize:11,fontWeight:800,flexShrink:0,marginTop:2,fontFamily:"system-ui"}}>{m.numero||"M"+(i+1)}</div>
+                            <div style={{flex:1,minWidth:200}}>
+                              <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>{m.nombre}</div>
+                              <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:"#6b7280",fontFamily:"system-ui"}}>
+                                <span>{m.docente||"Sin asignar"}</span>
+                                <span>{fmtFecha(m.fechaInicio)} — {fmtFecha(m.fechaFin)}</span>
+                                {m.dias&&m.dias.length>0&&<span>{m.dias.join(", ")}</span>}
+                                {m.horario&&<span>{m.horario}</span>}
+                                <span>{m.clases+" clases · "+m.horasPorClase+"h c/u · "}<strong style={{color:"#1a1a1a"}}>{totalH+"h"}</strong></span>
+                              </div>
                             </div>
-                          </div>
-                          <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",flexShrink:0}}>
-                            <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:conf?"#f0fdf4":"#fffbeb",color:conf?"#16a34a":"#d97706",fontWeight:700,fontFamily:"system-ui",border:"1px solid "+(conf?"#bbf7d0":"#fde68a")}}>{conf?"Confirmado":"Propuesta"}</span>
-                            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                              {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
-                              {m.docente&&<button onClick={()=>enviarCalendarioWA(m,prog)} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC",padding:"5px 11px",fontSize:12})}>Cal. WA</button>}
-                              {m.docente&&<button onClick={()=>enviarCalendarioEmail(m,prog)} style={S.btn("#EFF6FF","#2563eb",{border:"1px solid #BFDBFE",padding:"5px 11px",fontSize:12})}>Cal. Email</button>}
-                              {can(session,"editarModulos")&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
-                              {can(session,"editarModulos")&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
+                            <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end",flexShrink:0}}>
+                              <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:conf?"#f0fdf4":"#fffbeb",color:conf?"#16a34a":"#d97706",fontWeight:700,fontFamily:"system-ui",border:"1px solid "+(conf?"#bbf7d0":"#fde68a")}}>{conf?"Confirmado":"Propuesta"}</span>
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                                {can(session,"confirmarDocentes")&&!conf&&m.docente&&<button onClick={()=>confirmar(prog.id,m.id)} disabled={sending===m.id} style={S.btn("#f0fdf4","#16a34a",{border:"1px solid #bbf7d0",padding:"5px 11px",fontSize:12})}>{sending===m.id?"Enviando...":"Confirmar"}</button>}
+                                {m.docente&&<button onClick={()=>enviarCalendarioWA(m,prog)} style={S.btn("#F0FDF4","#16a34a",{border:"1px solid #86EFAC",padding:"5px 11px",fontSize:12})}>Cal. WA</button>}
+                                {m.docente&&<button onClick={()=>enviarCalendarioEmail(m,prog)} style={S.btn("#EFF6FF","#2563eb",{border:"1px solid #BFDBFE",padding:"5px 11px",fontSize:12})}>Cal. Email</button>}
+                                {canEdit&&<button onClick={()=>openEditMod(m)} style={S.btn("#f3f4f6","#374151",{padding:"5px 11px",fontSize:12})}>Editar</button>}
+                                {canEdit&&<button onClick={()=>setCS({titulo:"Eliminar módulo",mensaje:`¿Estás seguro de que deseas eliminar el módulo "${m.nombre}"? Esta acción es irreversible.`,onConfirm:()=>delMod(m.id)})} style={S.btn("#fef2f2","#dc2626",{padding:"5px 11px",fontSize:12})}>Eliminar</button>}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                   {mods(prog).length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:48,fontFamily:"system-ui"}}>Sin módulos registrados.</div>}
                 </div>
               </div>
