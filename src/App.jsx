@@ -8597,11 +8597,11 @@ export default function App() {
                         {/* KPIs principales del mes */}
                         <div style={{padding:"20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:0,borderBottom:"1px solid #e5e7eb"}}>
                           {[
-                            {l:"Cobrado",v:cobradoATiempo+cobradoTarde,c:"#16a34a",sub:"Entró este mes",dot:"#16a34a"},
+                            {l:"Ingresó",v:d.cobrado,c:"#16a34a",sub:"Pagos recibidos (fecha de pago)",dot:"#16a34a"},
                             {l:"Vencido sin pagar",v:vencidoNoPagado,c:"#dc2626",sub:"Pasó la fecha, no pagó",dot:"#dc2626"},
                             {l:"Por vencer",v:porVencer,c:"#2563eb",sub:"Aún tiene tiempo",dot:"#2563eb"},
                             {l:"Honorarios",v:d.honorarios,c:RED,sub:"Costo docentes",dot:RED},
-                            {l:"Margen neto",v:(cobradoATiempo+cobradoTarde)-d.honorarios,c:"#7c3aed",sub:"Cobrado − honorarios",dot:"#7c3aed"},
+                            {l:"Margen neto",v:d.cobrado-d.honorarios,c:"#7c3aed",sub:"Ingresó − honorarios",dot:"#7c3aed"},
                           ].map(({l,v,c,sub,dot},i)=>(
                             <div key={l} style={{textAlign:"center",padding:"12px 8px",borderLeft:i>0?"1px solid #f3f4f6":"none"}}>
                               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
@@ -8615,9 +8615,9 @@ export default function App() {
                         </div>
                         {/* Barra visual: cobrado vs vencido vs por vencer */}
                         {(()=>{
-                          const total=cobradoATiempo+cobradoTarde+vencidoNoPagado+porVencer;
+                          const total=d.cobrado+vencidoNoPagado+porVencer;
                           if(!total) return null;
-                          const pCob=Math.round((cobradoATiempo+cobradoTarde)/total*100);
+                          const pCob=Math.round(d.cobrado/total*100);
                           const pVenc=Math.round(vencidoNoPagado/total*100);
                           const pPorV=Math.round(porVencer/total*100);
                           return(
@@ -9073,7 +9073,7 @@ export default function App() {
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,fontFamily:FONT_BODY}}>
                       <thead>
                         <tr style={{background:"#f9fafb"}}>
-                          {["Mes","Esperado","Cobrado","Pendiente","Flujo caja","Ing. Simulado","Docentes","Sueldos","Pauta","Otros","Utilidad Proy.","Utilidad Real"].map(h=>(
+                          {["Mes","Esperado","Pagado (venc.)","Pendiente","Flujo caja ✓","Ing. Simulado","Docentes","Sueldos","Pauta","Otros","Utilidad Proy.","Utilidad Real"].map(h=>(
                             <th key={h} style={{padding:"10px 12px",textAlign:"right",fontWeight:700,fontSize:11,color:"#6b7280",letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid #e5e7eb",...(h==="Mes"?{textAlign:"left"}:{})}}>{h}</th>
                           ))}
                         </tr>
@@ -9118,7 +9118,7 @@ export default function App() {
                     </table>
                   </div>
                   <div style={{padding:"10px 16px",fontSize:11,color:"#9ca3af",borderTop:"1px solid #f3f4f6",fontFamily:FONT_BODY}}>
-                    <span style={{color:"#2563eb",fontWeight:600}}>Esperado</span> = monto total programado · <span style={{color:"#16a34a",fontWeight:600}}>Cobrado</span> = pagos recibidos (por fecha de vencimiento) · <span style={{color:"#dc2626",fontWeight:600}}>Pendiente</span> = Esperado − Cobrado · <span style={{color:"#059669",fontWeight:600}}>Flujo caja</span> = pagos por fecha real · <span style={{color:"#7c3aed",fontWeight:600}}>Ing. Simulado</span> = programas hipotéticos
+                    <span style={{color:"#2563eb",fontWeight:600}}>Esperado</span> = vencimientos programados · <span style={{color:"#16a34a",fontWeight:600}}>Pagado (venc.)</span> = marcados como pagados con vencimiento ese mes · <span style={{color:"#dc2626",fontWeight:600}}>Pendiente</span> = Esperado − Pagado · <span style={{color:"#059669",fontWeight:600}}>Flujo caja ✓</span> = dinero real recibido (fecha de pago) — mismo que Dashboard · <span style={{color:"#7c3aed",fontWeight:600}}>Ing. Simulado</span> = programas hipotéticos
                   </div>
                 </div>
               )}
