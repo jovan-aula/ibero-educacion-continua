@@ -8550,30 +8550,39 @@ export default function App() {
                   {repVista==="mes"&&(()=>{
                     const d=proyMens[repMes]||{esperado:0,cobrado:0,honorarios:0};
                     const margen=d.esperado-d.honorarios;
-                    // Cobrado y por cobrar usando la misma lógica que proyeccionMensual para esperado
-                    // → unico: asignado al mes de inicio del programa | parcialidades: por fecha_vencimiento
-                    // → cobrado + porCobrar = esperado siempre
-                    const {cobradoMesVenc,porCobrarMes}=(programas||[]).reduce((acc,prog)=>{
+                    // Desglose de vencimientos del mes: a tiempo, tarde, vencido sin pagar, por vencer
+                    const hoyStr=today();
+                    const {cobradoATiempo,cobradoTarde,vencidoNoPagado,porVencer}=(programas||[]).reduce((acc,prog)=>{
                       ests(prog).forEach(e=>{
                         if(e.estatus==="baja"||e.estatus==="inactivo") return;
                         const pg=e.pago; if(!pg||!pg.monto_acordado) return;
                         const mf=pg.monto_acordado*(1-(pg.descuento_pct||0)/100);
                         const total=(pg.parcialidades||[]).length||1;
+                        const procesarParc=(pa,monto,venc)=>{
+                          if(pa.pagado){
+                            const fp=pa.fecha_pago||"";
+                            if(!venc||fp<=venc) acc.cobradoATiempo+=monto;
+                            else acc.cobradoTarde+=monto;
+                          } else {
+                            if(venc&&venc<hoyStr) acc.vencidoNoPagado+=monto;
+                            else acc.porVencer+=monto;
+                          }
+                        };
                         if(pg.tipo==="unico"){
                           const mesEsp=(mods(prog).map(m=>m.fechaInicio).filter(Boolean).sort()[0]||"").substring(0,7);
                           if(mesEsp===repMes){
-                            const paid=(pg.parcialidades||[]).some(p=>p.pagado);
-                            if(paid) acc.cobradoMesVenc+=mf; else acc.porCobrarMes+=mf;
+                            const pa=(pg.parcialidades||[])[0]||{};
+                            procesarParc(pa,mf,pa.fecha_vencimiento||"");
                           }
                         } else {
                           (pg.parcialidades||[]).filter(pa=>(pa.fecha_vencimiento||"").startsWith(repMes)).forEach(pa=>{
-                            const m=getMontoParc(pa,mf,total);
-                            if(pa.pagado) acc.cobradoMesVenc+=m; else acc.porCobrarMes+=m;
+                            procesarParc(pa,getMontoParc(pa,mf,total),pa.fecha_vencimiento||"");
                           });
                         }
                       });
                       return acc;
-                    },{cobradoMesVenc:0,porCobrarMes:0});
+                    },{cobradoATiempo:0,cobradoTarde:0,vencidoNoPagado:0,porVencer:0});
+                    const porCobrarMes=vencidoNoPagado+porVencer;
                     // Programas activos ese mes — módulo ese mes O vencimiento ese mes
                     const progsDelMes=(programas||[]).filter(p=>
                       mods(p).some(m=>m.fechaInicio&&m.fechaInicio.substring(0,7)===repMes)||
@@ -8583,14 +8592,35 @@ export default function App() {
                       <div style={{...S.card}}>
                         <div style={{padding:"16px 20px",borderBottom:"1px solid #e5e7eb",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                           <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
-                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Cobrado + Por cobrar = Esperado</div>
+                          <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Vencimientos del mes</div>
                         </div>
-                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,borderBottom:"1px solid #e5e7eb"}}>
-                          {[["Ingresos esperados",d.esperado,"#1a1a1a","Vencimientos programados en este mes"],["Cobrado",cobradoMesVenc,"#16a34a","Pagados (con vencimiento este mes)"],["Por cobrar",porCobrarMes,"#d97706","Sin pagar (con vencimiento este mes)"],["Honorarios",d.honorarios,RED,""],["Margen neto",margen,"#7c3aed",""]].map(([l,v,c,sub])=>(
-                            <div key={l} style={{textAlign:"center"}}>
+                        {/* Fila 1: Esperado + desglose cobros */}
+                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,borderBottom:"1px solid #f3f4f6"}}>
+                          {[
+                            {l:"Esperado",v:d.esperado,c:"#1a1a1a",sub:"Vencimientos del mes",border:false},
+                            {l:"✅ Cobrado a tiempo",v:cobradoATiempo,c:"#16a34a",sub:"Pagó en o antes del vencimiento",border:true},
+                            {l:"⚠️ Cobrado tarde",v:cobradoTarde,c:"#d97706",sub:"Pagó después del vencimiento",border:true},
+                            {l:"Honorarios",v:d.honorarios,c:RED,sub:"Costo docentes",border:true},
+                          ].map(({l,v,c,sub,border})=>(
+                            <div key={l} style={{textAlign:"center",padding:"12px 8px",borderLeft:border?"1px solid #f3f4f6":"none"}}>
                               <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
-                              <div style={{fontSize:18,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
-                              {sub&&<div style={{fontSize:10,color:"#9ca3af",marginTop:3,fontFamily:"system-ui"}}>{sub}</div>}
+                              <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                              <div style={{fontSize:10,color:"#9ca3af",marginTop:3,fontFamily:"system-ui"}}>{sub}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Fila 2: Pendientes */}
+                        <div style={{padding:"12px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,borderBottom:"1px solid #e5e7eb",background:"#fafafa"}}>
+                          {[
+                            {l:"🔴 Vencido sin pagar",v:vencidoNoPagado,c:"#dc2626",sub:"Ya pasó la fecha, no pagaron"},
+                            {l:"📅 Por vencer",v:porVencer,c:"#2563eb",sub:"Aún no llega su fecha"},
+                            {l:"Margen neto",v:d.cobrado-d.honorarios,c:"#7c3aed",sub:"Ingresó (fecha pago) − honorarios"},
+                            {l:"Ingresó real",v:d.cobrado,c:"#0f766e",sub:"Suma de fecha de pago este mes"},
+                          ].map(({l,v,c,sub},i)=>(
+                            <div key={l} style={{textAlign:"center",padding:"10px 8px",borderLeft:i>0?"1px solid #e5e7eb":"none"}}>
+                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{l.toUpperCase()}</div>
+                              <div style={{fontSize:17,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
+                              <div style={{fontSize:10,color:"#9ca3af",marginTop:2,fontFamily:"system-ui"}}>{sub}</div>
                             </div>
                           ))}
                         </div>
