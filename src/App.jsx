@@ -8594,36 +8594,50 @@ export default function App() {
                           <div style={{fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"}}>{MESES_L[parseInt(repMes.split("-")[1])-1]} {repMes.split("-")[0]}</div>
                           <div style={{fontSize:11,color:"#9ca3af",fontFamily:"system-ui"}}>Vencimientos del mes</div>
                         </div>
-                        {/* Fila 1: Esperado + desglose cobros */}
-                        <div style={{padding:"16px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,borderBottom:"1px solid #f3f4f6"}}>
+                        {/* KPIs principales del mes */}
+                        <div style={{padding:"20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:0,borderBottom:"1px solid #e5e7eb"}}>
                           {[
-                            {l:"Esperado",v:d.esperado,c:"#1a1a1a",sub:"Vencimientos del mes",border:false},
-                            {l:"✅ Cobrado a tiempo",v:cobradoATiempo,c:"#16a34a",sub:"Pagó en o antes del vencimiento",border:true},
-                            {l:"⚠️ Cobrado tarde",v:cobradoTarde,c:"#d97706",sub:"Pagó después del vencimiento",border:true},
-                            {l:"Honorarios",v:d.honorarios,c:RED,sub:"Costo docentes",border:true},
-                          ].map(({l,v,c,sub,border})=>(
-                            <div key={l} style={{textAlign:"center",padding:"12px 8px",borderLeft:border?"1px solid #f3f4f6":"none"}}>
-                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:4}}>{l.toUpperCase()}</div>
+                            {l:"Cobrado",v:cobradoATiempo+cobradoTarde,c:"#16a34a",sub:"Entró este mes",dot:"#16a34a"},
+                            {l:"Vencido sin pagar",v:vencidoNoPagado,c:"#dc2626",sub:"Pasó la fecha, no pagó",dot:"#dc2626"},
+                            {l:"Por vencer",v:porVencer,c:"#2563eb",sub:"Aún tiene tiempo",dot:"#2563eb"},
+                            {l:"Honorarios",v:d.honorarios,c:RED,sub:"Costo docentes",dot:RED},
+                            {l:"Margen neto",v:(cobradoATiempo+cobradoTarde)-d.honorarios,c:"#7c3aed",sub:"Cobrado − honorarios",dot:"#7c3aed"},
+                          ].map(({l,v,c,sub,dot},i)=>(
+                            <div key={l} style={{textAlign:"center",padding:"12px 8px",borderLeft:i>0?"1px solid #f3f4f6":"none"}}>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
+                                <div style={{width:7,height:7,borderRadius:"50%",background:dot,flexShrink:0}}/>
+                                <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>{l.toUpperCase()}</div>
+                              </div>
                               <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
                               <div style={{fontSize:10,color:"#9ca3af",marginTop:3,fontFamily:"system-ui"}}>{sub}</div>
                             </div>
                           ))}
                         </div>
-                        {/* Fila 2: Pendientes */}
-                        <div style={{padding:"12px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0,borderBottom:"1px solid #e5e7eb",background:"#fafafa"}}>
-                          {[
-                            {l:"🔴 Vencido sin pagar",v:vencidoNoPagado,c:"#dc2626",sub:"Ya pasó la fecha, no pagaron"},
-                            {l:"📅 Por vencer",v:porVencer,c:"#2563eb",sub:"Aún no llega su fecha"},
-                            {l:"Margen neto",v:d.cobrado-d.honorarios,c:"#7c3aed",sub:"Ingresó (fecha pago) − honorarios"},
-                            {l:"Ingresó real",v:d.cobrado,c:"#0f766e",sub:"Suma de fecha de pago este mes"},
-                          ].map(({l,v,c,sub},i)=>(
-                            <div key={l} style={{textAlign:"center",padding:"10px 8px",borderLeft:i>0?"1px solid #e5e7eb":"none"}}>
-                              <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:3}}>{l.toUpperCase()}</div>
-                              <div style={{fontSize:17,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
-                              <div style={{fontSize:10,color:"#9ca3af",marginTop:2,fontFamily:"system-ui"}}>{sub}</div>
+                        {/* Barra visual: cobrado vs vencido vs por vencer */}
+                        {(()=>{
+                          const total=cobradoATiempo+cobradoTarde+vencidoNoPagado+porVencer;
+                          if(!total) return null;
+                          const pCob=Math.round((cobradoATiempo+cobradoTarde)/total*100);
+                          const pVenc=Math.round(vencidoNoPagado/total*100);
+                          const pPorV=Math.round(porVencer/total*100);
+                          return(
+                            <div style={{padding:"12px 20px 16px",borderBottom:"1px solid #f3f4f6"}}>
+                              <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",gap:1}}>
+                                {pCob>0&&<div style={{width:pCob+"%",background:"#16a34a"}} title={"Cobrado "+pCob+"%"}/>}
+                                {pVenc>0&&<div style={{width:pVenc+"%",background:"#dc2626"}} title={"Vencido "+pVenc+"%"}/>}
+                                {pPorV>0&&<div style={{width:pPorV+"%",background:"#bfdbfe"}} title={"Por vencer "+pPorV+"%"}/>}
+                              </div>
+                              <div style={{display:"flex",gap:16,marginTop:6,flexWrap:"wrap"}}>
+                                {[[pCob+"%","Cobrado","#16a34a"],[pVenc+"%","Vencido sin pagar","#dc2626"],[pPorV+"%","Por vencer","#2563eb"]].map(([pct,lbl,c])=>(
+                                  <div key={lbl} style={{display:"flex",alignItems:"center",gap:4,fontSize:10,fontFamily:"system-ui",color:"#6b7280"}}>
+                                    <div style={{width:8,height:8,borderRadius:2,background:c}}/>
+                                    <span style={{fontWeight:700,color:c}}>{pct}</span> {lbl}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()}
                         {progsDelMes.length>0&&(
                           <div style={{padding:"14px 20px"}}>
                             <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:10}}>PROGRAMAS ACTIVOS ESTE MES</div>
