@@ -173,7 +173,7 @@ const syncToSupabase = async (programas) => {
     cobranza_ultimo_contacto: e.cobranza_ultimo_contacto||null,
     cobranza_comprometio: e.cobranza_comprometio||null,
     cobranza_nota: e.cobranza_nota||"",
-    factura_enviada: e.factura_enviada||false,
+    factura_enviada: e.factura_enviada===true||e.factura_enviada==="true",
     fecha_nacimiento: e.fecha_nacimiento||null,
     fecha_lead: e.fecha_lead||null,
     fecha_conversion: e.fecha_conversion||null,
@@ -3996,7 +3996,7 @@ export default function App() {
                 cobranza_ultimo_contacto: e.cobranza_ultimo_contacto||null,
                 cobranza_comprometio: e.cobranza_comprometio||null,
                 cobranza_nota: e.cobranza_nota||"",
-                factura_enviada: e.factura_enviada||false,
+                factura_enviada: e.factura_enviada===true||e.factura_enviada==="true",
                 asistencia: Object.keys(asistencia).length>0 ? asistencia : (e.asistencia||{}),
                 campos_extra: e.campos_extra||{},
                 pago: pago ? {
@@ -7292,7 +7292,7 @@ export default function App() {
         {/* FACTURACIÓN */}
         {view==="facturacion"&&(()=>{
           const todos = (programas||[]).flatMap(prog=>
-            ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo").map(e=>({e,prog}))
+            ests(prog).filter(e=>e.estatus!=="baja"&&e.estatus!=="inactivo"&&e.requiere_factura==="Sí").map(e=>({e,prog}))
           );
           // Helper: pagó algo en el mes seleccionado (por fecha_pago)
           const pagoEnMes=(e,mes)=>{
