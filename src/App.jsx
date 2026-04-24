@@ -405,7 +405,7 @@ const proyeccionMensual = (programas, docentes) => {
   // cobradoVenc → por fecha_vencimiento, solo si ya está pagado (cobrado + pendiente = esperado siempre)
   // cobrado     → por fecha_pago (flujo de caja real — cuándo entró al banco)
   const byMes = {};
-  const ini = key => { if(!byMes[key])byMes[key]={esperado:0,cobradoVenc:0,cobrado:0,honorarios:0}; };
+  const ini = key => { if(!byMes[key])byMes[key]={esperado:0,cobradoVenc:0,cobrado:0,cobradoATiempo:0,cobradoTarde:0,cobradoAnticipado:0,honorarios:0}; };
 
   (programas||[]).forEach(prog=>{
     ests(prog).forEach(est=>{
@@ -422,8 +422,14 @@ const proyeccionMensual = (programas, docentes) => {
         if(parc?.pagado){
           // cobradoVenc: asignado al mes de vencimiento (inicio programa)
           if(mesEsp){ byMes[mesEsp].cobradoVenc+=mf; }
-          // cobrado (flujo de caja): asignado al mes en que se pagó
-          if(parc.fecha_pago){ const mesCob=parc.fecha_pago.substring(0,7); ini(mesCob); byMes[mesCob].cobrado+=mf; }
+          // cobrado (flujo de caja): si tiene fecha_pago usar esa, si no usar mes de vencimiento
+          const mesCob=parc.fecha_pago ? parc.fecha_pago.substring(0,7) : mesEsp;
+          if(mesCob){
+            ini(mesCob); byMes[mesCob].cobrado+=mf;
+            if(!mesEsp||mesCob===mesEsp) byMes[mesCob].cobradoATiempo+=mf;
+            else if(mesCob<mesEsp) byMes[mesCob].cobradoAnticipado+=mf;
+            else byMes[mesCob].cobradoTarde+=mf;
+          }
         }
       } else {
         (p.parcialidades||[]).forEach(parc=>{
@@ -433,8 +439,14 @@ const proyeccionMensual = (programas, docentes) => {
           if(parc.pagado){
             // cobradoVenc: asignado al mes de vencimiento
             if(mesEsp){ byMes[mesEsp].cobradoVenc+=montoParc; }
-            // cobrado (flujo de caja): asignado al mes en que se pagó
-            if(parc.fecha_pago){ const mesCob=parc.fecha_pago.substring(0,7); ini(mesCob); byMes[mesCob].cobrado+=montoParc; }
+            // cobrado (flujo de caja): si tiene fecha_pago usar esa, si no usar mes de vencimiento
+            const mesCob=parc.fecha_pago ? parc.fecha_pago.substring(0,7) : mesEsp;
+            if(mesCob){
+              ini(mesCob); byMes[mesCob].cobrado+=montoParc;
+              if(!mesEsp||mesCob===mesEsp) byMes[mesCob].cobradoATiempo+=montoParc;
+              else if(mesCob<mesEsp) byMes[mesCob].cobradoAnticipado+=montoParc;
+              else byMes[mesCob].cobradoTarde+=montoParc;
+            }
           }
         });
       }
@@ -5577,6 +5589,9 @@ export default function App() {
           const datosMeses=meses6.map(mes=>({
             mes,
             cobrado:proyMensDash[mes]?.cobrado||0,
+            cobradoATiempo:proyMensDash[mes]?.cobradoATiempo||0,
+            cobradoTarde:proyMensDash[mes]?.cobradoTarde||0,
+            cobradoAnticipado:proyMensDash[mes]?.cobradoAnticipado||0,
             esperado:proyMensDash[mes]?.esperado||0,
           }));
           const maxBar=Math.max(...datosMeses.map(d=>d.mes===mesActual?Math.max(d.cobrado,d.esperado):d.cobrado),1);
@@ -5625,14 +5640,18 @@ export default function App() {
                 <div style={{...S.card,padding:"20px 22px"}}>
                   <div style={{fontWeight:700,fontSize:14,fontFamily:FONT_TITLE,marginBottom:16}}>Cobros últimos 6 meses</div>
                   <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
-                    {datosMeses.map(({mes,cobrado,esperado})=>{
+                    {datosMeses.map(({mes,cobrado,cobradoATiempo,cobradoTarde,cobradoAnticipado,esperado})=>{
                       const esMesAct=mes===mesActual;
                       const pendienteMes=esMesAct?faltaMes:0;
                       const totalBar=esMesAct?Math.max(cobrado+pendienteMes,cobrado,1):cobrado;
                       const pctCob=Math.round((totalBar/maxBar)*100);
                       const altoCob=Math.max(pctCob/100*110,cobrado>0?4:0);
                       const altoPend=esMesAct&&pendienteMes>0?Math.round((pendienteMes/(cobrado+pendienteMes))*altoCob):0;
-                      const altoRojo=altoCob-altoPend;
+                      const altoReal=altoCob-altoPend;
+                      const altoTarde=cobrado>0?Math.round((cobradoTarde/cobrado)*altoReal):0;
+                      const altoAnticipado=cobrado>0?Math.round((cobradoAnticipado/cobrado)*altoReal):0;
+                      const altoATiempo=Math.max(altoReal-altoTarde-altoAnticipado,0);
+                      const tooltip=cobrado>0?`A tiempo: ${fmtMXN(cobradoATiempo)}\nTardío: ${fmtMXN(cobradoTarde)}\nAnticipado: ${fmtMXN(cobradoAnticipado)}`:"";
                       return(
                         <div key={mes} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
                           {esMesAct?(
@@ -5643,9 +5662,11 @@ export default function App() {
                           ):(
                             <div style={{fontSize:9,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>{cobrado>0?fmtMXN(cobrado):""}</div>
                           )}
-                          <div style={{width:"100%",display:"flex",flexDirection:"column",borderRadius:"4px 4px 0 0",overflow:"hidden"}}>
+                          <div title={tooltip} style={{width:"100%",display:"flex",flexDirection:"column",borderRadius:"4px 4px 0 0",overflow:"hidden",cursor:cobrado>0?"help":"default"}}>
                             {esMesAct&&altoPend>0&&<div style={{width:"100%",background:"#fecaca",height:altoPend,transition:"height .3s"}}/>}
-                            <div style={{width:"100%",background:esMesAct?RED:"#e5e7eb",height:Math.max(altoRojo,cobrado>0?4:2),transition:"height .3s"}}/>
+                            {altoAnticipado>0&&<div style={{width:"100%",background:"#bfdbfe",height:altoAnticipado,transition:"height .3s"}}/>}
+                            <div style={{width:"100%",background:cobrado>0?"#16a34a":"#e5e7eb",height:Math.max(altoATiempo,cobrado>0?2:2),transition:"height .3s"}}/>
+                            {altoTarde>0&&<div style={{width:"100%",background:"#d97706",height:altoTarde,transition:"height .3s"}}/>}
                           </div>
                           <div style={{fontSize:9,color:esMesAct?RED:"#9ca3af",fontWeight:esMesAct?700:400,fontFamily:"system-ui"}}>{MESES[parseInt(mes.split("-")[1])-1]}</div>
                         </div>
@@ -5653,8 +5674,29 @@ export default function App() {
                     })}
                   </div>
                   {(()=>{
+                    const cobTotal6=datosMeses.reduce((a,d)=>a+d.cobrado,0);
+                    const cobATiempo6=datosMeses.reduce((a,d)=>a+d.cobradoATiempo,0);
+                    const cobTarde6=datosMeses.reduce((a,d)=>a+d.cobradoTarde,0);
+                    const cobAnticipado6=datosMeses.reduce((a,d)=>a+d.cobradoAnticipado,0);
+                    const puntualidad=cobTotal6>0?Math.round(cobATiempo6/cobTotal6*100):null;
                     return(
                       <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f3f4f6",fontFamily:"system-ui",fontSize:11,color:"#6b7280"}}>
+                        {/* Leyenda de colores */}
+                        <div style={{display:"flex",gap:12,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+                          {[["#16a34a","A tiempo",cobATiempo6],["#d97706","Tardío",cobTarde6],["#bfdbfe","Anticipado",cobAnticipado6]].map(([c,lbl,v])=>(
+                            <div key={lbl} style={{display:"flex",alignItems:"center",gap:4}}>
+                              <div style={{width:8,height:8,borderRadius:2,background:c,flexShrink:0}}/>
+                              <span style={{color:"#374151"}}>{lbl}</span>
+                              {cobTotal6>0&&<span style={{color:c,fontWeight:700}}>{Math.round(v/cobTotal6*100)}%</span>}
+                            </div>
+                          ))}
+                          {puntualidad!==null&&(
+                            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
+                              <span>Puntualidad (6 meses):</span>
+                              <strong style={{color:puntualidad>=80?"#16a34a":puntualidad>=60?"#d97706":"#dc2626"}}>{puntualidad}%</strong>
+                            </div>
+                          )}
+                        </div>
                         <div style={{display:"flex",justifyContent:"space-between",marginBottom:faltaMes>0?6:0}}>
                           <span>Cobrado acumulado: <strong style={{color:"#16a34a"}}>{fmtMXN(cobradoTotal)}</strong></span>
                           <span>Esperado total: <strong>{fmtMXN(esperadoTotal)}</strong> <span style={{color:"#d97706",fontWeight:600}}>({fmtMXN(pendienteTotal)} pendiente)</span></span>
@@ -7209,13 +7251,26 @@ export default function App() {
                                               return(
                                                 <div key={parc.id} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:64}}>
                                                   {/* Chip clickeable */}
-                                                  <div onClick={toggleParc} style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 10px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:parc.pagado?"#f0fdf4":vencido?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":vencido?"#fca5a5":"#e5e7eb"),transition:"all .15s",width:"100%"}}>
-                                                    <div style={{width:22,height:22,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:3,transition:"background .15s"}}>
-                                                      <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{parc.pagado?"✓":parc.numero}</span>
-                                                    </div>
-                                                    <div style={{fontSize:10,fontWeight:700,fontFamily:"system-ui",color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>{fmtMXN(getMontoParc(parc,mf,total))}</div>
-                                                    <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
-                                                  </div>
+                                                  {(()=>{
+                                                    const timing=parc.pagado?(
+                                                      parc.fecha_vencimiento&&parc.fecha_pago?(
+                                                        parc.fecha_pago.substring(0,7)===parc.fecha_vencimiento.substring(0,7)?"tiempo":
+                                                        parc.fecha_pago<parc.fecha_vencimiento?"anticipado":"tarde"
+                                                      ):"tiempo"
+                                                    ):null;
+                                                    const timingColor=timing==="tiempo"?"#16a34a":timing==="tarde"?"#d97706":"#2563eb";
+                                                    const timingLabel=timing==="tiempo"?"✓ a tiempo":timing==="tarde"?"↑ tardío":"↓ anticipado";
+                                                    return(
+                                                      <div onClick={toggleParc} style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 10px",borderRadius:8,cursor:esInactivo?"default":"pointer",background:parc.pagado?"#f0fdf4":vencido?"#fef2f2":"#fafafa",border:"1px solid "+(parc.pagado?"#bbf7d0":vencido?"#fca5a5":"#e5e7eb"),transition:"all .15s",width:"100%"}}>
+                                                        <div style={{width:22,height:22,borderRadius:"50%",background:parc.pagado?"#16a34a":vencido?"#dc2626":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:3,transition:"background .15s"}}>
+                                                          <span style={{color:"#fff",fontSize:10,fontWeight:700}}>{parc.pagado?"✓":parc.numero}</span>
+                                                        </div>
+                                                        <div style={{fontSize:10,fontWeight:700,fontFamily:"system-ui",color:parc.pagado?"#16a34a":vencido?"#dc2626":"#374151"}}>{fmtMXN(getMontoParc(parc,mf,total))}</div>
+                                                        <div style={{fontSize:9,color:"#9ca3af",fontFamily:"system-ui",textAlign:"center"}}>{parc.pagado&&parc.fecha_pago?fmtFecha(parc.fecha_pago):parc.fecha_vencimiento?fmtFecha(parc.fecha_vencimiento):""}</div>
+                                                        {timing&&<div style={{fontSize:8,fontWeight:700,fontFamily:"system-ui",color:timingColor,marginTop:1}}>{timingLabel}</div>}
+                                                      </div>
+                                                    );
+                                                  })()}
                                                   {/* Folio inline */}
                                                   <input
                                                     defaultValue={parc.folio||""}
@@ -8597,44 +8652,84 @@ export default function App() {
                         {/* KPIs principales del mes */}
                         <div style={{padding:"20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:0,borderBottom:"1px solid #e5e7eb"}}>
                           {[
-                            {l:"Ingresó",v:d.cobrado,c:"#16a34a",sub:"Pagos recibidos (fecha de pago)",dot:"#16a34a"},
+                            {l:"Ingresó",v:d.cobrado,c:"#16a34a",dot:"#16a34a",custom:true},
                             {l:"Vencido sin pagar",v:vencidoNoPagado,c:"#dc2626",sub:"Pasó la fecha, no pagó",dot:"#dc2626"},
                             {l:"Por vencer",v:porVencer,c:"#2563eb",sub:"Aún tiene tiempo",dot:"#2563eb"},
                             {l:"Honorarios",v:d.honorarios,c:RED,sub:"Costo docentes",dot:RED},
                             {l:"Margen neto",v:d.cobrado-d.honorarios,c:"#7c3aed",sub:"Ingresó − honorarios",dot:"#7c3aed"},
-                          ].map(({l,v,c,sub,dot},i)=>(
+                          ].map(({l,v,c,sub,dot,custom},i)=>(
                             <div key={l} style={{textAlign:"center",padding:"12px 8px",borderLeft:i>0?"1px solid #f3f4f6":"none"}}>
                               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
                                 <div style={{width:7,height:7,borderRadius:"50%",background:dot,flexShrink:0}}/>
                                 <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui"}}>{l.toUpperCase()}</div>
                               </div>
                               <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"system-ui"}}>{fmtMXN(v)}</div>
-                              <div style={{fontSize:10,color:"#9ca3af",marginTop:3,fontFamily:"system-ui"}}>{sub}</div>
+                              {custom?(
+                                <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:2}}>
+                                  {[["#16a34a","A tiempo",d.cobradoATiempo||0],["#d97706","Tardío",d.cobradoTarde||0],["#2563eb","Anticipado",d.cobradoAnticipado||0]].map(([col,lbl,val])=>val>0?(
+                                    <div key={lbl} style={{display:"flex",alignItems:"center",gap:3,justifyContent:"center",fontSize:9,fontFamily:"system-ui"}}>
+                                      <div style={{width:5,height:5,borderRadius:"50%",background:col,flexShrink:0}}/>
+                                      <span style={{color:col,fontWeight:700}}>{fmtMXN(val)}</span>
+                                      <span style={{color:"#9ca3af"}}>{lbl}</span>
+                                    </div>
+                                  ):null)}
+                                </div>
+                              ):(
+                                <div style={{fontSize:10,color:"#9ca3af",marginTop:3,fontFamily:"system-ui"}}>{sub}</div>
+                              )}
                             </div>
                           ))}
                         </div>
-                        {/* Barra visual: cobrado vs vencido vs por vencer */}
+                        {/* Barra visual: cobrado vs vencido vs por vencer + desglose puntualidad */}
                         {(()=>{
                           const total=d.cobrado+vencidoNoPagado+porVencer;
                           if(!total) return null;
                           const pCob=Math.round(d.cobrado/total*100);
                           const pVenc=Math.round(vencidoNoPagado/total*100);
                           const pPorV=Math.round(porVencer/total*100);
+                          const dAt=d.cobradoATiempo||0,dTar=d.cobradoTarde||0,dAnt=d.cobradoAnticipado||0;
+                          const puntualidadMes=d.cobrado>0?Math.round(dAt/d.cobrado*100):null;
                           return(
                             <div style={{padding:"12px 20px 16px",borderBottom:"1px solid #f3f4f6"}}>
+                              {/* Barra general */}
                               <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",gap:1}}>
-                                {pCob>0&&<div style={{width:pCob+"%",background:"#16a34a"}} title={"Cobrado "+pCob+"%"}/>}
+                                {pCob>0&&<div style={{width:pCob+"%",background:"#16a34a"}} title={"Ingresó "+pCob+"%"}/>}
                                 {pVenc>0&&<div style={{width:pVenc+"%",background:"#dc2626"}} title={"Vencido "+pVenc+"%"}/>}
                                 {pPorV>0&&<div style={{width:pPorV+"%",background:"#bfdbfe"}} title={"Por vencer "+pPorV+"%"}/>}
                               </div>
-                              <div style={{display:"flex",gap:16,marginTop:6,flexWrap:"wrap"}}>
-                                {[[pCob+"%","Cobrado","#16a34a"],[pVenc+"%","Vencido sin pagar","#dc2626"],[pPorV+"%","Por vencer","#2563eb"]].map(([pct,lbl,c])=>(
+                              <div style={{display:"flex",gap:16,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+                                {[[pCob+"%","Ingresó","#16a34a"],[pVenc+"%","Vencido sin pagar","#dc2626"],[pPorV+"%","Por vencer","#2563eb"]].map(([pct,lbl,c])=>(
                                   <div key={lbl} style={{display:"flex",alignItems:"center",gap:4,fontSize:10,fontFamily:"system-ui",color:"#6b7280"}}>
                                     <div style={{width:8,height:8,borderRadius:2,background:c}}/>
                                     <span style={{fontWeight:700,color:c}}>{pct}</span> {lbl}
                                   </div>
                                 ))}
+                                {puntualidadMes!==null&&(
+                                  <div style={{marginLeft:"auto",fontSize:10,fontFamily:"system-ui",display:"flex",alignItems:"center",gap:6}}>
+                                    <span style={{color:"#9ca3af"}}>Puntualidad:</span>
+                                    <strong style={{color:puntualidadMes>=80?"#16a34a":puntualidadMes>=60?"#d97706":"#dc2626"}}>{puntualidadMes}%</strong>
+                                  </div>
+                                )}
                               </div>
+                              {/* Desglose del cobrado: a tiempo / tardío / anticipado */}
+                              {d.cobrado>0&&(dTar>0||dAnt>0)&&(
+                                <div style={{marginTop:8,padding:"8px 10px",background:"#f8fafc",borderRadius:6,border:"1px solid #e5e7eb"}}>
+                                  <div style={{fontSize:9,fontWeight:700,color:"#9ca3af",fontFamily:"system-ui",marginBottom:5}}>DESGLOSE DE LO QUE INGRESÓ</div>
+                                  <div style={{display:"flex",height:5,borderRadius:3,overflow:"hidden",gap:1,marginBottom:5}}>
+                                    {dAt>0&&<div style={{width:Math.round(dAt/d.cobrado*100)+"%",background:"#16a34a"}}/>}
+                                    {dTar>0&&<div style={{width:Math.round(dTar/d.cobrado*100)+"%",background:"#d97706"}}/>}
+                                    {dAnt>0&&<div style={{width:Math.round(dAnt/d.cobrado*100)+"%",background:"#bfdbfe"}}/>}
+                                  </div>
+                                  <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                                    {[["#16a34a","A tiempo",dAt],["#d97706","Tardío (pagos de meses anteriores)",dTar],["#2563eb","Anticipado",dAnt]].map(([c,lbl,v])=>v>0?(
+                                      <div key={lbl} style={{display:"flex",alignItems:"center",gap:4,fontSize:9,fontFamily:"system-ui",color:"#6b7280"}}>
+                                        <div style={{width:7,height:7,borderRadius:2,background:c}}/>
+                                        <span style={{color:c,fontWeight:700}}>{fmtMXN(v)}</span> {lbl}
+                                      </div>
+                                    ):null)}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
