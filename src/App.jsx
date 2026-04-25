@@ -2489,7 +2489,7 @@ function AsistenciaGlobal({programas, generarLink, linkCopiado, onToggleAsist, o
 
   // ── Detalle del programa: todos los módulos y sesiones ──
   const modulos = mods(prog);
-  const estudiantes = ests(prog);
+  const estudiantes = ests(prog).filter(e=>e.estatus!=="baja");
 
   const getFechas = getFechasMod;
 
