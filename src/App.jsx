@@ -311,7 +311,7 @@ const ALL_PERMISOS = [
 const ADMIN_P    = Object.fromEntries(ALL_PERMISOS.map(p=>[p.key,true]));
 const VIEWER_P   = {verProgramas:true,verPagos:false,verFacturacion:false,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false,verProyecciones:false};
 const FINANZAS_P = {verProgramas:false,verPagos:true,verFacturacion:true,verAsistencia:false,verEvaluaciones:false,verReportes:false,importarEstudiantes:false,confirmarDocentes:false,gestionarDocentes:false,editarProgramas:false,editarModulos:false,gestionarUsuarios:false,configurarNotif:false,verProyecciones:false};
-const DEFAULT_USERS = [{nombre:"Administrador",email:"admin@ibero.mx",password:"ibero2026",permisos:ADMIN_P}];
+const DEFAULT_USERS = [{nombre:"Administrador",email:"admin@ibero.mx",permisos:ADMIN_P}];
 const ST_STYLE = {
   activo:    {label:"Activo",    bg:"#f0fdf4",color:"#16a34a",border:"#bbf7d0"},
   proximo:   {label:"Próximo",   bg:"#eff6ff",color:"#2563eb",border:"#bfdbfe"},
@@ -860,13 +860,21 @@ function ListaDocente({programas, onSave}) {
 // ─── EVALUACIÓN PÚBLICA DE MÓDULO ────────────────────
 function EvaluacionDocente({programas}) {
   const token = new URLSearchParams(window.location.search).get("eval");
-  let progId, modId;
-  try { const d=JSON.parse(atob(token)); progId=d.progId; modId=d.modId; } catch(e) { return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Enlace inválido.</div>; }
+  let progId="", modId="", prog=null, mod=null, tokenError=false;
+  try {
+    const d = JSON.parse(decodeURIComponent(escape(atob(token))));
+    progId = d.progId||""; modId = d.modId||"";
+    prog = { id:progId, nombre:d.progNombre||"", generacion:d.progGeneracion||"" };
+    mod  = { id:modId, nombre:d.modNombre||"", docente:d.docente||"", docenteId:d.docenteId||"", eval_cerrada:d.evalCerrada||false };
+    if (!progId||!modId) tokenError=true;
+  } catch(e) { tokenError=true; }
 
-  const prog = (programas||[]).find(p=>p.id===progId);
-  const mod  = prog && mods(prog).find(m=>m.id===modId);
-  if (!prog||!mod) return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Módulo no encontrado.</div>;
-  if (mod.eval_cerrada) return (
+  const [resp,setResp]       = useState({q1:null,q2:null,q3:null,q4:null,q5:null,comentarios:""});
+  const [enviado,setEnviado] = useState(false);
+  const [error,setError]     = useState("");
+
+  if(tokenError||!prog||!mod) return <div style={{padding:40,textAlign:"center",fontFamily:"system-ui",color:RED}}>Enlace inválido.</div>;
+  if(mod.eval_cerrada) return (
     <div style={{minHeight:"100vh",background:"#f2f2f2",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui",padding:16}}>
       <div style={{background:"#fff",borderRadius:12,maxWidth:480,width:"100%",padding:40,textAlign:"center",boxShadow:"0 4px 32px rgba(0,0,0,0.08)"}}>
         <div style={{width:64,height:64,borderRadius:"50%",background:"#f3f4f6",border:"3px solid #9ca3af",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>🔒</div>
@@ -876,10 +884,6 @@ function EvaluacionDocente({programas}) {
       </div>
     </div>
   );
-
-  const [resp,setResp]     = useState({q1:null,q2:null,q3:null,q4:null,q5:null,comentarios:""});
-  const [enviado,setEnviado] = useState(false);
-  const [error,setError]   = useState("");
 
   const completo = [resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].every(v=>v!==null);
   const promedio = completo ? Math.round([resp.q1,resp.q2,resp.q3,resp.q4,resp.q5].reduce((a,b)=>a+b,0)/5*10)/10 : null;
@@ -4387,7 +4391,15 @@ export default function App() {
   };
 
   const generarEnlaceEval = (progId, modId) => {
-    const token = btoa(JSON.stringify({progId,modId}));
+    const prog = (programas||[]).find(p=>p.id===progId);
+    const mod  = mods(prog||{}).find(m=>m.id===modId);
+    if (!prog||!mod) return;
+    const token = btoa(unescape(encodeURIComponent(JSON.stringify({
+      progId, modId,
+      progNombre: prog.nombre||"", progGeneracion: prog.generacion||"",
+      modNombre: mod.nombre||"", docente: mod.docente||"",
+      docenteId: mod.docenteId||"", evalCerrada: mod.eval_cerrada||false,
+    }))));
     const url   = window.location.href.split("?")[0]+"?eval="+token;
     navigator.clipboard.writeText(url).then(()=>{
       setLinkCop("eval_"+progId+"_"+modId);
@@ -4400,7 +4412,12 @@ export default function App() {
     const prog = (programas||[]).find(p=>p.id===progId);
     const mod  = mods(prog||{}).find(m=>m.id===modId);
     if (!prog||!mod) return;
-    const token = btoa(JSON.stringify({progId,modId}));
+    const token = btoa(unescape(encodeURIComponent(JSON.stringify({
+      progId, modId,
+      progNombre: prog.nombre||"", progGeneracion: prog.generacion||"",
+      modNombre: mod.nombre||"", docente: mod.docente||"",
+      docenteId: mod.docenteId||"", evalCerrada: mod.eval_cerrada||false,
+    }))));
     const url   = window.location.href.split("?")[0]+"?eval="+token;
     // Copiar enlace al clipboard también
     navigator.clipboard.writeText(url);
